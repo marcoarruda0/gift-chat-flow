@@ -14,16 +14,304 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      compras: {
+        Row: {
+          contato_id: string
+          created_at: string
+          giftback_gerado: number | null
+          giftback_usado: number | null
+          id: string
+          operador_id: string | null
+          tenant_id: string
+          valor: number
+        }
+        Insert: {
+          contato_id: string
+          created_at?: string
+          giftback_gerado?: number | null
+          giftback_usado?: number | null
+          id?: string
+          operador_id?: string | null
+          tenant_id: string
+          valor: number
+        }
+        Update: {
+          contato_id?: string
+          created_at?: string
+          giftback_gerado?: number | null
+          giftback_usado?: number | null
+          id?: string
+          operador_id?: string | null
+          tenant_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compras_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compras_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contatos: {
+        Row: {
+          cpf: string | null
+          created_at: string
+          data_nascimento: string | null
+          email: string | null
+          endereco: string | null
+          id: string
+          nome: string
+          notas: string | null
+          saldo_giftback: number | null
+          tags: string[] | null
+          telefone: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome: string
+          notas?: string | null
+          saldo_giftback?: number | null
+          tags?: string[] | null
+          telefone?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome?: string
+          notas?: string | null
+          saldo_giftback?: number | null
+          tags?: string[] | null
+          telefone?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contatos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      giftback_config: {
+        Row: {
+          compra_minima: number | null
+          created_at: string
+          credito_maximo: number | null
+          id: string
+          max_resgate_pct: number | null
+          percentual: number | null
+          tenant_id: string
+          validade_dias: number | null
+        }
+        Insert: {
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          tenant_id: string
+          validade_dias?: number | null
+        }
+        Update: {
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          tenant_id?: string
+          validade_dias?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "giftback_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      giftback_movimentos: {
+        Row: {
+          compra_id: string | null
+          contato_id: string
+          created_at: string
+          id: string
+          status: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id: string
+          tipo: Database["public"]["Enums"]["giftback_tipo"]
+          validade: string | null
+          valor: number
+        }
+        Insert: {
+          compra_id?: string | null
+          contato_id: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id: string
+          tipo: Database["public"]["Enums"]["giftback_tipo"]
+          validade?: string | null
+          valor: number
+        }
+        Update: {
+          compra_id?: string | null
+          contato_id?: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id?: string
+          tipo?: Database["public"]["Enums"]["giftback_tipo"]
+          validade?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "giftback_movimentos_compra_id_fkey"
+            columns: ["compra_id"]
+            isOneToOne: false
+            referencedRelation: "compras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "giftback_movimentos_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "giftback_movimentos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          departamento: string | null
+          id: string
+          nome: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          departamento?: string | null
+          id: string
+          nome?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          departamento?: string | null
+          id?: string
+          nome?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          plano: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          plano?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          plano?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
+      giftback_status: "ativo" | "usado" | "expirado"
+      giftback_tipo: "credito" | "debito" | "expiracao"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +438,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
+      giftback_status: ["ativo", "usado", "expirado"],
+      giftback_tipo: ["credito", "debito", "expiracao"],
+    },
   },
 } as const

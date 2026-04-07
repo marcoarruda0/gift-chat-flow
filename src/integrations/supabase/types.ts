@@ -1,0 +1,447 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      compras: {
+        Row: {
+          contato_id: string
+          created_at: string
+          giftback_gerado: number | null
+          giftback_usado: number | null
+          id: string
+          operador_id: string | null
+          tenant_id: string
+          valor: number
+        }
+        Insert: {
+          contato_id: string
+          created_at?: string
+          giftback_gerado?: number | null
+          giftback_usado?: number | null
+          id?: string
+          operador_id?: string | null
+          tenant_id: string
+          valor: number
+        }
+        Update: {
+          contato_id?: string
+          created_at?: string
+          giftback_gerado?: number | null
+          giftback_usado?: number | null
+          id?: string
+          operador_id?: string | null
+          tenant_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compras_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compras_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contatos: {
+        Row: {
+          cpf: string | null
+          created_at: string
+          data_nascimento: string | null
+          email: string | null
+          endereco: string | null
+          id: string
+          nome: string
+          notas: string | null
+          saldo_giftback: number | null
+          tags: string[] | null
+          telefone: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome: string
+          notas?: string | null
+          saldo_giftback?: number | null
+          tags?: string[] | null
+          telefone?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome?: string
+          notas?: string | null
+          saldo_giftback?: number | null
+          tags?: string[] | null
+          telefone?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contatos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      giftback_config: {
+        Row: {
+          compra_minima: number | null
+          created_at: string
+          credito_maximo: number | null
+          id: string
+          max_resgate_pct: number | null
+          percentual: number | null
+          tenant_id: string
+          validade_dias: number | null
+        }
+        Insert: {
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          tenant_id: string
+          validade_dias?: number | null
+        }
+        Update: {
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          tenant_id?: string
+          validade_dias?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "giftback_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      giftback_movimentos: {
+        Row: {
+          compra_id: string | null
+          contato_id: string
+          created_at: string
+          id: string
+          status: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id: string
+          tipo: Database["public"]["Enums"]["giftback_tipo"]
+          validade: string | null
+          valor: number
+        }
+        Insert: {
+          compra_id?: string | null
+          contato_id: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id: string
+          tipo: Database["public"]["Enums"]["giftback_tipo"]
+          validade?: string | null
+          valor: number
+        }
+        Update: {
+          compra_id?: string | null
+          contato_id?: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["giftback_status"] | null
+          tenant_id?: string
+          tipo?: Database["public"]["Enums"]["giftback_tipo"]
+          validade?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "giftback_movimentos_compra_id_fkey"
+            columns: ["compra_id"]
+            isOneToOne: false
+            referencedRelation: "compras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "giftback_movimentos_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "giftback_movimentos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          departamento: string | null
+          id: string
+          nome: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          departamento?: string | null
+          id: string
+          nome?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          departamento?: string | null
+          id?: string
+          nome?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          plano: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          plano?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          plano?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+    }
+    Enums: {
+      app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
+      giftback_status: "ativo" | "usado" | "expirado"
+      giftback_tipo: "credito" | "debito" | "expiracao"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
+      giftback_status: ["ativo", "usado", "expirado"],
+      giftback_tipo: ["credito", "debito", "expiracao"],
+    },
+  },
+} as const

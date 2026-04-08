@@ -118,6 +118,50 @@ export type Database = {
           },
         ]
       }
+      fluxos: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          edges_json: Json | null
+          id: string
+          nodes_json: Json | null
+          nome: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          edges_json?: Json | null
+          id?: string
+          nodes_json?: Json | null
+          nome?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          edges_json?: Json | null
+          id?: string
+          nodes_json?: Json | null
+          nome?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fluxos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       giftback_config: {
         Row: {
           compra_minima: number | null

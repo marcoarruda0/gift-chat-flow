@@ -13,6 +13,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [nome, setNome] = useState("");
+  const [empresa, setEmpresa] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
@@ -23,7 +24,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, nome);
+        await signUp(email, password, nome, empresa);
         toast({ title: "Conta criada!", description: "Verifique seu email para confirmar." });
       } else {
         await signIn(email, password);
@@ -57,16 +58,27 @@ export default function Login() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="nome">Nome</Label>
-                <Input
-                  id="nome"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Seu nome completo"
-                  required
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="nome">Nome</Label>
+                  <Input
+                    id="nome"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Seu nome completo"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="empresa">Nome da Empresa</Label>
+                  <Input
+                    id="empresa"
+                    value={empresa}
+                    onChange={(e) => setEmpresa(e.target.value)}
+                    placeholder="Sua empresa ou loja"
+                  />
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

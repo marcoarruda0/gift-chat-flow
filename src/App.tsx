@@ -34,7 +34,9 @@ function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/contatos" element={<ProtectedRoute><Contatos /></ProtectedRoute>} />
       <Route path="/conversas" element={<ProtectedRoute><Placeholder title="Conversas" /></ProtectedRoute>} />
-      <Route path="/fluxos" element={<ProtectedRoute><Placeholder title="Builder de Fluxos" /></ProtectedRoute>} />
+      <Route path="/fluxos" element={<ProtectedRoute><Fluxos /></ProtectedRoute>} />
+      <Route path="/fluxos/:id" element={<ProtectedRoute><FluxoEditor /></ProtectedRoute>} />
+      <Route path="/disparos" element={<ProtectedRoute><Placeholder title="Disparos" /></ProtectedRoute>} />
       <Route path="/disparos" element={<ProtectedRoute><Placeholder title="Disparos" /></ProtectedRoute>} />
       <Route path="/giftback" element={<ProtectedRoute><GiftbackConfig /></ProtectedRoute>} />
       <Route path="/giftback/caixa" element={<ProtectedRoute><GiftbackCaixa /></ProtectedRoute>} />

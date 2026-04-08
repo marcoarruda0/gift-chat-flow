@@ -11,6 +11,8 @@ import Contatos from "@/pages/Contatos";
 import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
+import Fluxos from "@/pages/Fluxos";
+import FluxoEditor from "@/pages/FluxoEditor";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();

@@ -1,53 +1,81 @@
 
 
-# Importar Mensagens Historicas do WhatsApp via Z-API
+# Funcionalidades de Mídia no Módulo Conversas
 
-## Situacao Atual
-A sincronizacao atual importa apenas os **chats** (conversas) via `GET /chats`, criando contatos e conversas, mas **nao importa as mensagens** de cada chat.
+## 1. Gravação de Áudio
 
-## Endpoint Z-API Disponivel
-A Z-API oferece o endpoint `GET /chats/{phone}` que retorna metadata do chat. Para mensagens historicas, o endpoint correto e:
+### `src/components/conversas/AudioRecorder.tsx` (novo)
+- Componente com botão de microfone que usa `navigator.mediaDevices.getUserMedia({ audio: true })` e `MediaRecorder` API
+- Estados: idle → recording → sending
+- Ao parar gravação, converte para Blob (webm/ogg), faz upload para Storage e envia via Z-API endpoint `send-audio`
+- Indicador visual de gravação (ícone pulsante, timer)
 
+### Storage bucket
+- Criar bucket `chat-media` (público) via migration para armazenar áudios, imagens e documentos
+
+## 2. Envio de Anexos (Fotos/Documentos)
+
+### `src/components/conversas/AttachmentButton.tsx` (novo)
+- Botão de clipe que abre file picker
+- Aceita imagens (jpg, png, webp) e documentos (pdf, doc, xlsx, etc.)
+- Faz upload para bucket `chat-media`, salva mensagem com `tipo: "imagem"` ou `tipo: "documento"`
+- Envia via Z-API endpoints `send-image` (com `image` URL) ou `send-document` (com `document` URL)
+
+## 3. Atualizar ChatInput
+
+### `src/components/conversas/ChatInput.tsx`
+- Adicionar `AttachmentButton` (clipe) e `AudioRecorder` (microfone) ao lado do botão enviar
+- Props: `onSendAudio(blob)`, `onSendAttachment(file)`
+
+## 4. Atualizar ChatPanel e Conversas.tsx
+
+### `src/components/conversas/ChatPanel.tsx`
+- Passar novos handlers `onSendAudio` e `onSendAttachment` para `ChatInput`
+
+### `src/pages/Conversas.tsx`
+- Implementar `handleSendAudio`: upload para Storage → insert mensagem tipo "audio" → enviar via Z-API `send-audio`
+- Implementar `handleSendAttachment`: upload para Storage → insert mensagem tipo "imagem"/"documento" → enviar via Z-API `send-image`/`send-document`
+
+## 5. Renderizar Mídia no MessageBubble
+
+### `src/components/conversas/MessageBubble.tsx`
+- Receber prop `tipo` além de `conteudo`
+- Se `tipo === "audio"`: renderizar `<audio>` player
+- Se `tipo === "imagem"`: renderizar `<img>` com preview clicável
+- Se `tipo === "documento"`: renderizar link de download com ícone de arquivo
+- Texto continua como está
+
+## 6. Fotos de Perfil na Lista de Conversas
+
+### `src/components/conversas/ConversaItem.tsx`
+- Já suporta `avatarUrl` e `AvatarImage` — funciona se o `avatar_url` estiver preenchido no contato
+- O sync já salva `profilePicture` da Z-API no campo `avatar_url`
+- Nenhuma alteração necessária neste componente (já implementado)
+
+### Verificação
+- Se as fotos não aparecem, pode ser que o sync não foi executado ou os contatos foram criados manualmente sem foto
+- O botão "Sincronizar WhatsApp" já atualiza `avatar_url` com `chat.profilePicture`
+
+## Migration necessária
+```sql
+INSERT INTO storage.buckets (id, name, public) VALUES ('chat-media', 'chat-media', true);
+
+CREATE POLICY "tenant_upload_chat_media" ON storage.objects
+FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'chat-media');
+
+CREATE POLICY "public_read_chat_media" ON storage.objects
+FOR SELECT USING (bucket_id = 'chat-media');
 ```
-GET /instances/{instanceId}/token/{token}/chat-messages/{phone}
-```
 
-Este endpoint retorna as mensagens armazenadas no cache do WhatsApp para aquele contato.
-
-## Plano de Implementacao
-
-### 1. Atualizar `handleSync` em `src/pages/Conversas.tsx`
-Apos criar/encontrar cada conversa durante a sincronizacao, buscar as mensagens historicas daquele contato:
-
-- Chamar `zapi-proxy` com endpoint `chat-messages/{phone}` para cada chat importado
-- Para cada mensagem retornada, inserir na tabela `mensagens` (evitando duplicatas)
-- Mapear os campos da Z-API para o schema local:
-  - `fromMe: true` → remetente = `atendente`
-  - `fromMe: false` → remetente = `contato`
-  - `body` ou `text` → conteudo
-  - `timestamp` → created_at
-- Usar o campo `messageId` da Z-API como chave para evitar duplicatas (salvar em `metadata.zapi_message_id`)
-
-### 2. Limitar volume
-- Importar no maximo as ultimas 50 mensagens por conversa para evitar timeout
-- Adicionar indicador de progresso no toast (ex: "Importando mensagens 3/10...")
-
-### 3. Controle de duplicatas
-- Antes de inserir cada mensagem, verificar se ja existe uma com o mesmo `metadata->>'zapi_message_id'`
-- Isso permite rodar a sincronizacao multiplas vezes sem duplicar mensagens
-
-### 4. Nenhuma migration necessaria
-A tabela `mensagens` ja tem o campo `metadata jsonb` que pode armazenar o `zapi_message_id`.
-
-## Arquivos alterados
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/pages/Conversas.tsx` | Adicionar busca de mensagens no loop do `handleSync` |
-
-## Fluxo
-1. Usuario clica "Sincronizar WhatsApp"
-2. Sistema importa chats (como ja faz)
-3. Para cada chat importado, busca ultimas mensagens via `chat-messages/{phone}`
-4. Insere mensagens no banco evitando duplicatas
-5. Toast mostra resultado com contagem de mensagens importadas
+## Arquivos alterados/criados
+| Arquivo | Tipo |
+|---------|------|
+| `src/components/conversas/AudioRecorder.tsx` | Novo |
+| `src/components/conversas/AttachmentButton.tsx` | Novo |
+| `src/components/conversas/ChatInput.tsx` | Alterado |
+| `src/components/conversas/ChatPanel.tsx` | Alterado |
+| `src/components/conversas/MessageBubble.tsx` | Alterado |
+| `src/pages/Conversas.tsx` | Alterado |
+| Migration para bucket `chat-media` | Novo |
 

@@ -351,7 +351,7 @@ export default function Conversas() {
           // Update avatar and name (for groups, name may change)
           const updateData: any = {};
           if (chat.profilePicture) updateData.avatar_url = chat.profilePicture;
-          if (isGroup && chat.name) updateData.nome = chat.name;
+          if (isGroupChat && chat.name) updateData.nome = chat.name;
           if (Object.keys(updateData).length > 0) {
             await supabase.from("contatos").update(updateData).eq("id", contato.id);
           }

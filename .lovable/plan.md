@@ -1,39 +1,53 @@
 
 
-# Fase 5 — Sincronizar WhatsApp (Importar Chats via Z-API)
+# Importar Mensagens Historicas do WhatsApp via Z-API
 
-## Visao Geral
-Adicionar botao "Sincronizar WhatsApp" na lista de conversas que chama o endpoint Z-API `chats` via proxy, importa contatos e cria conversas automaticamente.
+## Situacao Atual
+A sincronizacao atual importa apenas os **chats** (conversas) via `GET /chats`, criando contatos e conversas, mas **nao importa as mensagens** de cada chat.
 
-## Alteracoes
+## Endpoint Z-API Disponivel
+A Z-API oferece o endpoint `GET /chats/{phone}` que retorna metadata do chat. Para mensagens historicas, o endpoint correto e:
 
-### 1. `src/components/conversas/ConversasList.tsx`
-- Adicionar prop `onSync` e botao com icone `RefreshCw` ao lado do botao de nova conversa
-- Mostrar estado de loading durante sync (spinner no botao)
+```
+GET /instances/{instanceId}/token/{token}/chat-messages/{phone}
+```
 
-### 2. `src/pages/Conversas.tsx`
-- Adicionar funcao `handleSync` que:
-  1. Chama `zapi-proxy` com endpoint `chats` (GET) para listar chats do WhatsApp
-  2. Para cada chat retornado:
-     - Busca contato pelo telefone no banco (`contatos` table)
-     - Se nao existe, cria contato com nome do chat e telefone
-     - Busca conversa aberta existente para o contato
-     - Se nao existe, cria conversa com `ultimo_texto` e `ultima_msg_at` do chat
-  3. Atualiza `avatar_url` do contato se disponivel no chat
-  4. Exibe toast com resultado ("X conversas importadas")
-- Adicionar estado `syncing` para controlar loading do botao
-- Passar `onSync` e `syncing` para `ConversasList`
+Este endpoint retorna as mensagens armazenadas no cache do WhatsApp para aquele contato.
 
-### 3. Sem migration necessaria
-Todas as tabelas ja existem. A logica usa apenas INSERT/SELECT nas tabelas `contatos` e `conversas`.
+## Plano de Implementacao
+
+### 1. Atualizar `handleSync` em `src/pages/Conversas.tsx`
+Apos criar/encontrar cada conversa durante a sincronizacao, buscar as mensagens historicas daquele contato:
+
+- Chamar `zapi-proxy` com endpoint `chat-messages/{phone}` para cada chat importado
+- Para cada mensagem retornada, inserir na tabela `mensagens` (evitando duplicatas)
+- Mapear os campos da Z-API para o schema local:
+  - `fromMe: true` → remetente = `atendente`
+  - `fromMe: false` → remetente = `contato`
+  - `body` ou `text` → conteudo
+  - `timestamp` → created_at
+- Usar o campo `messageId` da Z-API como chave para evitar duplicatas (salvar em `metadata.zapi_message_id`)
+
+### 2. Limitar volume
+- Importar no maximo as ultimas 50 mensagens por conversa para evitar timeout
+- Adicionar indicador de progresso no toast (ex: "Importando mensagens 3/10...")
+
+### 3. Controle de duplicatas
+- Antes de inserir cada mensagem, verificar se ja existe uma com o mesmo `metadata->>'zapi_message_id'`
+- Isso permite rodar a sincronizacao multiplas vezes sem duplicar mensagens
+
+### 4. Nenhuma migration necessaria
+A tabela `mensagens` ja tem o campo `metadata jsonb` que pode armazenar o `zapi_message_id`.
+
+## Arquivos alterados
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/pages/Conversas.tsx` | Adicionar busca de mensagens no loop do `handleSync` |
 
 ## Fluxo
 1. Usuario clica "Sincronizar WhatsApp"
-2. Sistema busca chats via Z-API proxy
-3. Para cada chat: cria ou encontra contato → cria ou encontra conversa
-4. Lista de conversas atualiza automaticamente
-5. Toast mostra quantas conversas foram importadas
-
-## Endpoint Z-API usado
-- `GET /chats` — retorna array de chats com `phone`, `name`, `profilePicture`, `lastMessage`
+2. Sistema importa chats (como ja faz)
+3. Para cada chat importado, busca ultimas mensagens via `chat-messages/{phone}`
+4. Insere mensagens no banco evitando duplicatas
+5. Toast mostra resultado com contagem de mensagens importadas
 

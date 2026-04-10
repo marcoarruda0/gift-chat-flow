@@ -218,6 +218,45 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
             </div>
           </>
         )}
+
+        {nodeType === "consultar_saldo" && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Variável de saída</Label>
+            <Input value={config.variavel || ""} onChange={(e) => updateConfig("variavel", e.target.value)} placeholder="{{saldo_giftback}}" className="h-8 text-sm font-mono" />
+          </div>
+        )}
+
+        {nodeType === "notificar_credito" && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Canal</Label>
+              <Select value={config.canal || "whatsapp"} onValueChange={(v) => updateConfig("canal", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  <SelectItem value="sms">SMS</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Template da mensagem</Label>
+              <Textarea value={config.template || ""} onChange={(e) => updateConfig("template", e.target.value)} placeholder="Você ganhou R$ {{valor}} de crédito! Válido até {{validade}}." className="text-sm min-h-[80px]" />
+            </div>
+          </>
+        )}
+
+        {nodeType === "lembrete_validade" && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Dias antes da expiração</Label>
+              <Input type="number" value={config.dias_antes || ""} onChange={(e) => updateConfig("dias_antes", e.target.value)} placeholder="3" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Template da mensagem</Label>
+              <Textarea value={config.template || ""} onChange={(e) => updateConfig("template", e.target.value)} placeholder="Seu crédito de R$ {{valor}} expira em {{dias}} dias!" className="text-sm min-h-[80px]" />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

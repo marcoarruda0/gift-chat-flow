@@ -45,7 +45,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, contato_id, contatos(nome, telefone)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -55,6 +55,7 @@ export default function Conversas() {
       id: c.id,
       contato_nome: c.contatos?.nome || "Sem nome",
       contato_telefone: c.contatos?.telefone || null,
+      contato_avatar: c.contatos?.avatar_url || null,
       ultimo_texto: c.ultimo_texto,
       ultima_msg_at: c.ultima_msg_at,
       nao_lidas: c.nao_lidas,

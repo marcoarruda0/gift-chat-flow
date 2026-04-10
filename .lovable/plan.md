@@ -1,43 +1,42 @@
 
 
-# Mostrar Remetente em Mensagens de Grupo
+# Corrigir Exibição de Conversas de Grupo
 
 ## Problema
-Nas conversas de grupo, todas as mensagens aparecem sem identificação de quem enviou. No WhatsApp, cada mensagem mostra o nome e foto do remetente.
+Em conversas de grupo no WhatsApp:
+- O **título** mostra o nome de quem mandou a última mensagem em vez do nome do grupo
+- O **subtítulo** mostra apenas a mensagem, sem identificar quem enviou
 
-## Solução
-Armazenar informações do remetente (nome e foto) no campo `metadata` (jsonb) da tabela `mensagens` e exibir essas informações na bolha de mensagem para mensagens recebidas.
+**Como deveria ser:** Título = nome do grupo, Subtítulo = "Fulano: mensagem..."
+
+## Causa Raiz
+1. O webhook (`zapi-webhook`) cria/atualiza o contato usando `senderName` (nome da pessoa) como `nome`, mas para grupos deveria usar `chatName` (nome do grupo)
+2. O `ultimo_texto` salva apenas a mensagem crua, sem prefixo do remetente
+3. O sync (`handleSync`) filtra grupos com `@g.us`, ignorando-os completamente
 
 ## Alterações
 
-### 1. `src/components/conversas/MessageBubble.tsx`
-- Adicionar props `senderName` e `senderAvatar` (opcionais)
-- Para mensagens recebidas (`remetente === "contato"`), quando `senderName` estiver presente:
-  - Exibir mini avatar à esquerda da bolha
-  - Exibir nome do remetente em cor destaque acima do conteúdo (como no WhatsApp — cada nome com cor diferente baseada em hash)
-- Layout: avatar pequeno (24px) + bolha com nome + conteúdo
+### 1. `supabase/functions/zapi-webhook/index.ts`
+- Detectar se é grupo verificando se `payload.isGroup === true` ou se o phone contém `@g.us`
+- Para grupos: usar `payload.chatName` (nome do grupo) como nome do contato, não `senderName`
+- Para grupos: salvar `ultimo_texto` como `"NomeRemetente: mensagem"` (truncado)
+- Para individuais: manter comportamento atual
 
-### 2. `src/components/conversas/ChatPanel.tsx`
-- Extrair `senderName` e `senderAvatar` do campo `metadata` de cada mensagem
-- Passar para `MessageBubble`
+### 2. `src/pages/Conversas.tsx` — `handleSync`
+- Remover filtro que exclui grupos (`@g.us`)
+- Para chats de grupo: usar `chat.name` como nome do contato (grupo)
+- Para grupos no sync de mensagens: salvar `ultimo_texto` como `"Remetente: msg"`
+- Formatar `ultimo_texto` histórico com nome do remetente quando disponível
 
-### 3. `src/pages/Conversas.tsx` — Interface `MensagemRow`
-- Adicionar campo `metadata` ao tipo e ao fetch de mensagens
+### 3. `src/pages/Conversas.tsx` — `handleSend` (envio manual)
+- Ao atualizar `ultimo_texto` após envio do atendente, prefixar com "Você: mensagem"
 
-### 4. `supabase/functions/zapi-webhook/index.ts`
-- Para mensagens recebidas, salvar `senderName` (de `payload.senderName` ou `payload.chatName`) e `senderPhoto` no `metadata` da mensagem
-
-### 5. Sync histórico em `src/pages/Conversas.tsx` (`handleSync`)
-- Ao importar mensagens históricas, salvar `senderName` do campo `msg.senderName` ou `msg.sender.name` no metadata
-
-## Sem migration
-O campo `metadata jsonb` já existe na tabela `mensagens`. Basta salvar `{ senderName, senderAvatar, zapi_message_id }`.
+## Nenhuma migration necessária
+Os campos já existem. A mudança é apenas na lógica de como os dados são salvos.
 
 ## Arquivos alterados
-| Arquivo | Tipo |
-|---------|------|
-| `src/components/conversas/MessageBubble.tsx` | Alterado |
-| `src/components/conversas/ChatPanel.tsx` | Alterado |
-| `src/pages/Conversas.tsx` | Alterado (tipo + sync) |
-| `supabase/functions/zapi-webhook/index.ts` | Alterado |
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/zapi-webhook/index.ts` | Diferenciar grupo vs individual no nome do contato e ultimo_texto |
+| `src/pages/Conversas.tsx` | Permitir sync de grupos + prefixar ultimo_texto com remetente |
 

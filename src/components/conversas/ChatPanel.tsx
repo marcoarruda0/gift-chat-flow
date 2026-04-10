@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, Phone, X } from "lucide-react";
-import { MessageSquare } from "lucide-react";
+import { ArrowLeft, X, MessageSquare } from "lucide-react";
 
 interface Mensagem {
   id: string;
@@ -21,6 +20,8 @@ interface ChatPanelProps {
   contatoAvatar?: string | null;
   mensagens: Mensagem[];
   onSend: (text: string) => void;
+  onSendAudio?: (blob: Blob) => void;
+  onSendAttachment?: (file: File) => void;
   onClose: () => void;
   onBack?: () => void;
   loading: boolean;
@@ -36,7 +37,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onClose, onBack, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, loading }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -46,7 +47,6 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background">
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card shrink-0">
         {onBack && (
           <Button size="icon" variant="ghost" className="h-8 w-8 md:hidden" onClick={onBack}>
@@ -66,7 +66,6 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
         </Button>
       </div>
 
-      {/* Messages */}
       <ScrollArea className="flex-1 px-4 py-3">
         {loading ? (
           <div className="text-center text-sm text-muted-foreground py-8">Carregando mensagens...</div>
@@ -74,14 +73,13 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
           <div className="text-center text-sm text-muted-foreground py-8">Nenhuma mensagem ainda</div>
         ) : (
           mensagens.map(m => (
-            <MessageBubble key={m.id} conteudo={m.conteudo} remetente={m.remetente} createdAt={m.created_at} />
+            <MessageBubble key={m.id} conteudo={m.conteudo} remetente={m.remetente} tipo={m.tipo} createdAt={m.created_at} />
           ))
         )}
         <div ref={bottomRef} />
       </ScrollArea>
 
-      {/* Input */}
-      <ChatInput onSend={onSend} />
+      <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
     </div>
   );
 }

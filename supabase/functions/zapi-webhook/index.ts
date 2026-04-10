@@ -50,8 +50,39 @@ Deno.serve(async (req) => {
 
     const tenantId = zapiConfig.tenant_id;
 
+    // Detect message type and content
+    let messageText: string | null = null;
+    let messageType = "texto";
+    let messageContent: string | null = null;
+
+    if (payload.text?.message) {
+      messageText = payload.text.message;
+      messageType = "texto";
+      messageContent = payload.text.message;
+    } else if (payload.image) {
+      messageType = "imagem";
+      messageContent = payload.image.imageUrl || payload.image.thumbnailUrl || "";
+      messageText = payload.image.caption || "📷 Imagem";
+    } else if (payload.document) {
+      messageType = "documento";
+      messageContent = payload.document.documentUrl || "";
+      messageText = "📎 " + (payload.document.fileName || "Documento");
+    } else if (payload.audio) {
+      messageType = "audio";
+      messageContent = payload.audio.audioUrl || "";
+      messageText = "🎤 Áudio";
+    } else if (payload.video) {
+      messageType = "imagem";
+      messageContent = payload.video.videoUrl || "";
+      messageText = "🎬 Vídeo";
+    } else if (payload.sticker) {
+      messageType = "imagem";
+      messageContent = payload.sticker.stickerUrl || "";
+      messageText = "Sticker";
+    }
+
     // Handle incoming message (on-message-received)
-    if (payload.phone && payload.text?.message) {
+    if (payload.phone && messageContent) {
       const phone = payload.phone.replace(/\D/g, "");
       const messageText = payload.text.message;
       const isGroup = payload.isGroup === true || phone.includes("g.us");

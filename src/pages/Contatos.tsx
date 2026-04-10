@@ -40,6 +40,7 @@ const emptyForm: ContatoForm = {
 export default function Contatos() {
   const { profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -125,6 +126,36 @@ export default function Contatos() {
     setEditingId(null);
     setForm(emptyForm);
     setDialogOpen(true);
+  };
+
+  const startConversa = async (contatoId: string) => {
+    if (!profile?.tenant_id) return;
+    // Check existing open conversation
+    const { data: existing } = await supabase
+      .from("conversas")
+      .select("id")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("contato_id", contatoId)
+      .eq("status", "aberta")
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      navigate(`/conversas?id=${existing.id}`);
+      return;
+    }
+
+    const { data: nova, error } = await supabase
+      .from("conversas")
+      .insert({ tenant_id: profile.tenant_id, contato_id: contatoId, status: "aberta" })
+      .select("id")
+      .single();
+
+    if (error) {
+      toast({ title: "Erro ao criar conversa", variant: "destructive" });
+      return;
+    }
+    navigate(`/conversas?id=${nova.id}`);
   };
 
   const exportCSV = () => {

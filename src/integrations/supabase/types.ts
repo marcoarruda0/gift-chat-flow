@@ -62,6 +62,42 @@ export type Database = {
           },
         ]
       }
+      conhecimento_base: {
+        Row: {
+          ativo: boolean | null
+          categoria: string | null
+          conteudo: string
+          created_at: string | null
+          id: string
+          tags: string[] | null
+          tenant_id: string
+          titulo: string
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          categoria?: string | null
+          conteudo: string
+          created_at?: string | null
+          id?: string
+          tags?: string[] | null
+          tenant_id: string
+          titulo: string
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          categoria?: string | null
+          conteudo?: string
+          created_at?: string | null
+          id?: string
+          tags?: string[] | null
+          tenant_id?: string
+          titulo?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       contatos: {
         Row: {
           avatar_url: string | null

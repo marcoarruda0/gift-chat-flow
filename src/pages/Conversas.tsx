@@ -242,6 +242,7 @@ export default function Conversas() {
           <ChatPanel
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
+            contatoAvatar={selected.contato_avatar}
             mensagens={mensagens}
             onSend={handleSend}
             onClose={handleClose}

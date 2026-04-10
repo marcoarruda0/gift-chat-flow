@@ -325,11 +325,17 @@ export default function Conversas() {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${session.session?.access_token}`,
               },
-              body: JSON.stringify({ endpoint: `chat-messages/${phone}`, method: "GET" }),
+              body: JSON.stringify({ endpoint: `load-messages-chat-phone/${phone}`, method: "GET" }),
             }
           );
           const rawMsgs = await msgRes.json();
-          const msgs = Array.isArray(rawMsgs) ? rawMsgs.slice(-50) : [];
+
+          // Handle multi-device incompatibility gracefully
+          if (rawMsgs?.error || !Array.isArray(rawMsgs)) {
+            console.warn(`Skipping message import for ${phone}:`, rawMsgs?.error || "invalid response");
+            continue;
+          }
+          const msgs = rawMsgs.slice(-50);
 
           for (const msg of msgs) {
             const zapiId = msg.messageId || msg.id?.id;

@@ -205,7 +205,7 @@ export default function Conversas() {
     if (error) { toast.error("Erro ao enviar mensagem"); return; }
 
     await supabase.from("conversas").update({
-      ultimo_texto: text,
+      ultimo_texto: "Você: " + text.slice(0, 90),
       ultima_msg_at: new Date().toISOString(),
     }).eq("id", selectedId);
 
@@ -318,14 +318,15 @@ export default function Conversas() {
       let msgsImported = 0;
       const chatsToProcess = chats.filter((chat: any) => {
         const phone = chat.phone?.replace(/\D/g, "");
-        return phone && !phone.includes("@g.us");
+        return !!phone;
       });
       const totalChats = chatsToProcess.length;
 
       for (let i = 0; i < totalChats; i++) {
         const chat = chatsToProcess[i];
         const phone = chat.phone.replace(/\D/g, "");
-
+        const isGroup = phone.includes("g.us") || chat.isGroup === true;
+        const chatName = isGroup ? (chat.name || "Grupo") : (chat.name || phone);
         toast.loading(`Importando ${i + 1}/${totalChats}...`, { id: "sync-progress" });
 
         // Find or create contact
@@ -341,19 +342,21 @@ export default function Conversas() {
             .from("contatos")
             .insert({
               tenant_id: tenantId,
-              nome: chat.name || phone,
+              nome: chatName,
               telefone: phone,
               avatar_url: chat.profilePicture || null,
             })
             .select("id")
             .single();
           contato = novo;
-        } else if (chat.profilePicture) {
-          await supabase
-            .from("contatos")
-            .update({ avatar_url: chat.profilePicture })
-            .eq("id", contato.id);
-        }
+        } else {
+          // Update avatar and name (for groups, name may change)
+          const updateData: any = {};
+          if (chat.profilePicture) updateData.avatar_url = chat.profilePicture;
+          if (isGroup && chat.name) updateData.nome = chat.name;
+          if (Object.keys(updateData).length > 0) {
+            await supabase.from("contatos").update(updateData).eq("id", contato.id);
+          }
 
         if (!contato) continue;
 

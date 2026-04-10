@@ -54,7 +54,10 @@ Deno.serve(async (req) => {
     if (payload.phone && payload.text?.message) {
       const phone = payload.phone.replace(/\D/g, "");
       const messageText = payload.text.message;
+      const isGroup = payload.isGroup === true || phone.includes("g.us");
+      const groupName = payload.chatName || "Grupo";
       const senderName = payload.senderName || payload.chatName || phone;
+      const contactName = isGroup ? groupName : senderName;
 
       // Find or create contact
       let { data: contato } = await supabase
@@ -69,7 +72,7 @@ Deno.serve(async (req) => {
           .from("contatos")
           .insert({
             tenant_id: tenantId,
-            nome: senderName,
+            nome: contactName,
             telefone: phone,
           })
           .select("id")
@@ -127,10 +130,11 @@ Deno.serve(async (req) => {
       });
 
       // Update conversation
+      const previewText = isGroup ? `${senderName}: ${messageText}`.slice(0, 100) : messageText;
       await supabase
         .from("conversas")
         .update({
-          ultimo_texto: messageText,
+          ultimo_texto: previewText,
           ultima_msg_at: new Date().toISOString(),
           nao_lidas: (await supabase
             .from("conversas")
@@ -140,6 +144,14 @@ Deno.serve(async (req) => {
             .then(r => (r.data?.nao_lidas || 0) + 1)),
         })
         .eq("id", conversa.id);
+
+      // Update group name if changed
+      if (isGroup && payload.chatName) {
+        await supabase
+          .from("contatos")
+          .update({ nome: payload.chatName })
+          .eq("id", contato.id);
+      }
 
       // Update avatar if available
       if (payload.photo) {

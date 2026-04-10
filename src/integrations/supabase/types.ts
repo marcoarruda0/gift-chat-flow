@@ -358,6 +358,50 @@ export type Database = {
           },
         ]
       }
+      ia_config: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          instrucoes_extras: string | null
+          nome_assistente: string
+          tenant_id: string
+          tom: Database["public"]["Enums"]["ia_tom"]
+          updated_at: string
+          usar_emojis: Database["public"]["Enums"]["ia_emojis"]
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          instrucoes_extras?: string | null
+          nome_assistente?: string
+          tenant_id: string
+          tom?: Database["public"]["Enums"]["ia_tom"]
+          updated_at?: string
+          usar_emojis?: Database["public"]["Enums"]["ia_emojis"]
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          instrucoes_extras?: string | null
+          nome_assistente?: string
+          tenant_id?: string
+          tom?: Database["public"]["Enums"]["ia_tom"]
+          updated_at?: string
+          usar_emojis?: Database["public"]["Enums"]["ia_emojis"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ia_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mensagens: {
         Row: {
           conteudo: string
@@ -545,6 +589,8 @@ export type Database = {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
       giftback_status: "ativo" | "usado" | "expirado"
       giftback_tipo: "credito" | "debito" | "expiracao"
+      ia_emojis: "nao" | "pouco" | "sim"
+      ia_tom: "formal" | "amigavel" | "casual"
       mensagem_tipo: "texto" | "imagem" | "audio" | "video" | "documento"
       remetente_tipo: "contato" | "atendente" | "bot"
     }
@@ -677,6 +723,8 @@ export const Constants = {
       app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
       giftback_status: ["ativo", "usado", "expirado"],
       giftback_tipo: ["credito", "debito", "expiracao"],
+      ia_emojis: ["nao", "pouco", "sim"],
+      ia_tom: ["formal", "amigavel", "casual"],
       mensagem_tipo: ["texto", "imagem", "audio", "video", "documento"],
       remetente_tipo: ["contato", "atendente", "bot"],
     },

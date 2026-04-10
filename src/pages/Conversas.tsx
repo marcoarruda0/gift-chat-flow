@@ -12,6 +12,7 @@ interface ConversaRow {
   id: string;
   contato_nome: string;
   contato_telefone: string | null;
+  contato_avatar: string | null;
   ultimo_texto: string | null;
   ultima_msg_at: string | null;
   nao_lidas: number;

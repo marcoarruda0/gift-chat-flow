@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConversasList } from "@/components/conversas/ConversasList";
 import { ChatPanel, ChatPanelEmpty } from "@/components/conversas/ChatPanel";
+import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 
@@ -27,11 +29,13 @@ interface MensagemRow {
 export default function Conversas() {
   const { profile } = useAuth();
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [conversas, setConversas] = useState<ConversaRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<MensagemRow[]>([]);
   const [loadingConversas, setLoadingConversas] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [novaConversaOpen, setNovaConversaOpen] = useState(false);
 
   const tenantId = profile?.tenant_id;
 
@@ -60,6 +64,15 @@ export default function Conversas() {
   }, [tenantId]);
 
   useEffect(() => { fetchConversas(); }, [fetchConversas]);
+
+  // Read ?id= query param to pre-select conversation
+  useEffect(() => {
+    const idParam = searchParams.get("id");
+    if (idParam && !selectedId) {
+      setSelectedId(idParam);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, selectedId, setSearchParams]);
 
   // Fetch mensagens for selected conversa
   const fetchMensagens = useCallback(async (conversaId: string) => {
@@ -114,6 +127,44 @@ export default function Conversas() {
     };
   }, [tenantId, selectedId, fetchConversas]);
 
+  // Create or find existing conversation for a contact
+  const criarConversa = async (contatoId: string) => {
+    if (!tenantId) return;
+
+    // Check for existing open conversation
+    const { data: existing } = await supabase
+      .from("conversas")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("contato_id", contatoId)
+      .eq("status", "aberta")
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      setSelectedId(existing.id);
+      return;
+    }
+
+    // Create new conversation
+    const { data: nova, error } = await supabase
+      .from("conversas")
+      .insert({
+        tenant_id: tenantId,
+        contato_id: contatoId,
+        status: "aberta",
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      toast.error("Erro ao criar conversa");
+      return;
+    }
+    await fetchConversas();
+    setSelectedId(nova.id);
+  };
+
   // Send message
   const handleSend = async (text: string) => {
     if (!selectedId || !tenantId) return;
@@ -151,6 +202,7 @@ export default function Conversas() {
             conversas={conversas}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onNewConversa={() => setNovaConversaOpen(true)}
             loading={loadingConversas}
           />
         </div>
@@ -170,6 +222,11 @@ export default function Conversas() {
           !isMobile && <ChatPanelEmpty />
         )
       )}
+      <NovaConversaDialog
+        open={novaConversaOpen}
+        onOpenChange={setNovaConversaOpen}
+        onSelectContato={criarConversa}
+      />
     </div>
   );
 }

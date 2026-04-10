@@ -18,12 +18,13 @@ interface ConversasListProps {
   conversas: Conversa[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onNewConversa?: () => void;
   loading: boolean;
 }
 
 const FILTROS = ["Todas", "Abertas", "Minhas", "Fechadas"] as const;
 
-export function ConversasList({ conversas, selectedId, onSelect, loading }: ConversasListProps) {
+export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, loading }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<typeof FILTROS[number]>("Todas");
 
@@ -39,7 +40,7 @@ export function ConversasList({ conversas, selectedId, onSelect, loading }: Conv
       <div className="p-3 border-b border-border space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground">Conversas</h2>
-          <Button size="icon" variant="ghost" className="h-8 w-8">
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onNewConversa}>
             <MessageSquarePlus className="h-4 w-4" />
           </Button>
         </div>

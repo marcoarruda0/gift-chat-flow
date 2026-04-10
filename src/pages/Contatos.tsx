@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Upload, Download, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Upload, Download, Pencil, Trash2, MessageSquarePlus } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface ContatoForm {
@@ -39,6 +40,7 @@ const emptyForm: ContatoForm = {
 export default function Contatos() {
   const { profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -124,6 +126,36 @@ export default function Contatos() {
     setEditingId(null);
     setForm(emptyForm);
     setDialogOpen(true);
+  };
+
+  const startConversa = async (contatoId: string) => {
+    if (!profile?.tenant_id) return;
+    // Check existing open conversation
+    const { data: existing } = await supabase
+      .from("conversas")
+      .select("id")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("contato_id", contatoId)
+      .eq("status", "aberta")
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      navigate(`/conversas?id=${existing.id}`);
+      return;
+    }
+
+    const { data: nova, error } = await supabase
+      .from("conversas")
+      .insert({ tenant_id: profile.tenant_id, contato_id: contatoId, status: "aberta" })
+      .select("id")
+      .single();
+
+    if (error) {
+      toast({ title: "Erro ao criar conversa", variant: "destructive" });
+      return;
+    }
+    navigate(`/conversas?id=${nova.id}`);
   };
 
   const exportCSV = () => {
@@ -266,6 +298,9 @@ export default function Contatos() {
                   <TableCell>R$ {Number(c.saldo_giftback || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startConversa(c.id)} title="Iniciar conversa">
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

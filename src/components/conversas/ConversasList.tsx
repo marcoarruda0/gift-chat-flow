@@ -18,6 +18,7 @@ interface ConversasListProps {
   conversas: Conversa[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onNewConversa?: () => void;
   loading: boolean;
 }
 

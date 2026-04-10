@@ -298,6 +298,9 @@ export default function Contatos() {
                   <TableCell>R$ {Number(c.saldo_giftback || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startConversa(c.id)} title="Iniciar conversa">
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

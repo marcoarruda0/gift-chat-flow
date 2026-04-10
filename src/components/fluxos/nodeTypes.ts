@@ -1,4 +1,4 @@
-import { Zap, MessageSquare, GitBranch, Clock, Bot, Tag, Webhook, UserCheck } from "lucide-react";
+import { Zap, MessageSquare, GitBranch, Clock, Bot, Tag, Webhook, UserCheck, Wallet, Gift, CalendarClock } from "lucide-react";
 
 export const NODE_TYPE_CONFIG = {
   gatilho: {
@@ -56,6 +56,27 @@ export const NODE_TYPE_CONFIG = {
     color: "hsl(330, 81%, 60%)",
     bgColor: "hsl(330, 80%, 96%)",
     borderColor: "hsl(330, 81%, 60%)",
+  },
+  consultar_saldo: {
+    label: "Consultar Saldo",
+    icon: Wallet,
+    color: "hsl(173, 80%, 36%)",
+    bgColor: "hsl(173, 80%, 95%)",
+    borderColor: "hsl(173, 80%, 36%)",
+  },
+  notificar_credito: {
+    label: "Notificar Crédito",
+    icon: Gift,
+    color: "hsl(152, 69%, 41%)",
+    bgColor: "hsl(152, 69%, 95%)",
+    borderColor: "hsl(152, 69%, 41%)",
+  },
+  lembrete_validade: {
+    label: "Lembrete Validade",
+    icon: CalendarClock,
+    color: "hsl(38, 92%, 50%)",
+    bgColor: "hsl(38, 92%, 95%)",
+    borderColor: "hsl(38, 92%, 50%)",
   },
 } as const;
 

@@ -100,6 +100,12 @@ function getPreview(data: FlowNodeData): string {
       return cfg.url ? cfg.url.substring(0, 40) : "URL...";
     case "transferir":
       return cfg.departamento || "Departamento...";
+    case "consultar_saldo":
+      return `Saldo → ${cfg.variavel || "{{saldo_giftback}}"}`;
+    case "notificar_credito":
+      return cfg.template ? cfg.template.substring(0, 40) : "Template crédito...";
+    case "lembrete_validade":
+      return cfg.dias_antes ? `${cfg.dias_antes} dias antes` : "Dias antes...";
     default:
       return "Configurar...";
   }

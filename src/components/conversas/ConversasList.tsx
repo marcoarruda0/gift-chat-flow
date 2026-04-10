@@ -77,7 +77,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
           ))}
         </div>
       </div>
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
         ) : filtered.length === 0 ? (
@@ -100,7 +100,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
             />
           ))
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

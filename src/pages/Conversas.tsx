@@ -476,6 +476,8 @@ export default function Conversas() {
             contatoAvatar={selected.contato_avatar}
             mensagens={mensagens}
             onSend={handleSend}
+            onSendAudio={handleSendAudio}
+            onSendAttachment={handleSendAttachment}
             onClose={handleClose}
             onBack={isMobile ? () => setSelectedId(null) : undefined}
             loading={loadingMsgs}

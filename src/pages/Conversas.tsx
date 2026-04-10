@@ -168,7 +168,29 @@ export default function Conversas() {
     setSelectedId(nova.id);
   };
 
-  // Send message (local + Z-API)
+  // Helper: upload file to storage
+  const uploadToStorage = async (file: Blob, filename: string) => {
+    const path = `${tenantId}/${Date.now()}_${filename}`;
+    const { data, error } = await supabase.storage.from("chat-media").upload(path, file);
+    if (error) throw error;
+    return supabase.storage.from("chat-media").getPublicUrl(data.path).data.publicUrl;
+  };
+
+  // Helper: call Z-API proxy
+  const callZapi = async (endpoint: string, method: string, data?: any) => {
+    const { data: session } = await supabase.auth.getSession();
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    return fetch(`https://${projectId}.supabase.co/functions/v1/zapi-proxy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session?.access_token}`,
+      },
+      body: JSON.stringify({ endpoint, method, data }),
+    });
+  };
+
+  // Send text message
   const handleSend = async (text: string) => {
     if (!selectedId || !tenantId) return;
     const { error } = await supabase.from("mensagens").insert({
@@ -188,29 +210,74 @@ export default function Conversas() {
     // Send via Z-API if contact has phone
     if (selected?.contato_telefone) {
       try {
-        const { data: session } = await supabase.auth.getSession();
-        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-        await fetch(
-          `https://${projectId}.supabase.co/functions/v1/zapi-proxy`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session.session?.access_token}`,
-            },
-            body: JSON.stringify({
-              endpoint: "send-text",
-              method: "POST",
-              data: {
-                phone: selected.contato_telefone.replace(/\D/g, ""),
-                message: text,
-              },
-            }),
-          }
-        );
+        await callZapi("send-text", "POST", {
+          phone: selected.contato_telefone.replace(/\D/g, ""),
+          message: text,
+        });
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);
       }
+    }
+  };
+
+  // Send audio message
+  const handleSendAudio = async (blob: Blob) => {
+    if (!selectedId || !tenantId) return;
+    try {
+      const url = await uploadToStorage(blob, "audio.ogg");
+      await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: url,
+        remetente: "atendente" as any,
+        tipo: "audio" as any,
+      });
+      await supabase.from("conversas").update({
+        ultimo_texto: "🎤 Áudio",
+        ultima_msg_at: new Date().toISOString(),
+      }).eq("id", selectedId);
+
+      if (selected?.contato_telefone) {
+        await callZapi("send-audio", "POST", {
+          phone: selected.contato_telefone.replace(/\D/g, ""),
+          audio: url,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      toast.error("Erro ao enviar áudio");
+    }
+  };
+
+  // Send attachment (image or document)
+  const handleSendAttachment = async (file: File) => {
+    if (!selectedId || !tenantId) return;
+    try {
+      const isImage = file.type.startsWith("image/");
+      const tipo = isImage ? "imagem" : "documento";
+      const url = await uploadToStorage(file, file.name);
+
+      await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: url,
+        remetente: "atendente" as any,
+        tipo: tipo as any,
+      });
+      await supabase.from("conversas").update({
+        ultimo_texto: isImage ? "📷 Imagem" : "📎 Documento",
+        ultima_msg_at: new Date().toISOString(),
+      }).eq("id", selectedId);
+
+      if (selected?.contato_telefone) {
+        const phone = selected.contato_telefone.replace(/\D/g, "");
+        const endpoint = isImage ? "send-image" : "send-document";
+        const data = isImage
+          ? { phone, image: url, caption: "" }
+          : { phone, document: url, fileName: file.name };
+        await callZapi(endpoint, "POST", data).catch(() => {});
+      }
+    } catch (e) {
+      toast.error("Erro ao enviar anexo");
     }
   };
 
@@ -409,6 +476,8 @@ export default function Conversas() {
             contatoAvatar={selected.contato_avatar}
             mensagens={mensagens}
             onSend={handleSend}
+            onSendAudio={handleSendAudio}
+            onSendAttachment={handleSendAttachment}
             onClose={handleClose}
             onBack={isMobile ? () => setSelectedId(null) : undefined}
             loading={loadingMsgs}

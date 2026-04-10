@@ -356,6 +356,7 @@ export default function Conversas() {
           if (isGroup && chat.name) updateData.nome = chat.name;
           if (Object.keys(updateData).length > 0) {
             await supabase.from("contatos").update(updateData).eq("id", contato.id);
+          }
         }
 
         if (!contato) continue;

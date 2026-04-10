@@ -1,99 +1,45 @@
 
 
-# Módulo Base de Conhecimento
+# Corrigir Grupos Duplicados + Estilizar Ícones WhatsApp
 
-## Objetivo
-Criar um módulo onde o tenant cadastra informações (perguntas/respostas, documentos, textos) que a IA usará para responder automaticamente nas conversas do WhatsApp.
+## Problemas
 
-## Arquitetura
+### 1. Grupos separados/duplicados
+**Causa raiz no webhook (linha 86-88):** O código faz `phone.replace(/\D/g, "")` que remove letras e pontos, transformando `5511999@g.us` em `5511999gus`. Depois verifica `phone.includes("g.us")` que **nunca é true** porque os caracteres `.` já foram removidos. Resultado: grupos não são detectados como grupos, e o `senderName` (nome de quem mandou a msg) é usado como nome do contato em vez do nome do grupo — criando um contato diferente para cada pessoa que envia mensagem no grupo.
 
-```text
-┌─────────────────────────────────────────────┐
-│  UI: /conhecimento                          │
-│  - Lista de artigos/entradas                │
-│  - CRUD: título, conteúdo, categoria, tags  │
-│  - Busca/filtro                             │
-└──────────────┬──────────────────────────────┘
-               │
-┌──────────────▼──────────────────────────────┐
-│  Tabela: conhecimento_base                  │
-│  id, tenant_id, titulo, conteudo,           │
-│  categoria, tags[], ativo, created/updated  │
-└──────────────┬──────────────────────────────┘
-               │
-┌──────────────▼──────────────────────────────┐
-│  Edge Function: ai-responder                │
-│  Recebe pergunta → busca artigos do tenant  │
-│  → monta contexto → chama Lovable AI       │
-│  → retorna resposta                         │
-└─────────────────────────────────────────────┘
-```
+**Correção:** Detectar grupo **antes** de limpar o telefone, usando o telefone original `payload.phone`.
+
+### 2. Badge de não lidas (estilo WhatsApp)
+Atualmente usa um `Badge` genérico. Na referência do WhatsApp, é um círculo verde com número branco.
+
+### 3. Horário da última mensagem
+Já está implementado (`formatTime` no `ConversaItem`), mas o estilo pode ser melhorado. Na referência do WhatsApp, o horário fica com cor verde quando há mensagens não lidas.
 
 ## Alterações
 
-### 1. Migration — Tabela `conhecimento_base`
-```sql
-CREATE TABLE public.conhecimento_base (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id uuid NOT NULL,
-  titulo text NOT NULL,
-  conteudo text NOT NULL,
-  categoria text DEFAULT 'geral',
-  tags text[] DEFAULT '{}',
-  ativo boolean DEFAULT true,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
+### `supabase/functions/zapi-webhook/index.ts`
+- Mover a detecção de grupo para **antes** do `replace(/\D/g, "")`:
+  ```
+  const rawPhone = payload.phone || "";
+  const isGroup = payload.isGroup === true || rawPhone.includes("@g.us");
+  const phone = rawPhone.replace(/\D/g, "");
+  ```
+- Buscar contato existente pelo telefone original (sem strip) para grupos, mantendo strip para individuais
+- Garantir que o nome do contato para grupo seja sempre `payload.chatName` ou `payload.senderName`
 
-ALTER TABLE public.conhecimento_base ENABLE ROW LEVEL SECURITY;
+### `src/components/conversas/ConversaItem.tsx`
+- Badge não lidas: círculo verde (#25D366) com texto branco, tamanho similar ao WhatsApp
+- Horário: cor verde quando `naoLidas > 0`, cor muted quando zero
+- Layout alinhado com a referência (horário à direita do nome, badge à direita do texto)
 
--- RLS: tenant isolation
-CREATE POLICY "tenant_view_kb" ON public.conhecimento_base FOR SELECT USING (tenant_id = get_user_tenant_id(auth.uid()));
-CREATE POLICY "tenant_insert_kb" ON public.conhecimento_base FOR INSERT WITH CHECK (tenant_id = get_user_tenant_id(auth.uid()));
-CREATE POLICY "tenant_update_kb" ON public.conhecimento_base FOR UPDATE USING (tenant_id = get_user_tenant_id(auth.uid()));
-CREATE POLICY "tenant_delete_kb" ON public.conhecimento_base FOR DELETE USING (tenant_id = get_user_tenant_id(auth.uid()));
+### `src/pages/Conversas.tsx` (sync)
+- Mesma correção do `g.us`: detectar grupo antes do `replace(/\D/g, "")` na função `handleSync`
+- Para grupos, não limpar o telefone (manter `@g.us` intacto) para que o contato seja encontrado corretamente
 
--- Trigger updated_at
-CREATE TRIGGER update_conhecimento_base_updated_at
-  BEFORE UPDATE ON public.conhecimento_base
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-```
-
-### 2. Página `src/pages/Conhecimento.tsx`
-- Layout com lista de artigos à esquerda e editor à direita (ou modal)
-- Cards com título, categoria (badge), status ativo/inativo
-- Formulário: título, conteúdo (textarea grande), categoria (select), tags
-- Busca por texto no título/conteúdo
-- Toggle ativo/inativo por artigo
-- Botão de excluir com confirmação
-- Usa `useQuery`/`useMutation` seguindo padrão do GiftbackConfig
-
-### 3. Edge Function `supabase/functions/ai-responder/index.ts`
-- Recebe `{ pergunta, tenant_id }` via POST
-- Busca todos os artigos ativos do tenant (`conhecimento_base` WHERE `ativo = true`)
-- Monta prompt com contexto dos artigos
-- Chama Lovable AI Gateway (google/gemini-2.5-flash) para gerar resposta
-- Retorna `{ resposta, fontes: [títulos dos artigos usados] }`
-- Será chamada futuramente pelo webhook para auto-resposta (integração posterior)
-
-### 4. Rota no `App.tsx`
-- Trocar o `Placeholder` do `/conhecimento` pelo novo componente `Conhecimento`
-
-### 5. Atualizar sidebar
-- O item "Base de Conhecimento" já existe no `AppSidebar.tsx`, apenas a rota precisa apontar para o componente real
-
-## Categorias padrão sugeridas
-- Produtos/Serviços
-- Políticas (troca, devolução, garantia)
-- Horários/Localização
-- Pagamentos
-- FAQ Geral
-
-## Arquivos criados/alterados
-| Arquivo | Tipo |
-|---------|------|
-| Migration (conhecimento_base) | Novo |
-| `src/pages/Conhecimento.tsx` | Novo |
-| `supabase/functions/ai-responder/index.ts` | Novo |
-| `src/App.tsx` | Alterado (rota) |
+## Arquivos alterados
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/zapi-webhook/index.ts` | Fix detecção de grupo (g.us antes do replace) |
+| `src/components/conversas/ConversaItem.tsx` | Badge verde estilo WhatsApp + horário colorido |
+| `src/pages/Conversas.tsx` | Fix sync de grupos (mesma correção g.us) |
 

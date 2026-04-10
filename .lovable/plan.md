@@ -1,55 +1,72 @@
 
 
-# Integrar AI Responder no Webhook WhatsApp
+# Configuração de Personalidade da IA por Tenant
 
 ## Objetivo
-Após salvar a mensagem do contato, o webhook chamará a edge function `ai-responder` para gerar uma resposta automática baseada na base de conhecimento e enviará essa resposta de volta via Z-API.
+Permitir que cada tenant configure o tom, estilo e comportamento da IA (uso de emojis, formalidade, nome do assistente, instruções personalizadas) através de uma página de configurações. Essas preferências serão injetadas no system prompt do webhook.
 
-## Regras de Ativação
-- **Somente mensagens de texto** (tipo "texto") — não responder a imagens, áudios, etc.
-- **Somente conversas individuais** — não responder em grupos (`isGroup = false`)
-- **Somente se `fromMe = false`** — não responder a mensagens enviadas pelo próprio número
-- **Somente se houver artigos ativos na base** — se a IA retornar que não tem informação, não envia nada (evita respostas inúteis)
-
-## Fluxo
+## Arquitetura
 
 ```text
-Mensagem recebida (webhook)
-  → Salva no banco (já existe)
-  → É texto + individual + não fromMe?
-    → Sim → Chama ai-responder com { pergunta, tenant_id }
-      → IA retornou resposta válida?
-        → Sim → Busca zapi_config do tenant (instance_id, token, client_token)
-          → Envia resposta via Z-API POST /send-text
-          → Salva resposta como mensagem do "atendente" no banco
-          → Atualiza ultimo_texto da conversa
-        → Não → Não faz nada
-    → Não → Não faz nada
+┌──────────────────────────────────┐
+│ UI: /configuracoes/ia            │
+│ - Nome do assistente             │
+│ - Tom (formal/amigável/casual)   │
+│ - Usar emojis? (sim/não/pouco)   │
+│ - Instruções extras (textarea)   │
+└──────────┬───────────────────────┘
+           │
+┌──────────▼───────────────────────┐
+│ Tabela: ia_config                │
+│ tenant_id, nome_assistente,      │
+│ tom, usar_emojis, instrucoes,    │
+│ ativo (on/off geral da IA)       │
+└──────────┬───────────────────────┘
+           │
+┌──────────▼───────────────────────┐
+│ zapi-webhook                     │
+│ Busca ia_config do tenant        │
+│ → Monta system prompt dinâmico   │
+│ → Resposta no tom configurado    │
+└──────────────────────────────────┘
 ```
 
 ## Alterações
 
-### `supabase/functions/zapi-webhook/index.ts`
-Após o bloco `console.log("Message saved for conversa:", conversa.id)` (linha 195), adicionar:
+### 1. Migration — Tabela `ia_config`
+- `id`, `tenant_id` (unique), `nome_assistente` (default "Assistente Virtual"), `tom` (enum: formal, amigavel, casual), `usar_emojis` (enum: nao, pouco, sim), `instrucoes_extras` (text livre para instruções customizadas), `ativo` (boolean — liga/desliga IA), `created_at`, `updated_at`
+- RLS por `tenant_id` (mesmo padrão das outras tabelas)
+- Trigger `updated_at`
 
-1. **Verificar condições**: `!isGroup && !payload.fromMe && messageType === "texto"`
-2. **Chamar ai-responder** internamente (função direta, sem HTTP — reutilizar a lógica inline para evitar latência de chamada entre functions):
-   - Buscar artigos ativos do tenant na `conhecimento_base`
-   - Se não houver artigos → pular
-   - Montar prompt e chamar Lovable AI Gateway
-   - Se a resposta indicar "não tenho essa informação" → pular (não enviar)
-3. **Enviar via Z-API**:
-   - Buscar `instance_id`, `token`, `client_token` da `zapi_config`
-   - POST para `https://api.z-api.io/instances/{id}/token/{token}/send-text` com `{ phone, message }`
-4. **Salvar resposta no banco**:
-   - Insert em `mensagens` com `remetente: "atendente"`, `tipo: "texto"`
-   - Update `conversas.ultimo_texto` com a resposta
+### 2. Página `src/pages/IAConfig.tsx`
+- Campo: Nome do assistente (ex: "Bia", "Assistente Loja X")
+- Select: Tom — Formal / Amigável / Casual
+- Select: Emojis — Não usar / Usar pouco / Usar bastante
+- Toggle: IA ativa (on/off)
+- Textarea: Instruções extras (ex: "Sempre ofereça ajuda de um atendente humano no final", "Nunca fale de preços", "Chame o cliente pelo nome")
+- Botão salvar com feedback via toast
 
-### Decisão: Inline vs chamada HTTP
-A lógica da IA será implementada **inline no webhook** (copiando a lógica do ai-responder) para evitar latência extra de uma chamada HTTP entre edge functions. O `ai-responder` continuará existindo para uso manual/teste pela UI.
+### 3. Webhook `zapi-webhook/index.ts`
+- Antes de montar o system prompt, buscar `ia_config` do tenant
+- Se `ativo = false`, pular auto-resposta
+- Montar prompt dinâmico baseado nas configurações:
+  - Tom formal → "Responda de forma profissional e formal"
+  - Tom amigável → "Responda de forma cordial e próxima, como um atendente simpático"
+  - Tom casual → "Responda de forma descontraída e informal"
+  - Emojis → instrução sobre uso de emojis
+  - Nome → "Você se chama {nome}"
+  - Instruções extras → adicionadas ao prompt
 
-## Arquivos alterados
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/zapi-webhook/index.ts` | Adicionar auto-resposta IA após salvar mensagem |
+### 4. Rota + Sidebar
+- Rota `/configuracoes/ia` no `App.tsx`
+- Link no `AppSidebar.tsx` dentro do grupo Configurações
+
+## Arquivos criados/alterados
+| Arquivo | Tipo |
+|---------|------|
+| Migration (ia_config) | Novo |
+| `src/pages/IAConfig.tsx` | Novo |
+| `supabase/functions/zapi-webhook/index.ts` | Alterado (prompt dinâmico) |
+| `src/App.tsx` | Alterado (rota) |
+| `src/components/AppSidebar.tsx` | Alterado (link) |
 

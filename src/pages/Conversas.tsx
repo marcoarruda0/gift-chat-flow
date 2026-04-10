@@ -324,8 +324,7 @@ export default function Conversas() {
         const rawPhone = chat.phone || "";
         const isGroupChat = chat.isGroup === true || rawPhone.includes("@g.us");
         const phone = isGroupChat ? rawPhone : rawPhone.replace(/\D/g, "");
-        const isGroup = phone.includes("g.us") || chat.isGroup === true;
-        const chatName = isGroup ? (chat.name || "Grupo") : (chat.name || phone);
+        const chatName = isGroupChat ? (chat.name || "Grupo") : (chat.name || phone);
         toast.loading(`Importando ${i + 1}/${totalChats}...`, { id: "sync-progress" });
 
         // Find or create contact

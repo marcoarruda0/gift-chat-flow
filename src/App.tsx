@@ -14,6 +14,7 @@ import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
 import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
+import ZapiConfig from "@/pages/ZapiConfig";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/giftback/caixa" element={<ProtectedRoute><GiftbackCaixa /></ProtectedRoute>} />
       <Route path="/conhecimento" element={<ProtectedRoute><Placeholder title="Base de Conhecimento" /></ProtectedRoute>} />
       <Route path="/configuracoes" element={<ProtectedRoute><Placeholder title="Configurações" /></ProtectedRoute>} />
+      <Route path="/configuracoes/zapi" element={<ProtectedRoute><ZapiConfig /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Placeholder title="Admin Master" /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>

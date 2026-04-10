@@ -64,6 +64,7 @@ export type Database = {
       }
       contatos: {
         Row: {
+          avatar_url: string | null
           cpf: string | null
           created_at: string
           data_nascimento: string | null
@@ -79,6 +80,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          avatar_url?: string | null
           cpf?: string | null
           created_at?: string
           data_nascimento?: string | null
@@ -94,6 +96,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          avatar_url?: string | null
           cpf?: string | null
           created_at?: string
           data_nascimento?: string | null
@@ -443,6 +446,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      zapi_config: {
+        Row: {
+          client_token: string
+          created_at: string
+          id: string
+          instance_id: string
+          status: string
+          tenant_id: string
+          token: string
+          updated_at: string
+          webhook_url: string | null
+        }
+        Insert: {
+          client_token: string
+          created_at?: string
+          id?: string
+          instance_id: string
+          status?: string
+          tenant_id: string
+          token: string
+          updated_at?: string
+          webhook_url?: string | null
+        }
+        Update: {
+          client_token?: string
+          created_at?: string
+          id?: string
+          instance_id?: string
+          status?: string
+          tenant_id?: string
+          token?: string
+          updated_at?: string
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zapi_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

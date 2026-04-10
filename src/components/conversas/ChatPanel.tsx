@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
@@ -18,6 +18,7 @@ interface Mensagem {
 interface ChatPanelProps {
   contatoNome: string;
   contatoTelefone: string | null;
+  contatoAvatar?: string | null;
   mensagens: Mensagem[];
   onSend: (text: string) => void;
   onClose: () => void;
@@ -35,7 +36,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, mensagens, onSend, onClose, onBack, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onClose, onBack, loading }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -53,6 +54,7 @@ export function ChatPanel({ contatoNome, contatoTelefone, mensagens, onSend, onC
           </Button>
         )}
         <Avatar className="h-9 w-9">
+          {contatoAvatar && <AvatarImage src={contatoAvatar} alt={contatoNome} />}
           <AvatarFallback className="bg-primary/10 text-primary text-xs">{initials}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">

@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 interface ConversaItemProps {
   id: string;
   nomeContato: string;
+  avatarUrl?: string | null;
   ultimoTexto: string | null;
   ultimaMsgAt: string | null;
   naoLidas: number;
@@ -23,7 +24,7 @@ function formatTime(dateStr: string | null) {
   return format(d, "dd/MM", { locale: ptBR });
 }
 
-export function ConversaItem({ nomeContato, ultimoTexto, ultimaMsgAt, naoLidas, status, selected, onClick }: ConversaItemProps) {
+export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -35,6 +36,7 @@ export function ConversaItem({ nomeContato, ultimoTexto, ultimaMsgAt, naoLidas, 
       )}
     >
       <Avatar className="h-10 w-10 shrink-0">
+        {avatarUrl && <AvatarImage src={avatarUrl} alt={nomeContato} />}
         <AvatarFallback className="bg-primary/10 text-primary text-sm">{initials}</AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">

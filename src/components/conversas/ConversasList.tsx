@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 interface Conversa {
   id: string;
   contato_nome: string;
+  contato_avatar?: string | null;
   ultimo_texto: string | null;
   ultima_msg_at: string | null;
   nao_lidas: number;
@@ -82,6 +83,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               key={c.id}
               id={c.id}
               nomeContato={c.contato_nome}
+              avatarUrl={c.contato_avatar}
               ultimoTexto={c.ultimo_texto}
               ultimaMsgAt={c.ultima_msg_at}
               naoLidas={c.nao_lidas}

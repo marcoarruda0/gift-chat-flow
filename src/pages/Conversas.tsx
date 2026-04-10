@@ -12,6 +12,7 @@ interface ConversaRow {
   id: string;
   contato_nome: string;
   contato_telefone: string | null;
+  contato_avatar: string | null;
   ultimo_texto: string | null;
   ultima_msg_at: string | null;
   nao_lidas: number;
@@ -44,7 +45,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, contato_id, contatos(nome, telefone)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -54,6 +55,7 @@ export default function Conversas() {
       id: c.id,
       contato_nome: c.contatos?.nome || "Sem nome",
       contato_telefone: c.contatos?.telefone || null,
+      contato_avatar: c.contatos?.avatar_url || null,
       ultimo_texto: c.ultimo_texto,
       ultima_msg_at: c.ultima_msg_at,
       nao_lidas: c.nao_lidas,
@@ -165,7 +167,7 @@ export default function Conversas() {
     setSelectedId(nova.id);
   };
 
-  // Send message
+  // Send message (local + Z-API)
   const handleSend = async (text: string) => {
     if (!selectedId || !tenantId) return;
     const { error } = await supabase.from("mensagens").insert({
@@ -181,6 +183,34 @@ export default function Conversas() {
       ultimo_texto: text,
       ultima_msg_at: new Date().toISOString(),
     }).eq("id", selectedId);
+
+    // Send via Z-API if contact has phone
+    if (selected?.contato_telefone) {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/zapi-proxy`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.session?.access_token}`,
+            },
+            body: JSON.stringify({
+              endpoint: "send-text",
+              method: "POST",
+              data: {
+                phone: selected.contato_telefone.replace(/\D/g, ""),
+                message: text,
+              },
+            }),
+          }
+        );
+      } catch (e) {
+        console.warn("Z-API send failed (offline?):", e);
+      }
+    }
   };
 
   const handleClose = async () => {
@@ -212,6 +242,7 @@ export default function Conversas() {
           <ChatPanel
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
+            contatoAvatar={selected.contato_avatar}
             mensagens={mensagens}
             onSend={handleSend}
             onClose={handleClose}

@@ -1,0 +1,167 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Only accept POST
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+  }
+
+  try {
+    const payload = await req.json();
+    console.log("Webhook received:", JSON.stringify(payload).slice(0, 500));
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // Z-API sends instanceId in the payload
+    const instanceId = payload.instanceId;
+    if (!instanceId) {
+      return new Response(JSON.stringify({ error: "No instanceId" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Find tenant by instanceId
+    const { data: zapiConfig } = await supabase
+      .from("zapi_config")
+      .select("tenant_id")
+      .eq("instance_id", instanceId)
+      .single();
+
+    if (!zapiConfig) {
+      console.log("No tenant found for instanceId:", instanceId);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const tenantId = zapiConfig.tenant_id;
+
+    // Handle incoming message (on-message-received)
+    if (payload.phone && payload.text?.message) {
+      const phone = payload.phone.replace(/\D/g, "");
+      const messageText = payload.text.message;
+      const senderName = payload.senderName || payload.chatName || phone;
+
+      // Find or create contact
+      let { data: contato } = await supabase
+        .from("contatos")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("telefone", phone)
+        .single();
+
+      if (!contato) {
+        const { data: newContato } = await supabase
+          .from("contatos")
+          .insert({
+            tenant_id: tenantId,
+            nome: senderName,
+            telefone: phone,
+          })
+          .select("id")
+          .single();
+        contato = newContato;
+      }
+
+      if (!contato) {
+        console.error("Could not find/create contact");
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Find or create conversation
+      let { data: conversa } = await supabase
+        .from("conversas")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("contato_id", contato.id)
+        .eq("status", "aberta")
+        .single();
+
+      if (!conversa) {
+        const { data: newConversa } = await supabase
+          .from("conversas")
+          .insert({
+            tenant_id: tenantId,
+            contato_id: contato.id,
+            status: "aberta",
+          })
+          .select("id")
+          .single();
+        conversa = newConversa;
+      }
+
+      if (!conversa) {
+        console.error("Could not find/create conversation");
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Insert message
+      await supabase.from("mensagens").insert({
+        conversa_id: conversa.id,
+        tenant_id: tenantId,
+        conteudo: messageText,
+        remetente: "contato",
+        tipo: "texto",
+      });
+
+      // Update conversation
+      await supabase
+        .from("conversas")
+        .update({
+          ultimo_texto: messageText,
+          ultima_msg_at: new Date().toISOString(),
+          nao_lidas: (await supabase
+            .from("conversas")
+            .select("nao_lidas")
+            .eq("id", conversa.id)
+            .single()
+            .then(r => (r.data?.nao_lidas || 0) + 1)),
+        })
+        .eq("id", conversa.id);
+
+      // Update avatar if available
+      if (payload.photo) {
+        await supabase
+          .from("contatos")
+          .update({ avatar_url: payload.photo })
+          .eq("id", contato.id);
+      }
+
+      console.log("Message saved for conversa:", conversa.id);
+    }
+
+    // Handle message status updates (delivery, read)
+    if (payload.status) {
+      console.log("Status update:", payload.status);
+      // Future: update message metadata with delivery/read status
+    }
+
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, // Always return 200 to Z-API to avoid retries
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

@@ -246,9 +246,18 @@ export default function Conversas() {
       }
 
       let imported = 0;
-      for (const chat of chats) {
+      let msgsImported = 0;
+      const chatsToProcess = chats.filter((chat: any) => {
         const phone = chat.phone?.replace(/\D/g, "");
-        if (!phone || phone.includes("@g.us")) continue;
+        return phone && !phone.includes("@g.us");
+      });
+      const totalChats = chatsToProcess.length;
+
+      for (let i = 0; i < totalChats; i++) {
+        const chat = chatsToProcess[i];
+        const phone = chat.phone.replace(/\D/g, "");
+
+        toast.loading(`Importando ${i + 1}/${totalChats}...`, { id: "sync-progress" });
 
         // Find or create contact
         let { data: contato } = await supabase
@@ -280,6 +289,7 @@ export default function Conversas() {
         if (!contato) continue;
 
         // Find or create conversation
+        let convId: string;
         const { data: existingConv } = await supabase
           .from("conversas")
           .select("id")
@@ -288,8 +298,10 @@ export default function Conversas() {
           .eq("status", "aberta")
           .maybeSingle();
 
-        if (!existingConv) {
-          await supabase.from("conversas").insert({
+        if (existingConv) {
+          convId = existingConv.id;
+        } else {
+          const { data: newConv } = await supabase.from("conversas").insert({
             tenant_id: tenantId,
             contato_id: contato.id,
             ultimo_texto: chat.lastMessage?.content || null,
@@ -297,13 +309,65 @@ export default function Conversas() {
               ? new Date(chat.lastMessage.timestamp * 1000).toISOString()
               : new Date().toISOString(),
             status: "aberta",
-          });
+          }).select("id").single();
+          if (!newConv) continue;
+          convId = newConv.id;
           imported++;
+        }
+
+        // Import historical messages
+        try {
+          const msgRes = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/zapi-proxy`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.session?.access_token}`,
+              },
+              body: JSON.stringify({ endpoint: `chat-messages/${phone}`, method: "GET" }),
+            }
+          );
+          const rawMsgs = await msgRes.json();
+          const msgs = Array.isArray(rawMsgs) ? rawMsgs.slice(-50) : [];
+
+          for (const msg of msgs) {
+            const zapiId = msg.messageId || msg.id?.id;
+            if (!zapiId) continue;
+            const content = msg.body || msg.text || msg.caption || "";
+            if (!content) continue;
+
+            // Check duplicate
+            const { data: existing } = await supabase
+              .from("mensagens")
+              .select("id")
+              .eq("conversa_id", convId)
+              .contains("metadata", { zapi_message_id: zapiId })
+              .maybeSingle();
+
+            if (existing) continue;
+
+            await supabase.from("mensagens").insert({
+              conversa_id: convId,
+              tenant_id: tenantId,
+              conteudo: content,
+              remetente: (msg.fromMe ? "atendente" : "contato") as any,
+              tipo: "texto" as any,
+              metadata: { zapi_message_id: zapiId },
+              created_at: msg.timestamp
+                ? new Date(msg.timestamp * 1000).toISOString()
+                : new Date().toISOString(),
+            });
+            msgsImported++;
+          }
+        } catch (msgErr) {
+          console.warn(`Failed to import messages for ${phone}:`, msgErr);
         }
       }
 
+      toast.dismiss("sync-progress");
       await fetchConversas();
-      toast.success(`${imported} conversa(s) importada(s) do WhatsApp`);
+      toast.success(`${imported} conversa(s) e ${msgsImported} mensagem(ns) importada(s)`);
     } catch (e) {
       console.error("Sync error:", e);
       toast.error("Erro ao sincronizar WhatsApp");

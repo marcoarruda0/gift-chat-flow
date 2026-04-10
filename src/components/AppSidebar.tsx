@@ -9,6 +9,7 @@ import {
   Settings,
   Shield,
   LogOut,
+  Bot,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -36,6 +37,7 @@ const mainItems = [
   { title: "Giftback", url: "/giftback", icon: Gift },
   { title: "Base de Conhecimento", url: "/conhecimento", icon: BookOpen },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
+  { title: "Config. IA", url: "/configuracoes/ia", icon: Bot },
 ];
 
 export function AppSidebar() {

@@ -16,6 +16,7 @@ import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
 import ZapiConfig from "@/pages/ZapiConfig";
 import Conhecimento from "@/pages/Conhecimento";
+import IAConfig from "@/pages/IAConfig";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ function AppRoutes() {
       <Route path="/conhecimento" element={<ProtectedRoute><Conhecimento /></ProtectedRoute>} />
       <Route path="/configuracoes" element={<ProtectedRoute><Placeholder title="Configurações" /></ProtectedRoute>} />
       <Route path="/configuracoes/zapi" element={<ProtectedRoute><ZapiConfig /></ProtectedRoute>} />
+      <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Placeholder title="Admin Master" /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>

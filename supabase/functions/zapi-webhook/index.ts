@@ -120,6 +120,10 @@ Deno.serve(async (req) => {
         conteudo: messageText,
         remetente: "contato",
         tipo: "texto",
+        metadata: {
+          senderName: payload.senderName || payload.chatName || null,
+          senderAvatar: payload.senderPhoto || payload.photo || null,
+        },
       });
 
       // Update conversation

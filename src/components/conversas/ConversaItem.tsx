@@ -31,7 +31,7 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50 border-b border-border",
+        "w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/50 border-b border-border overflow-hidden",
         selected && "bg-accent"
       )}
     >
@@ -39,20 +39,20 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
         {avatarUrl && <AvatarImage src={avatarUrl} alt={nomeContato} />}
         <AvatarFallback className="bg-primary/10 text-primary text-sm">{initials}</AvatarFallback>
       </Avatar>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className="font-medium text-sm text-foreground truncate">{nomeContato}</span>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0">{nomeContato}</span>
           <span className={cn(
-            "text-xs shrink-0 ml-2",
-            hasUnread ? "text-[#25D366] font-medium" : "text-muted-foreground"
+            "text-[11px] whitespace-nowrap shrink-0",
+            hasUnread ? "text-[#25D366] font-semibold" : "text-muted-foreground"
           )}>
             {formatTime(ultimaMsgAt)}
           </span>
         </div>
-        <div className="flex items-center justify-between mt-0.5">
-          <span className="text-xs text-muted-foreground truncate">{ultimoTexto || "Sem mensagens"}</span>
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{ultimoTexto || "Sem mensagens"}</span>
           {hasUnread && (
-            <span className="ml-2 h-5 min-w-5 flex items-center justify-center rounded-full text-[11px] font-bold shrink-0 bg-[#25D366] text-white px-1">
+            <span className="shrink-0 h-[20px] min-w-[20px] flex items-center justify-center rounded-full text-[11px] font-bold bg-[#25D366] text-white px-1.5">
               {naoLidas}
             </span>
           )}

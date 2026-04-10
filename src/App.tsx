@@ -8,6 +8,7 @@ import { AppLayout } from "@/components/AppLayout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Index";
 import Contatos from "@/pages/Contatos";
+import Conversas from "@/pages/Conversas";
 import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";

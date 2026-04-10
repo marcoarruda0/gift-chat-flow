@@ -37,6 +37,7 @@ export default function Conversas() {
   const [loadingConversas, setLoadingConversas] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const tenantId = profile?.tenant_id;
 
@@ -220,6 +221,97 @@ export default function Conversas() {
     fetchConversas();
   };
 
+  const handleSync = async () => {
+    if (!tenantId) return;
+    setSyncing(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/zapi-proxy`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.session?.access_token}`,
+          },
+          body: JSON.stringify({ endpoint: "chats", method: "GET" }),
+        }
+      );
+      const chats = await res.json();
+
+      if (!Array.isArray(chats)) {
+        toast.error("Erro ao buscar chats do WhatsApp");
+        return;
+      }
+
+      let imported = 0;
+      for (const chat of chats) {
+        const phone = chat.phone?.replace(/\D/g, "");
+        if (!phone || phone.includes("@g.us")) continue;
+
+        // Find or create contact
+        let { data: contato } = await supabase
+          .from("contatos")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("telefone", phone)
+          .maybeSingle();
+
+        if (!contato) {
+          const { data: novo } = await supabase
+            .from("contatos")
+            .insert({
+              tenant_id: tenantId,
+              nome: chat.name || phone,
+              telefone: phone,
+              avatar_url: chat.profilePicture || null,
+            })
+            .select("id")
+            .single();
+          contato = novo;
+        } else if (chat.profilePicture) {
+          await supabase
+            .from("contatos")
+            .update({ avatar_url: chat.profilePicture })
+            .eq("id", contato.id);
+        }
+
+        if (!contato) continue;
+
+        // Find or create conversation
+        const { data: existingConv } = await supabase
+          .from("conversas")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("contato_id", contato.id)
+          .eq("status", "aberta")
+          .maybeSingle();
+
+        if (!existingConv) {
+          await supabase.from("conversas").insert({
+            tenant_id: tenantId,
+            contato_id: contato.id,
+            ultimo_texto: chat.lastMessage?.content || null,
+            ultima_msg_at: chat.lastMessage?.timestamp
+              ? new Date(chat.lastMessage.timestamp * 1000).toISOString()
+              : new Date().toISOString(),
+            status: "aberta",
+          });
+          imported++;
+        }
+      }
+
+      await fetchConversas();
+      toast.success(`${imported} conversa(s) importada(s) do WhatsApp`);
+    } catch (e) {
+      console.error("Sync error:", e);
+      toast.error("Erro ao sincronizar WhatsApp");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const selected = conversas.find(c => c.id === selectedId);
   const showList = !isMobile || !selectedId;
   const showChat = !isMobile || !!selectedId;
@@ -233,6 +325,8 @@ export default function Conversas() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             onNewConversa={() => setNovaConversaOpen(true)}
+            onSync={handleSync}
+            syncing={syncing}
             loading={loadingConversas}
           />
         </div>

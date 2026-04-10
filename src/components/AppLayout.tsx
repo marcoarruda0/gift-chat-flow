@@ -10,13 +10,13 @@ interface AppLayoutProps {
 export function AppLayout({ children, noPadding }: AppLayoutProps) {
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="h-screen flex w-full overflow-hidden">
         <AppSidebar />
-        <div className="flex-1 flex flex-col">
-          <header className="h-12 flex items-center border-b bg-background px-4">
+        <div className="flex-1 flex flex-col min-h-0">
+          <header className="h-12 flex-shrink-0 flex items-center border-b bg-background px-4">
             <SidebarTrigger />
           </header>
-          <main className={`flex-1 overflow-auto ${noPadding ? "" : "p-4 md:p-6"}`}>
+          <main className={`flex-1 min-h-0 ${noPadding ? "overflow-hidden" : "overflow-auto p-4 md:p-6"}`}>
             {children}
           </main>
         </div>

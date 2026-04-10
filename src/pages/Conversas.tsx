@@ -464,7 +464,7 @@ export default function Conversas() {
   return (
     <div className="flex h-full w-full">
       {showList && (
-        <div className={isMobile ? "w-full" : "w-[350px] shrink-0"}>
+        <div className={isMobile ? "w-full" : "w-[400px] shrink-0"}>
           <ConversasList
             conversas={conversas}
             selectedId={selectedId}

@@ -151,9 +151,9 @@ Deno.serve(async (req) => {
       await supabase.from("mensagens").insert({
         conversa_id: conversa.id,
         tenant_id: tenantId,
-        conteudo: messageText,
+        conteudo: messageContent!,
         remetente: "contato",
-        tipo: "texto",
+        tipo: messageType,
         metadata: {
           senderName: payload.senderName || payload.chatName || null,
           senderAvatar: payload.senderPhoto || payload.photo || null,

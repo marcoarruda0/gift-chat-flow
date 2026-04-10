@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     // Handle incoming message (on-message-received)
     if (payload.phone && messageContent) {
       const phone = payload.phone.replace(/\D/g, "");
-      const messageText = payload.text.message;
+      // messageText and messageContent already set above
       const isGroup = payload.isGroup === true || phone.includes("g.us");
       const groupName = payload.chatName || "Grupo";
       const senderName = payload.senderName || payload.chatName || phone;

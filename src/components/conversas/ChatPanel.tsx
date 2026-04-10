@@ -12,6 +12,7 @@ interface Mensagem {
   remetente: string;
   tipo: string;
   created_at: string;
+  metadata?: Record<string, any> | null;
 }
 
 interface ChatPanelProps {
@@ -73,7 +74,15 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
           <div className="text-center text-sm text-muted-foreground py-8">Nenhuma mensagem ainda</div>
         ) : (
           mensagens.map(m => (
-            <MessageBubble key={m.id} conteudo={m.conteudo} remetente={m.remetente} tipo={m.tipo} createdAt={m.created_at} />
+            <MessageBubble
+              key={m.id}
+              conteudo={m.conteudo}
+              remetente={m.remetente}
+              tipo={m.tipo}
+              createdAt={m.created_at}
+              senderName={m.metadata?.senderName}
+              senderAvatar={m.metadata?.senderAvatar}
+            />
           ))
         )}
         <div ref={bottomRef} />

@@ -1,16 +1,34 @@
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { FileDown } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface MessageBubbleProps {
   conteudo: string;
   remetente: string;
   tipo: string;
   createdAt: string;
+  senderName?: string | null;
+  senderAvatar?: string | null;
 }
 
-export function MessageBubble({ conteudo, remetente, tipo, createdAt }: MessageBubbleProps) {
+const NAME_COLORS = [
+  "#E91E63", "#9C27B0", "#673AB7", "#3F51B5",
+  "#009688", "#FF5722", "#795548", "#607D8B",
+  "#2196F3", "#4CAF50", "#FF9800", "#00BCD4",
+];
+
+function getNameColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
+}
+
+export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar }: MessageBubbleProps) {
   const isOutgoing = remetente === "atendente" || remetente === "bot";
+  const showSender = !isOutgoing && !!senderName;
 
   const renderContent = () => {
     switch (tipo) {
@@ -41,6 +59,14 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt }: MessageB
 
   return (
     <div className={cn("flex mb-2", isOutgoing ? "justify-end" : "justify-start")}>
+      {showSender && (
+        <Avatar className="h-6 w-6 mt-1 mr-1.5 shrink-0">
+          {senderAvatar && <AvatarImage src={senderAvatar} alt={senderName} />}
+          <AvatarFallback className="text-[8px] bg-muted">
+            {senderName.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+      )}
       <div
         className={cn(
           "max-w-[75%] rounded-2xl px-3 py-2 text-sm",
@@ -51,6 +77,14 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt }: MessageB
       >
         {remetente === "bot" && (
           <span className="text-[10px] font-medium opacity-70 block mb-0.5">Bot</span>
+        )}
+        {showSender && (
+          <span
+            className="text-[11px] font-semibold block mb-0.5"
+            style={{ color: getNameColor(senderName) }}
+          >
+            {senderName}
+          </span>
         )}
         {renderContent()}
         <span className={cn(

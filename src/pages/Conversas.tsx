@@ -25,6 +25,7 @@ interface MensagemRow {
   remetente: string;
   tipo: string;
   created_at: string;
+  metadata?: Record<string, any> | null;
 }
 
 export default function Conversas() {
@@ -82,7 +83,7 @@ export default function Conversas() {
     setLoadingMsgs(true);
     const { data, error } = await supabase
       .from("mensagens")
-      .select("id, conteudo, remetente, tipo, created_at")
+      .select("id, conteudo, remetente, tipo, created_at, metadata")
       .eq("conversa_id", conversaId)
       .order("created_at", { ascending: true });
 
@@ -111,6 +112,7 @@ export default function Conversas() {
             remetente: newMsg.remetente,
             tipo: newMsg.tipo,
             created_at: newMsg.created_at,
+            metadata: newMsg.metadata,
           }]);
         }
         fetchConversas();
@@ -426,7 +428,11 @@ export default function Conversas() {
               conteudo: content,
               remetente: (msg.fromMe ? "atendente" : "contato") as any,
               tipo: "texto" as any,
-              metadata: { zapi_message_id: zapiId },
+              metadata: {
+                zapi_message_id: zapiId,
+                senderName: msg.senderName || msg.sender?.name || null,
+                senderAvatar: msg.senderPhoto || msg.sender?.profilePicture || null,
+              },
               created_at: msg.timestamp
                 ? new Date(msg.timestamp * 1000).toISOString()
                 : new Date().toISOString(),

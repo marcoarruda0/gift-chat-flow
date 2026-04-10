@@ -1,0 +1,19 @@
+---
+name: Modules roadmap
+description: Implementation status of all platform modules
+type: feature
+---
+## Módulos implementados
+- Auth (email/password, auto-profile, roles)
+- Sidebar navigation (dark theme)
+- Dashboard (stats cards, charts)
+- CRM Contatos (CRUD, tags, giftback saldo)
+- Giftback Config + Caixa (config, movimentos)
+- Fluxos (builder React Flow, 8 nós WhatsApp + 3 nós giftback)
+- Conversas (WhatsApp Web layout, realtime, split view, mobile responsive)
+
+## Próximos
+- Disparos (campanhas em massa)
+- Base de Conhecimento
+- Configurações
+- Admin Master

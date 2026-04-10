@@ -118,6 +118,64 @@ export type Database = {
           },
         ]
       }
+      conversas: {
+        Row: {
+          atendente_id: string | null
+          contato_id: string
+          created_at: string
+          id: string
+          nao_lidas: number
+          status: string
+          tenant_id: string
+          ultima_msg_at: string | null
+          ultimo_texto: string | null
+        }
+        Insert: {
+          atendente_id?: string | null
+          contato_id: string
+          created_at?: string
+          id?: string
+          nao_lidas?: number
+          status?: string
+          tenant_id: string
+          ultima_msg_at?: string | null
+          ultimo_texto?: string | null
+        }
+        Update: {
+          atendente_id?: string | null
+          contato_id?: string
+          created_at?: string
+          id?: string
+          nao_lidas?: number
+          status?: string
+          tenant_id?: string
+          ultima_msg_at?: string | null
+          ultimo_texto?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversas_atendente_id_fkey"
+            columns: ["atendente_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversas_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fluxos: {
         Row: {
           created_at: string
@@ -261,6 +319,54 @@ export type Database = {
           },
         ]
       }
+      mensagens: {
+        Row: {
+          conteudo: string
+          conversa_id: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          remetente: Database["public"]["Enums"]["remetente_tipo"]
+          tenant_id: string
+          tipo: Database["public"]["Enums"]["mensagem_tipo"]
+        }
+        Insert: {
+          conteudo: string
+          conversa_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          remetente?: Database["public"]["Enums"]["remetente_tipo"]
+          tenant_id: string
+          tipo?: Database["public"]["Enums"]["mensagem_tipo"]
+        }
+        Update: {
+          conteudo?: string
+          conversa_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          remetente?: Database["public"]["Enums"]["remetente_tipo"]
+          tenant_id?: string
+          tipo?: Database["public"]["Enums"]["mensagem_tipo"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagens_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -356,6 +462,8 @@ export type Database = {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
       giftback_status: "ativo" | "usado" | "expirado"
       giftback_tipo: "credito" | "debito" | "expiracao"
+      mensagem_tipo: "texto" | "imagem" | "audio" | "video" | "documento"
+      remetente_tipo: "contato" | "atendente" | "bot"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -486,6 +594,8 @@ export const Constants = {
       app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
       giftback_status: ["ativo", "usado", "expirado"],
       giftback_tipo: ["credito", "debito", "expiracao"],
+      mensagem_tipo: ["texto", "imagem", "audio", "video", "documento"],
+      remetente_tipo: ["contato", "atendente", "bot"],
     },
   },
 } as const

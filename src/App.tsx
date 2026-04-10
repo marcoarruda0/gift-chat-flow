@@ -8,6 +8,7 @@ import { AppLayout } from "@/components/AppLayout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Index";
 import Contatos from "@/pages/Contatos";
+import Conversas from "@/pages/Conversas";
 import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
@@ -17,11 +18,11 @@ import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children, noPadding }: { children: React.ReactNode; noPadding?: boolean }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="flex min-h-screen items-center justify-center"><p className="text-muted-foreground">Carregando...</p></div>;
   if (!user) return <Navigate to="/login" replace />;
-  return <AppLayout>{children}</AppLayout>;
+  return <AppLayout noPadding={noPadding}>{children}</AppLayout>;
 }
 
 function AppRoutes() {
@@ -33,7 +34,7 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/contatos" element={<ProtectedRoute><Contatos /></ProtectedRoute>} />
-      <Route path="/conversas" element={<ProtectedRoute><Placeholder title="Conversas" /></ProtectedRoute>} />
+      <Route path="/conversas" element={<ProtectedRoute noPadding><Conversas /></ProtectedRoute>} />
       <Route path="/fluxos" element={<ProtectedRoute><Fluxos /></ProtectedRoute>} />
       <Route path="/fluxos/:id" element={<ProtectedRoute><FluxoEditor /></ProtectedRoute>} />
       <Route path="/disparos" element={<ProtectedRoute><Placeholder title="Disparos" /></ProtectedRoute>} />

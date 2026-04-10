@@ -1,5 +1,4 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -26,6 +25,7 @@ function formatTime(dateStr: string | null) {
 
 export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+  const hasUnread = naoLidas > 0;
 
   return (
     <button
@@ -35,21 +35,26 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
         selected && "bg-accent"
       )}
     >
-      <Avatar className="h-10 w-10 shrink-0">
+      <Avatar className="h-12 w-12 shrink-0">
         {avatarUrl && <AvatarImage src={avatarUrl} alt={nomeContato} />}
         <AvatarFallback className="bg-primary/10 text-primary text-sm">{initials}</AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className="font-medium text-sm text-foreground truncate">{nomeContato}</span>
-          <span className="text-xs text-muted-foreground shrink-0 ml-2">{formatTime(ultimaMsgAt)}</span>
+          <span className={cn(
+            "text-xs shrink-0 ml-2",
+            hasUnread ? "text-[#25D366] font-medium" : "text-muted-foreground"
+          )}>
+            {formatTime(ultimaMsgAt)}
+          </span>
         </div>
         <div className="flex items-center justify-between mt-0.5">
           <span className="text-xs text-muted-foreground truncate">{ultimoTexto || "Sem mensagens"}</span>
-          {naoLidas > 0 && (
-            <Badge className="ml-2 h-5 min-w-5 flex items-center justify-center rounded-full text-[10px] shrink-0">
+          {hasUnread && (
+            <span className="ml-2 h-5 min-w-5 flex items-center justify-center rounded-full text-[11px] font-bold shrink-0 bg-[#25D366] text-white px-1">
               {naoLidas}
-            </Badge>
+            </span>
           )}
         </div>
       </div>

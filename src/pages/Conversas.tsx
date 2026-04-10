@@ -316,17 +316,15 @@ export default function Conversas() {
 
       let imported = 0;
       let msgsImported = 0;
-      const chatsToProcess = chats.filter((chat: any) => {
-        const phone = chat.phone?.replace(/\D/g, "");
-        return !!phone;
-      });
+      const chatsToProcess = chats.filter((chat: any) => !!chat.phone);
       const totalChats = chatsToProcess.length;
 
       for (let i = 0; i < totalChats; i++) {
         const chat = chatsToProcess[i];
-        const phone = chat.phone.replace(/\D/g, "");
-        const isGroup = phone.includes("g.us") || chat.isGroup === true;
-        const chatName = isGroup ? (chat.name || "Grupo") : (chat.name || phone);
+        const rawPhone = chat.phone || "";
+        const isGroupChat = chat.isGroup === true || rawPhone.includes("@g.us");
+        const phone = isGroupChat ? rawPhone : rawPhone.replace(/\D/g, "");
+        const chatName = isGroupChat ? (chat.name || "Grupo") : (chat.name || phone);
         toast.loading(`Importando ${i + 1}/${totalChats}...`, { id: "sync-progress" });
 
         // Find or create contact
@@ -353,7 +351,7 @@ export default function Conversas() {
           // Update avatar and name (for groups, name may change)
           const updateData: any = {};
           if (chat.profilePicture) updateData.avatar_url = chat.profilePicture;
-          if (isGroup && chat.name) updateData.nome = chat.name;
+          if (isGroupChat && chat.name) updateData.nome = chat.name;
           if (Object.keys(updateData).length > 0) {
             await supabase.from("contatos").update(updateData).eq("id", contato.id);
           }

@@ -1,81 +1,43 @@
 
 
-# Funcionalidades de Mídia no Módulo Conversas
+# Mostrar Remetente em Mensagens de Grupo
 
-## 1. Gravação de Áudio
+## Problema
+Nas conversas de grupo, todas as mensagens aparecem sem identificação de quem enviou. No WhatsApp, cada mensagem mostra o nome e foto do remetente.
 
-### `src/components/conversas/AudioRecorder.tsx` (novo)
-- Componente com botão de microfone que usa `navigator.mediaDevices.getUserMedia({ audio: true })` e `MediaRecorder` API
-- Estados: idle → recording → sending
-- Ao parar gravação, converte para Blob (webm/ogg), faz upload para Storage e envia via Z-API endpoint `send-audio`
-- Indicador visual de gravação (ícone pulsante, timer)
+## Solução
+Armazenar informações do remetente (nome e foto) no campo `metadata` (jsonb) da tabela `mensagens` e exibir essas informações na bolha de mensagem para mensagens recebidas.
 
-### Storage bucket
-- Criar bucket `chat-media` (público) via migration para armazenar áudios, imagens e documentos
+## Alterações
 
-## 2. Envio de Anexos (Fotos/Documentos)
+### 1. `src/components/conversas/MessageBubble.tsx`
+- Adicionar props `senderName` e `senderAvatar` (opcionais)
+- Para mensagens recebidas (`remetente === "contato"`), quando `senderName` estiver presente:
+  - Exibir mini avatar à esquerda da bolha
+  - Exibir nome do remetente em cor destaque acima do conteúdo (como no WhatsApp — cada nome com cor diferente baseada em hash)
+- Layout: avatar pequeno (24px) + bolha com nome + conteúdo
 
-### `src/components/conversas/AttachmentButton.tsx` (novo)
-- Botão de clipe que abre file picker
-- Aceita imagens (jpg, png, webp) e documentos (pdf, doc, xlsx, etc.)
-- Faz upload para bucket `chat-media`, salva mensagem com `tipo: "imagem"` ou `tipo: "documento"`
-- Envia via Z-API endpoints `send-image` (com `image` URL) ou `send-document` (com `document` URL)
+### 2. `src/components/conversas/ChatPanel.tsx`
+- Extrair `senderName` e `senderAvatar` do campo `metadata` de cada mensagem
+- Passar para `MessageBubble`
 
-## 3. Atualizar ChatInput
+### 3. `src/pages/Conversas.tsx` — Interface `MensagemRow`
+- Adicionar campo `metadata` ao tipo e ao fetch de mensagens
 
-### `src/components/conversas/ChatInput.tsx`
-- Adicionar `AttachmentButton` (clipe) e `AudioRecorder` (microfone) ao lado do botão enviar
-- Props: `onSendAudio(blob)`, `onSendAttachment(file)`
+### 4. `supabase/functions/zapi-webhook/index.ts`
+- Para mensagens recebidas, salvar `senderName` (de `payload.senderName` ou `payload.chatName`) e `senderPhoto` no `metadata` da mensagem
 
-## 4. Atualizar ChatPanel e Conversas.tsx
+### 5. Sync histórico em `src/pages/Conversas.tsx` (`handleSync`)
+- Ao importar mensagens históricas, salvar `senderName` do campo `msg.senderName` ou `msg.sender.name` no metadata
 
-### `src/components/conversas/ChatPanel.tsx`
-- Passar novos handlers `onSendAudio` e `onSendAttachment` para `ChatInput`
+## Sem migration
+O campo `metadata jsonb` já existe na tabela `mensagens`. Basta salvar `{ senderName, senderAvatar, zapi_message_id }`.
 
-### `src/pages/Conversas.tsx`
-- Implementar `handleSendAudio`: upload para Storage → insert mensagem tipo "audio" → enviar via Z-API `send-audio`
-- Implementar `handleSendAttachment`: upload para Storage → insert mensagem tipo "imagem"/"documento" → enviar via Z-API `send-image`/`send-document`
-
-## 5. Renderizar Mídia no MessageBubble
-
-### `src/components/conversas/MessageBubble.tsx`
-- Receber prop `tipo` além de `conteudo`
-- Se `tipo === "audio"`: renderizar `<audio>` player
-- Se `tipo === "imagem"`: renderizar `<img>` com preview clicável
-- Se `tipo === "documento"`: renderizar link de download com ícone de arquivo
-- Texto continua como está
-
-## 6. Fotos de Perfil na Lista de Conversas
-
-### `src/components/conversas/ConversaItem.tsx`
-- Já suporta `avatarUrl` e `AvatarImage` — funciona se o `avatar_url` estiver preenchido no contato
-- O sync já salva `profilePicture` da Z-API no campo `avatar_url`
-- Nenhuma alteração necessária neste componente (já implementado)
-
-### Verificação
-- Se as fotos não aparecem, pode ser que o sync não foi executado ou os contatos foram criados manualmente sem foto
-- O botão "Sincronizar WhatsApp" já atualiza `avatar_url` com `chat.profilePicture`
-
-## Migration necessária
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('chat-media', 'chat-media', true);
-
-CREATE POLICY "tenant_upload_chat_media" ON storage.objects
-FOR INSERT TO authenticated
-WITH CHECK (bucket_id = 'chat-media');
-
-CREATE POLICY "public_read_chat_media" ON storage.objects
-FOR SELECT USING (bucket_id = 'chat-media');
-```
-
-## Arquivos alterados/criados
+## Arquivos alterados
 | Arquivo | Tipo |
 |---------|------|
-| `src/components/conversas/AudioRecorder.tsx` | Novo |
-| `src/components/conversas/AttachmentButton.tsx` | Novo |
-| `src/components/conversas/ChatInput.tsx` | Alterado |
-| `src/components/conversas/ChatPanel.tsx` | Alterado |
 | `src/components/conversas/MessageBubble.tsx` | Alterado |
-| `src/pages/Conversas.tsx` | Alterado |
-| Migration para bucket `chat-media` | Novo |
+| `src/components/conversas/ChatPanel.tsx` | Alterado |
+| `src/pages/Conversas.tsx` | Alterado (tipo + sync) |
+| `supabase/functions/zapi-webhook/index.ts` | Alterado |
 

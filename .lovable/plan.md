@@ -1,59 +1,40 @@
 
 
-# Módulo de Conversas — Layout WhatsApp Web
+# Nova Conversa a partir de Contato Existente
 
 ## Visão Geral
-Tela de conversas com layout dividido: lista de conversas à esquerda e painel de chat à direita, similar ao WhatsApp Web. Dados persistidos no banco com realtime para mensagens.
+Adicionar duas formas de iniciar uma conversa com um contato existente:
+1. **Botão na tabela de Contatos** — ícone de chat em cada linha
+2. **Botão "Nova Conversa" na lista de Conversas** — abre dialog para selecionar contato
+
+Nos dois casos, se já existir conversa aberta com o contato, redireciona para ela ao invés de criar duplicata.
 
 ---
 
-## 1. Tabelas (Migration)
+## Alterações
 
-### `conversas`
-- `id`, `tenant_id`, `contato_id` (ref contatos), `ultimo_texto`, `ultima_msg_at`, `status` (aberta/fechada), `atendente_id` (nullable, ref profiles), `nao_lidas` int, `created_at`
-- RLS por tenant_id
+### 1. `src/pages/Contatos.tsx`
+- Adicionar botão com ícone `MessageSquarePlus` na coluna de ações de cada contato
+- Ao clicar: verificar se já existe conversa aberta para o contato → se sim, navegar para `/conversas?id=<conversa_id>` → se não, criar nova conversa e navegar
 
-### `mensagens`
-- `id`, `tenant_id`, `conversa_id` (ref conversas), `remetente` (enum: contato/atendente/bot), `tipo` (texto/imagem/audio/video/documento), `conteudo` text, `metadata` jsonb, `created_at`
-- RLS por tenant_id
-- Realtime habilitado (`ALTER PUBLICATION supabase_realtime ADD TABLE mensagens`)
+### 2. `src/components/conversas/ConversasList.tsx`
+- O botão `MessageSquarePlus` já existe mas não faz nada
+- Conectar ao callback `onNewConversa` que abrirá o dialog de seleção de contato
 
-## 2. Página `/conversas` — Layout full-height
+### 3. Novo: `src/components/conversas/NovaConversaDialog.tsx`
+- Dialog com campo de busca que lista contatos do tenant
+- Ao selecionar contato: verifica se já há conversa aberta → redireciona ou cria nova
+- Busca contatos via Supabase com filtro por nome/telefone
 
-### Painel Esquerdo (lista de conversas, ~350px)
-- Campo de busca no topo
-- Lista scrollável de conversas com: avatar/iniciais do contato, nome, preview última mensagem, horário, badge de não lidas
-- Filtros: Todas / Abertas / Minhas / Fechadas
-- Conversa selecionada com destaque visual
-- Estado vazio quando não há conversas
+### 4. `src/pages/Conversas.tsx`
+- Ler query param `?id=` da URL para pré-selecionar conversa (vindo da página de contatos)
+- Adicionar função `criarConversa(contatoId)` reutilizável
+- Passar callback `onNewConversa` para `ConversasList`
 
-### Painel Direito (chat)
-- **Header**: nome do contato, telefone, botões (fechar conversa, ver perfil)
-- **Área de mensagens**: scroll com mensagens estilo bolha (esquerda = contato, direita = atendente/bot), com horário
-- **Input**: textarea com botão enviar, atalho Enter para enviar
-- Estado vazio quando nenhuma conversa selecionada ("Selecione uma conversa")
+### 5. Sem migration necessária
+As tabelas `conversas` e `contatos` já existem com os campos necessários.
 
-### Responsivo (mobile)
-- No mobile, mostra só a lista; ao selecionar conversa, mostra só o chat com botão voltar
-
-## 3. Realtime
-- Subscribe em `mensagens` para atualizar chat em tempo real
-- Subscribe em `conversas` para atualizar lista (novas msgs, contadores)
-
-## 4. Arquivos
-
-| Arquivo | Descrição |
-|---------|-----------|
-| Migration SQL | Tabelas `conversas` e `mensagens` + RLS + realtime |
-| `src/pages/Conversas.tsx` | Página principal com layout split |
-| `src/components/conversas/ConversasList.tsx` | Lista lateral de conversas |
-| `src/components/conversas/ConversaItem.tsx` | Item individual na lista |
-| `src/components/conversas/ChatPanel.tsx` | Painel de chat completo |
-| `src/components/conversas/MessageBubble.tsx` | Bolha de mensagem |
-| `src/components/conversas/ChatInput.tsx` | Input de mensagem |
-| `src/App.tsx` | Atualizar rota `/conversas` |
-| `src/components/AppLayout.tsx` | Variante sem padding para a página de conversas |
-
-## 5. Layout especial
-A página de Conversas precisa ocupar 100% da altura sem padding. O `AppLayout` será ajustado para permitir que children controlem seu próprio padding (a rota `/conversas` não terá o `p-4` padrão).
+## Fluxo do usuário
+1. Na página de Contatos, clica no ícone de chat → redireciona para `/conversas` com a conversa aberta
+2. Na página de Conversas, clica no `+` → busca contato → seleciona → conversa abre no painel direito
 

@@ -168,7 +168,29 @@ export default function Conversas() {
     setSelectedId(nova.id);
   };
 
-  // Send message (local + Z-API)
+  // Helper: upload file to storage
+  const uploadToStorage = async (file: Blob, filename: string) => {
+    const path = `${tenantId}/${Date.now()}_${filename}`;
+    const { data, error } = await supabase.storage.from("chat-media").upload(path, file);
+    if (error) throw error;
+    return supabase.storage.from("chat-media").getPublicUrl(data.path).data.publicUrl;
+  };
+
+  // Helper: call Z-API proxy
+  const callZapi = async (endpoint: string, method: string, data?: any) => {
+    const { data: session } = await supabase.auth.getSession();
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    return fetch(`https://${projectId}.supabase.co/functions/v1/zapi-proxy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session?.access_token}`,
+      },
+      body: JSON.stringify({ endpoint, method, data }),
+    });
+  };
+
+  // Send text message
   const handleSend = async (text: string) => {
     if (!selectedId || !tenantId) return;
     const { error } = await supabase.from("mensagens").insert({

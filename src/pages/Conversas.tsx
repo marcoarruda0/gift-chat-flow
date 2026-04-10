@@ -165,7 +165,7 @@ export default function Conversas() {
     setSelectedId(nova.id);
   };
 
-  // Send message
+  // Send message (local + Z-API)
   const handleSend = async (text: string) => {
     if (!selectedId || !tenantId) return;
     const { error } = await supabase.from("mensagens").insert({
@@ -181,6 +181,34 @@ export default function Conversas() {
       ultimo_texto: text,
       ultima_msg_at: new Date().toISOString(),
     }).eq("id", selectedId);
+
+    // Send via Z-API if contact has phone
+    if (selected?.contato_telefone) {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/zapi-proxy`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.session?.access_token}`,
+            },
+            body: JSON.stringify({
+              endpoint: "send-text",
+              method: "POST",
+              data: {
+                phone: selected.contato_telefone.replace(/\D/g, ""),
+                message: text,
+              },
+            }),
+          }
+        );
+      } catch (e) {
+        console.warn("Z-API send failed (offline?):", e);
+      }
+    }
   };
 
   const handleClose = async () => {

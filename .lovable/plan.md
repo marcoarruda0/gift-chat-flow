@@ -1,40 +1,59 @@
 
 
-# Adicionar Nós de Giftback ao Builder de Fluxos
+# Módulo de Conversas — Layout WhatsApp Web
 
-## Visao Geral
-Adicionar 3 novos tipos de no ao builder de fluxos, especificos para operacoes de giftback, permitindo que automacoes WhatsApp e giftback coexistam no mesmo canvas.
+## Visão Geral
+Tela de conversas com layout dividido: lista de conversas à esquerda e painel de chat à direita, similar ao WhatsApp Web. Dados persistidos no banco com realtime para mensagens.
 
-## Novos Tipos de No
+---
 
-### 1. Consultar Saldo (icone: Wallet, cor: teal)
-- Busca o saldo giftback do contato atual
-- Config: variavel de saida (default `{{saldo_giftback}}`)
-- Preview: "Saldo → {{saldo_giftback}}"
+## 1. Tabelas (Migration)
 
-### 2. Notificar Credito (icone: Gift, cor: emerald)
-- Envia notificacao de credito giftback gerado
-- Config: template da mensagem (com variaveis `{{valor}}`, `{{validade}}`), canal (WhatsApp/SMS)
-- Preview: primeiros 40 chars do template
+### `conversas`
+- `id`, `tenant_id`, `contato_id` (ref contatos), `ultimo_texto`, `ultima_msg_at`, `status` (aberta/fechada), `atendente_id` (nullable, ref profiles), `nao_lidas` int, `created_at`
+- RLS por tenant_id
 
-### 3. Lembrete de Validade (icone: CalendarClock, cor: amber)
-- Dispara lembrete quando giftback esta proximo de expirar
-- Config: dias antes da expiracao, template da mensagem
-- Preview: "X dias antes | template..."
+### `mensagens`
+- `id`, `tenant_id`, `conversa_id` (ref conversas), `remetente` (enum: contato/atendente/bot), `tipo` (texto/imagem/audio/video/documento), `conteudo` text, `metadata` jsonb, `created_at`
+- RLS por tenant_id
+- Realtime habilitado (`ALTER PUBLICATION supabase_realtime ADD TABLE mensagens`)
 
-## Arquivos a alterar
+## 2. Página `/conversas` — Layout full-height
 
-### `src/components/fluxos/nodeTypes.ts`
-- Adicionar 3 entradas: `consultar_saldo`, `notificar_credito`, `lembrete_validade`
+### Painel Esquerdo (lista de conversas, ~350px)
+- Campo de busca no topo
+- Lista scrollável de conversas com: avatar/iniciais do contato, nome, preview última mensagem, horário, badge de não lidas
+- Filtros: Todas / Abertas / Minhas / Fechadas
+- Conversa selecionada com destaque visual
+- Estado vazio quando não há conversas
 
-### `src/components/fluxos/nodes/FlowNode.tsx`
-- Adicionar cases no `getPreview()` para os 3 novos tipos
+### Painel Direito (chat)
+- **Header**: nome do contato, telefone, botões (fechar conversa, ver perfil)
+- **Área de mensagens**: scroll com mensagens estilo bolha (esquerda = contato, direita = atendente/bot), com horário
+- **Input**: textarea com botão enviar, atalho Enter para enviar
+- Estado vazio quando nenhuma conversa selecionada ("Selecione uma conversa")
 
-### `src/components/fluxos/NodeConfigPanel.tsx`
-- Adicionar 3 blocos de formulario de configuracao
+### Responsivo (mobile)
+- No mobile, mostra só a lista; ao selecionar conversa, mostra só o chat com botão voltar
 
-## Detalhes tecnicos
-- Sem migration necessaria — os dados dos nos sao armazenados como JSON dentro da coluna `nodes_json` existente
-- Os novos nos usam o mesmo componente `FlowNode` (type: "flowNode") com `nodeType` diferente
-- Icones do lucide-react: `Wallet`, `Gift`, `CalendarClock`
+## 3. Realtime
+- Subscribe em `mensagens` para atualizar chat em tempo real
+- Subscribe em `conversas` para atualizar lista (novas msgs, contadores)
+
+## 4. Arquivos
+
+| Arquivo | Descrição |
+|---------|-----------|
+| Migration SQL | Tabelas `conversas` e `mensagens` + RLS + realtime |
+| `src/pages/Conversas.tsx` | Página principal com layout split |
+| `src/components/conversas/ConversasList.tsx` | Lista lateral de conversas |
+| `src/components/conversas/ConversaItem.tsx` | Item individual na lista |
+| `src/components/conversas/ChatPanel.tsx` | Painel de chat completo |
+| `src/components/conversas/MessageBubble.tsx` | Bolha de mensagem |
+| `src/components/conversas/ChatInput.tsx` | Input de mensagem |
+| `src/App.tsx` | Atualizar rota `/conversas` |
+| `src/components/AppLayout.tsx` | Variante sem padding para a página de conversas |
+
+## 5. Layout especial
+A página de Conversas precisa ocupar 100% da altura sem padding. O `AppLayout` será ajustado para permitir que children controlem seu próprio padding (a rota `/conversas` não terá o `p-4` padrão).
 

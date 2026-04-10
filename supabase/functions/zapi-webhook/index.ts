@@ -193,6 +193,106 @@ Deno.serve(async (req) => {
       }
 
       console.log("Message saved for conversa:", conversa.id);
+
+      // === AI Auto-Responder ===
+      if (!isGroup && !payload.fromMe && messageType === "texto" && messageContent) {
+        try {
+          // 1. Fetch active knowledge base articles
+          const { data: artigos } = await supabase
+            .from("conhecimento_base")
+            .select("titulo, conteudo, categoria")
+            .eq("tenant_id", tenantId)
+            .eq("ativo", true);
+
+          if (artigos && artigos.length > 0) {
+            // 2. Build context and call AI
+            const contexto = artigos
+              .map((a: any, i: number) => `[${i + 1}] ${a.titulo} (${a.categoria})\n${a.conteudo}`)
+              .join("\n\n---\n\n");
+
+            const systemPrompt = `Você é um assistente virtual de atendimento ao cliente. Use APENAS as informações da base de conhecimento abaixo para responder. Se a pergunta não puder ser respondida com as informações disponíveis, responda EXATAMENTE "SEM_INFO" e nada mais.
+
+Seja cordial, objetivo e use linguagem natural em português brasileiro. Não invente informações.
+
+BASE DE CONHECIMENTO:
+${contexto}`;
+
+            const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+            if (LOVABLE_API_KEY) {
+              const aiResponse = await fetch(
+                "https://ai.gateway.lovable.dev/v1/chat/completions",
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    model: "google/gemini-2.5-flash",
+                    messages: [
+                      { role: "system", content: systemPrompt },
+                      { role: "user", content: messageContent },
+                    ],
+                  }),
+                }
+              );
+
+              if (aiResponse.ok) {
+                const aiData = await aiResponse.json();
+                const resposta = aiData.choices?.[0]?.message?.content || "";
+
+                // 3. Only send if AI has a real answer (not SEM_INFO)
+                if (resposta && !resposta.includes("SEM_INFO")) {
+                  // Fetch Z-API config
+                  const { data: zapiCfg } = await supabase
+                    .from("zapi_config")
+                    .select("instance_id, token, client_token")
+                    .eq("tenant_id", tenantId)
+                    .single();
+
+                  if (zapiCfg) {
+                    // 4. Send via Z-API
+                    const sendUrl = `https://api.z-api.io/instances/${zapiCfg.instance_id}/token/${zapiCfg.token}/send-text`;
+                    const sendResp = await fetch(sendUrl, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Client-Token": zapiCfg.client_token,
+                      },
+                      body: JSON.stringify({ phone, message: resposta }),
+                    });
+                    console.log("AI reply sent via Z-API:", sendResp.status);
+
+                    // 5. Save bot message to DB
+                    await supabase.from("mensagens").insert({
+                      conversa_id: conversa.id,
+                      tenant_id: tenantId,
+                      conteudo: resposta,
+                      remetente: "bot",
+                      tipo: "texto",
+                    });
+
+                    // 6. Update conversation preview
+                    await supabase
+                      .from("conversas")
+                      .update({ ultimo_texto: resposta, ultima_msg_at: new Date().toISOString() })
+                      .eq("id", conversa.id);
+
+                    console.log("AI auto-reply saved for conversa:", conversa.id);
+                  }
+                } else {
+                  console.log("AI had no relevant answer, skipping auto-reply");
+                }
+              } else {
+                console.error("AI gateway error:", aiResponse.status);
+              }
+            }
+          }
+        } catch (aiErr) {
+          console.error("AI auto-responder error:", aiErr);
+          // Don't fail the webhook if AI fails
+        }
+      }
     }
 
     // Handle message status updates (delivery, read)

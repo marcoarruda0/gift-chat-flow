@@ -43,7 +43,10 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
       </Avatar>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0">{nomeContato}</span>
+          <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0 flex items-center gap-1">
+            {aguardandoHumano && <UserRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+            {nomeContato}
+          </span>
           <span className={cn(
             "text-[11px] whitespace-nowrap shrink-0",
             hasUnread ? "text-[#25D366] font-semibold" : "text-muted-foreground"

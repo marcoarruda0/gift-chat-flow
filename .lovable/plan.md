@@ -1,37 +1,58 @@
 
 
-# Melhorias: Transferência Humana + Preview da IA
+# Gestão de Empresa — Usuários e Instâncias por Empresa
 
-## 1. Transferência automática quando IA responde SEM_INFO
+## Contexto Atual
+O sistema já possui multi-tenancy (tabela `tenants`, `profiles` com `tenant_id`, RLS por tenant). Porém falta:
+- UI para gerenciar dados da empresa
+- Convidar/gerenciar usuários da equipe
+- Visualizar instâncias (Z-API) vinculadas à empresa
 
-**No webhook (`zapi-webhook/index.ts`)**, onde hoje temos `console.log("AI had no relevant answer, skipping auto-reply")` (linha 314), vamos:
+## Alterações
 
-- Enviar mensagem ao contato: "Não consegui encontrar essa informação. Vou transferir você para um atendente humano 🙏"
-- Salvar essa mensagem no banco como `remetente: "bot"`
-- Marcar a conversa com um novo campo `aguardando_humano: true` para que o atendente saiba que precisa intervir
-- Incrementar `nao_lidas` da conversa para chamar atenção na lista
+### 1. Migration — Tabela `convites`
+Nova tabela para convites de usuários à empresa:
+- `id`, `tenant_id`, `email`, `role` (app_role), `convidado_por` (uuid), `status` (pendente/aceito/expirado), `token` (unique), `created_at`, `expires_at`
+- RLS: tenant pode ver/inserir/deletar seus convites; admin_tenant ou admin_master apenas
 
-**Migration**: Adicionar coluna `aguardando_humano boolean default false` na tabela `conversas`.
+### 2. Migration — Ajustes
+- Adicionar coluna `cnpj` e `telefone_empresa` na tabela `tenants` para dados da empresa
 
-**UI (`ConversaItem.tsx`)**: Mostrar indicador visual (ícone de pessoa) quando `aguardando_humano = true`.
+### 3. Página `src/pages/Empresa.tsx`
+Três abas (Tabs):
+- **Dados da Empresa**: Nome, CNPJ, telefone — editar e salvar (tabela `tenants`)
+- **Equipe**: Lista de usuários do tenant (query `profiles` por `tenant_id`), com nome, email (do auth via metadata), departamento, role. Botão "Convidar" que abre dialog com email + role (operador/admin_tenant)
+- **Instâncias**: Lista de configurações Z-API do tenant (`zapi_config`), mostrando instance_id e status
 
-## 2. Preview/Simulação na página Config IA
+### 4. Edge Function `aceitar-convite`
+- Recebe token do convite
+- Valida que não expirou e está pendente
+- No signup, o `handle_new_user` será ajustado: se houver convite pendente para aquele email, associar o user ao tenant do convite (em vez de criar novo tenant)
 
-**Na página `IAConfig.tsx`**, adicionar um card "Testar IA" com:
-- Input para digitar uma pergunta de teste
-- Botão "Simular Resposta"
-- Chama a edge function `ai-responder` (já existente) passando a pergunta + configurações atuais do formulário (não as salvas)
-- Exibe a resposta em um balão estilo WhatsApp abaixo
+### 5. Ajustar trigger `handle_new_user`
+- Antes de criar novo tenant, verificar se existe convite pendente para o email
+- Se sim: usar o `tenant_id` do convite, marcar convite como aceito, atribuir o role do convite
+- Se não: comportamento atual (cria novo tenant)
 
-**Na edge function `ai-responder/index.ts`**, ajustar para aceitar parâmetros de personalidade opcionais (`nome_assistente`, `tom`, `usar_emojis`, `instrucoes_extras`) no body, usando-os em vez de buscar do banco. Assim o preview usa as configs do formulário antes de salvar.
+### 6. Rota + Sidebar
+- Rota `/empresa` no `App.tsx`
+- Link "Empresa" no sidebar com ícone `Building2`
 
-## Arquivos alterados
+## Arquivos criados/alterados
 
-| Arquivo | Alteração |
-|---------|-----------|
-| Migration | Adicionar `aguardando_humano` em `conversas` |
-| `supabase/functions/zapi-webhook/index.ts` | Enviar msg de transferência + marcar conversa quando SEM_INFO |
-| `supabase/functions/ai-responder/index.ts` | Aceitar params de personalidade para preview |
-| `src/pages/IAConfig.tsx` | Adicionar card de simulação/preview |
-| `src/components/conversas/ConversaItem.tsx` | Indicador visual de aguardando humano |
+| Arquivo | Tipo |
+|---------|------|
+| Migration (convites + tenants cnpj/telefone) | Novo |
+| Migration (atualizar handle_new_user) | Novo |
+| `src/pages/Empresa.tsx` | Novo |
+| `supabase/functions/aceitar-convite/index.ts` | Novo |
+| `src/App.tsx` | Alterado (rota) |
+| `src/components/AppSidebar.tsx` | Alterado (link) |
+
+## Detalhes Técnicos
+
+- Convites usam token UUID gerado no insert. O link de convite será `{origin}/login?convite={token}`
+- A página de Login detecta `?convite=` na URL e exibe formulário de signup pré-preenchido com o email
+- RLS da tabela `convites`: SELECT/INSERT/DELETE para `admin_tenant` e `admin_master` do mesmo tenant
+- A consulta de equipe usa `profiles` filtrado por `tenant_id` (policy `tenant_users_view_team` já existe)
 

@@ -71,9 +71,11 @@ export default function Login() {
             {isSignUp ? "Criar Conta" : "Entrar"}
           </CardTitle>
           <CardDescription>
-            {isSignUp
-              ? "Preencha os dados para criar sua conta"
-              : "Entre com suas credenciais para acessar a plataforma"}
+            {inviteInfo
+              ? `Você foi convidado para ${inviteInfo.tenant_nome}. Crie sua conta para entrar.`
+              : isSignUp
+                ? "Preencha os dados para criar sua conta"
+                : "Entre com suas credenciais para acessar a plataforma"}
           </CardDescription>
         </CardHeader>
         <CardContent>

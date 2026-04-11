@@ -1,44 +1,34 @@
 
 
-# Suporte a Mídia nas Campanhas de Disparos
+# Preview de Áudio e Vídeo no Dialog de Campanha
 
-## Objetivo
-Permitir que campanhas enviem imagens, áudio, vídeos e documentos além de texto, usando os endpoints da Z-API para cada tipo de mídia.
+## Alteração
 
-## Alterações
+Arquivo único: `src/pages/Disparos.tsx`, linhas 422-424.
 
-### 1. Migration — Adicionar colunas de mídia na tabela `campanhas`
-- `tipo_midia` (text, default `'texto'`) — valores: `texto`, `imagem`, `audio`, `video`, `documento`
-- `midia_url` (text, nullable) — URL do arquivo de mídia (armazenado no bucket `chat-media`)
+Expandir o bloco de preview (que hoje só tem imagem) para incluir:
+- **Vídeo**: `<video>` com `controls` e `max-h-40`
+- **Áudio**: `<audio>` com `controls` e largura total
 
-### 2. UI — `src/pages/Disparos.tsx`
-- Adicionar seletor de tipo de mídia (Select: Texto, Imagem, Áudio, Vídeo, Documento)
-- Quando tipo ≠ texto: exibir input de upload de arquivo com preview
-- Upload do arquivo para o bucket `chat-media` (já existente e público)
-- Mensagem de texto vira "legenda" (caption) quando há mídia
-- Na lista de campanhas, exibir ícone indicando o tipo de mídia
+### Código atual (linha 422-424):
+```tsx
+{tipoMidia === "imagem" && midiaUrl && (
+  <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+)}
+```
 
-### 3. Edge Function — `enviar-campanha/index.ts`
-- Ler `tipo_midia` e `midia_url` da campanha
-- Selecionar endpoint Z-API correto:
-  - `texto` → `send-text` (atual)
-  - `imagem` → `send-image` com `{ phone, image: url, caption }`
-  - `audio` → `send-audio` com `{ phone, audio: url }`
-  - `video` → `send-video` com `{ phone, video: url, caption }`
-  - `documento` → `send-document` com `{ phone, document: url, fileName, caption }`
-- Substituir variáveis `{nome}` e `{telefone}` no caption/mensagem
+### Será substituído por:
+```tsx
+{midiaUrl && tipoMidia === "imagem" && (
+  <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+)}
+{midiaUrl && tipoMidia === "video" && (
+  <video src={midiaUrl} controls className="mt-2 rounded max-h-40 w-full" />
+)}
+{midiaUrl && tipoMidia === "audio" && (
+  <audio src={midiaUrl} controls className="mt-2 w-full" />
+)}
+```
 
-## Arquivos criados/alterados
-
-| Arquivo | Tipo |
-|---------|------|
-| Migration (tipo_midia + midia_url) | Novo |
-| `src/pages/Disparos.tsx` | Alterado (upload + seletor tipo) |
-| `supabase/functions/enviar-campanha/index.ts` | Alterado (endpoints por tipo) |
-
-## Detalhes Técnicos
-
-- O bucket `chat-media` já é público, então a URL gerada pelo Supabase Storage é acessível pela Z-API
-- Para áudio, Z-API aceita MP3/OGG; para vídeo, MP4; para documento, PDF/DOCX/etc
-- O caption (legenda) continua suportando variáveis `{nome}` e `{telefone}`
+Nenhuma migration, nenhum arquivo novo. Apenas 3 linhas viram 9.
 

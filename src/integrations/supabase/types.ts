@@ -699,6 +699,38 @@ export type Database = {
           },
         ]
       }
+      respostas_rapidas: {
+        Row: {
+          atalho: string
+          conteudo: string
+          created_at: string
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          atalho: string
+          conteudo: string
+          created_at?: string
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          atalho?: string
+          conteudo?: string
+          created_at?: string
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "respostas_rapidas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           cnpj: string | null

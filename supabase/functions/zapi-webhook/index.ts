@@ -311,7 +311,58 @@ ${contexto}`;
                       console.log("AI auto-reply saved for conversa:", conversa.id);
                     }
                   } else {
-                    console.log("AI had no relevant answer, skipping auto-reply");
+                    // SEM_INFO — transfer to human agent
+                    console.log("AI had no relevant answer, transferring to human");
+
+                    const transferMsg = "Não consegui encontrar essa informação na nossa base. Vou transferir você para um atendente humano 🙏";
+
+                    // Send transfer message via Z-API
+                    const { data: zapiCfg2 } = await supabase
+                      .from("zapi_config")
+                      .select("instance_id, token, client_token")
+                      .eq("tenant_id", tenantId)
+                      .single();
+
+                    if (zapiCfg2) {
+                      const sendUrl2 = `https://api.z-api.io/instances/${zapiCfg2.instance_id}/token/${zapiCfg2.token}/send-text`;
+                      await fetch(sendUrl2, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "Client-Token": zapiCfg2.client_token,
+                        },
+                        body: JSON.stringify({ phone, message: transferMsg }),
+                      });
+
+                      // Save bot message
+                      await supabase.from("mensagens").insert({
+                        conversa_id: conversa.id,
+                        tenant_id: tenantId,
+                        conteudo: transferMsg,
+                        remetente: "bot",
+                        tipo: "texto",
+                      });
+
+                      // Mark conversation as awaiting human + increment unread
+                      const currentUnread = await supabase
+                        .from("conversas")
+                        .select("nao_lidas")
+                        .eq("id", conversa.id)
+                        .single()
+                        .then(r => r.data?.nao_lidas || 0);
+
+                      await supabase
+                        .from("conversas")
+                        .update({
+                          aguardando_humano: true,
+                          ultimo_texto: transferMsg,
+                          ultima_msg_at: new Date().toISOString(),
+                          nao_lidas: currentUnread + 1,
+                        })
+                        .eq("id", conversa.id);
+
+                      console.log("Conversa marked as aguardando_humano:", conversa.id);
+                    }
                   }
                 } else {
                   console.error("AI gateway error:", aiResponse.status);

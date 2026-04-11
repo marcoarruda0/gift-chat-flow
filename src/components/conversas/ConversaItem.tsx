@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { UserRound } from "lucide-react";
 
 interface ConversaItemProps {
   id: string;
@@ -11,6 +12,7 @@ interface ConversaItemProps {
   ultimaMsgAt: string | null;
   naoLidas: number;
   status: string;
+  aguardandoHumano?: boolean;
   selected: boolean;
   onClick: () => void;
 }

@@ -430,6 +430,13 @@ export default function Empresa() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ── Campos Personalizados ── */}
+        {isAdmin && (
+          <TabsContent value="campos">
+            <CamposPersonalizadosConfig />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Dialog de convite */}

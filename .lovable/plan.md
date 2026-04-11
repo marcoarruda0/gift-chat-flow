@@ -1,84 +1,44 @@
 
 
-# Módulo Disparos — Campanhas em Massa via WhatsApp
+# Suporte a Mídia nas Campanhas de Disparos
 
 ## Objetivo
-Permitir que o tenant crie campanhas de mensagens em massa para contatos selecionados (por tags, filtros ou seleção manual), com agendamento, controle de status, e relatório de envio.
-
-## Arquitetura
-
-```text
-┌─────────────────────────────────────────┐
-│  UI: /disparos                          │
-│  Lista campanhas + botão Nova Campanha  │
-│  Dialog: nome, mensagem, filtro contatos│
-│  Agendamento (agora ou data/hora)       │
-└──────────────┬──────────────────────────┘
-               │ insert campanha + destinatários
-               ▼
-┌─────────────────────────────────────────┐
-│  DB: campanhas + campanha_destinatarios │
-│  status: rascunho → enviando → concluída│
-└──────────────┬──────────────────────────┘
-               │ Edge Function dispara
-               ▼
-┌─────────────────────────────────────────┐
-│  Edge: enviar-campanha                  │
-│  Loop destinatários, envia via Z-API    │
-│  Delay entre msgs (anti-ban)            │
-│  Atualiza status de cada destinatário   │
-└─────────────────────────────────────────┘
-```
+Permitir que campanhas enviem imagens, áudio, vídeos e documentos além de texto, usando os endpoints da Z-API para cada tipo de mídia.
 
 ## Alterações
 
-### 1. Migration — Tabelas `campanhas` e `campanha_destinatarios`
+### 1. Migration — Adicionar colunas de mídia na tabela `campanhas`
+- `tipo_midia` (text, default `'texto'`) — valores: `texto`, `imagem`, `audio`, `video`, `documento`
+- `midia_url` (text, nullable) — URL do arquivo de mídia (armazenado no bucket `chat-media`)
 
-**`campanhas`**: `id`, `tenant_id`, `nome`, `mensagem` (text), `tipo_filtro` (todos/tag/manual), `filtro_valor` (text[]), `status` (rascunho/agendada/enviando/concluida/cancelada), `agendada_para` (timestamptz nullable), `total_destinatarios` (int), `total_enviados` (int default 0), `total_falhas` (int default 0), `criado_por` (uuid), `created_at`, `updated_at`.
+### 2. UI — `src/pages/Disparos.tsx`
+- Adicionar seletor de tipo de mídia (Select: Texto, Imagem, Áudio, Vídeo, Documento)
+- Quando tipo ≠ texto: exibir input de upload de arquivo com preview
+- Upload do arquivo para o bucket `chat-media` (já existente e público)
+- Mensagem de texto vira "legenda" (caption) quando há mídia
+- Na lista de campanhas, exibir ícone indicando o tipo de mídia
 
-**`campanha_destinatarios`**: `id`, `campanha_id`, `contato_id`, `telefone`, `status` (pendente/enviado/falha), `enviado_at`, `erro` (text nullable).
-
-RLS: isolamento por `tenant_id`, admin_tenant e admin_master para INSERT/UPDATE/DELETE.
-
-### 2. Página `src/pages/Disparos.tsx`
-- Lista de campanhas com colunas: nome, status (badge colorido), destinatários, enviados/falhas, data
-- Botão "Nova Campanha" abre dialog/drawer com:
-  - Nome da campanha
-  - Mensagem (textarea com preview, suporte a variáveis `{nome}`, `{telefone}`)
-  - Filtro de contatos: todos, por tag (multi-select das tags existentes), ou seleção manual
-  - Preview da quantidade de contatos que serão atingidos
-  - Agendamento: enviar agora ou agendar data/hora
-- Ações: Enviar/Agendar, Cancelar campanha em andamento
-- Detalhes da campanha: lista de destinatários com status individual
-
-### 3. Edge Function `enviar-campanha/index.ts`
-- Recebe `campanha_id`
-- Busca campanha e destinatários pendentes
-- Para cada destinatário:
-  - Substitui variáveis `{nome}` na mensagem
-  - Envia via Z-API (mesma lógica do webhook)
-  - Atualiza status do destinatário (enviado/falha)
-  - Delay de 1-2s entre mensagens (anti-ban WhatsApp)
-- Atualiza contadores `total_enviados`/`total_falhas` na campanha
-- Marca campanha como `concluida` ao final
-
-### 4. Rota + Sidebar
-- Substituir Placeholder por `Disparos` na rota `/disparos`
-- Sidebar já tem o link configurado
+### 3. Edge Function — `enviar-campanha/index.ts`
+- Ler `tipo_midia` e `midia_url` da campanha
+- Selecionar endpoint Z-API correto:
+  - `texto` → `send-text` (atual)
+  - `imagem` → `send-image` com `{ phone, image: url, caption }`
+  - `audio` → `send-audio` com `{ phone, audio: url }`
+  - `video` → `send-video` com `{ phone, video: url, caption }`
+  - `documento` → `send-document` com `{ phone, document: url, fileName, caption }`
+- Substituir variáveis `{nome}` e `{telefone}` no caption/mensagem
 
 ## Arquivos criados/alterados
 
 | Arquivo | Tipo |
 |---------|------|
-| Migration (campanhas + destinatários) | Novo |
-| `src/pages/Disparos.tsx` | Novo |
-| `supabase/functions/enviar-campanha/index.ts` | Novo |
-| `src/App.tsx` | Alterado (import Disparos) |
+| Migration (tipo_midia + midia_url) | Novo |
+| `src/pages/Disparos.tsx` | Alterado (upload + seletor tipo) |
+| `supabase/functions/enviar-campanha/index.ts` | Alterado (endpoints por tipo) |
 
 ## Detalhes Técnicos
 
-- O delay entre mensagens (1-2s) é crucial para evitar ban do WhatsApp. Para campanhas grandes (>500), considerar delay de 3-5s.
-- Variáveis suportadas inicialmente: `{nome}`, `{telefone}` — substituídas com dados do contato.
-- O envio usa a mesma Z-API config do tenant (`zapi_config`).
-- Campanhas agendadas: a UI mostra status "agendada" e um cron job (ou invocação manual) verifica campanhas com `agendada_para <= now()` e status `agendada` para disparar automaticamente.
+- O bucket `chat-media` já é público, então a URL gerada pelo Supabase Storage é acessível pela Z-API
+- Para áudio, Z-API aceita MP3/OGG; para vídeo, MP4; para documento, PDF/DOCX/etc
+- O caption (legenda) continua suportando variáveis `{nome}` e `{telefone}`
 

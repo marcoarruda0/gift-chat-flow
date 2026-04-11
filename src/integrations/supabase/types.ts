@@ -77,10 +77,12 @@ export type Database = {
           filtro_valor: string[] | null
           id: string
           mensagem: string
+          midia_url: string | null
           nome: string
           status: Database["public"]["Enums"]["campanha_status"]
           tenant_id: string
           tipo_filtro: Database["public"]["Enums"]["campanha_filtro"]
+          tipo_midia: string
           total_destinatarios: number
           total_enviados: number
           total_falhas: number
@@ -93,10 +95,12 @@ export type Database = {
           filtro_valor?: string[] | null
           id?: string
           mensagem: string
+          midia_url?: string | null
           nome: string
           status?: Database["public"]["Enums"]["campanha_status"]
           tenant_id: string
           tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
+          tipo_midia?: string
           total_destinatarios?: number
           total_enviados?: number
           total_falhas?: number
@@ -109,10 +113,12 @@ export type Database = {
           filtro_valor?: string[] | null
           id?: string
           mensagem?: string
+          midia_url?: string | null
           nome?: string
           status?: Database["public"]["Enums"]["campanha_status"]
           tenant_id?: string
           tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
+          tipo_midia?: string
           total_destinatarios?: number
           total_enviados?: number
           total_falhas?: number

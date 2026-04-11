@@ -194,9 +194,15 @@ export default function Conversas() {
     });
   };
 
-  // Send text message
-  const handleSend = async (text: string) => {
+  // Send text message (with variable substitution)
+  const handleSend = async (rawText: string) => {
     if (!selectedId || !tenantId) return;
+    // Replace variables
+    let text = rawText;
+    if (selected) {
+      text = text.replace(/\{nome\}/gi, selected.contato_nome || "");
+      text = text.replace(/\{telefone\}/gi, selected.contato_telefone || "");
+    }
     const { error } = await supabase.from("mensagens").insert({
       conversa_id: selectedId,
       tenant_id: tenantId,

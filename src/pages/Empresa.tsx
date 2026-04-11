@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2 } from "lucide-react";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
+import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const roleLabels: Record<string, string> = {

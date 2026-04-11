@@ -14,6 +14,120 @@ export type Database = {
   }
   public: {
     Tables: {
+      campanha_destinatarios: {
+        Row: {
+          campanha_id: string
+          contato_id: string
+          enviado_at: string | null
+          erro: string | null
+          id: string
+          status: Database["public"]["Enums"]["destinatario_status"]
+          telefone: string
+          tenant_id: string
+        }
+        Insert: {
+          campanha_id: string
+          contato_id: string
+          enviado_at?: string | null
+          erro?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["destinatario_status"]
+          telefone: string
+          tenant_id: string
+        }
+        Update: {
+          campanha_id?: string
+          contato_id?: string
+          enviado_at?: string | null
+          erro?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["destinatario_status"]
+          telefone?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campanha_destinatarios_campanha_id_fkey"
+            columns: ["campanha_id"]
+            isOneToOne: false
+            referencedRelation: "campanhas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanha_destinatarios_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanha_destinatarios_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campanhas: {
+        Row: {
+          agendada_para: string | null
+          created_at: string
+          criado_por: string
+          filtro_valor: string[] | null
+          id: string
+          mensagem: string
+          nome: string
+          status: Database["public"]["Enums"]["campanha_status"]
+          tenant_id: string
+          tipo_filtro: Database["public"]["Enums"]["campanha_filtro"]
+          total_destinatarios: number
+          total_enviados: number
+          total_falhas: number
+          updated_at: string
+        }
+        Insert: {
+          agendada_para?: string | null
+          created_at?: string
+          criado_por: string
+          filtro_valor?: string[] | null
+          id?: string
+          mensagem: string
+          nome: string
+          status?: Database["public"]["Enums"]["campanha_status"]
+          tenant_id: string
+          tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
+          total_destinatarios?: number
+          total_enviados?: number
+          total_falhas?: number
+          updated_at?: string
+        }
+        Update: {
+          agendada_para?: string | null
+          created_at?: string
+          criado_por?: string
+          filtro_valor?: string[] | null
+          id?: string
+          mensagem?: string
+          nome?: string
+          status?: Database["public"]["Enums"]["campanha_status"]
+          tenant_id?: string
+          tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
+          total_destinatarios?: number
+          total_enviados?: number
+          total_falhas?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campanhas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       compras: {
         Row: {
           contato_id: string
@@ -641,6 +755,14 @@ export type Database = {
     }
     Enums: {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
+      campanha_filtro: "todos" | "tag" | "manual"
+      campanha_status:
+        | "rascunho"
+        | "agendada"
+        | "enviando"
+        | "concluida"
+        | "cancelada"
+      destinatario_status: "pendente" | "enviado" | "falha"
       giftback_status: "ativo" | "usado" | "expirado"
       giftback_tipo: "credito" | "debito" | "expiracao"
       ia_emojis: "nao" | "pouco" | "sim"
@@ -775,6 +897,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
+      campanha_filtro: ["todos", "tag", "manual"],
+      campanha_status: [
+        "rascunho",
+        "agendada",
+        "enviando",
+        "concluida",
+        "cancelada",
+      ],
+      destinatario_status: ["pendente", "enviado", "falha"],
       giftback_status: ["ativo", "usado", "expirado"],
       giftback_tipo: ["credito", "debito", "expiracao"],
       ia_emojis: ["nao", "pouco", "sim"],

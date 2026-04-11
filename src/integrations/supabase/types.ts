@@ -159,6 +159,7 @@ export type Database = {
       }
       conversas: {
         Row: {
+          aguardando_humano: boolean
           atendente_id: string | null
           contato_id: string
           created_at: string
@@ -170,6 +171,7 @@ export type Database = {
           ultimo_texto: string | null
         }
         Insert: {
+          aguardando_humano?: boolean
           atendente_id?: string | null
           contato_id: string
           created_at?: string
@@ -181,6 +183,7 @@ export type Database = {
           ultimo_texto?: string | null
         }
         Update: {
+          aguardando_humano?: boolean
           atendente_id?: string | null
           contato_id?: string
           created_at?: string

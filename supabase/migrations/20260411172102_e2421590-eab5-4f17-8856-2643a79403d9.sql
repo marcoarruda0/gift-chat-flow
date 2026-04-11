@@ -1,0 +1,1 @@
+ALTER TABLE public.conversas ADD COLUMN aguardando_humano boolean NOT NULL DEFAULT false;

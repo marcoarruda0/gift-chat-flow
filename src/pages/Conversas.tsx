@@ -17,6 +17,7 @@ interface ConversaRow {
   ultima_msg_at: string | null;
   nao_lidas: number;
   status: string;
+  aguardando_humano: boolean;
 }
 
 interface MensagemRow {
@@ -47,7 +48,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, contato_id, contatos(nome, telefone, avatar_url)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -62,6 +63,7 @@ export default function Conversas() {
       ultima_msg_at: c.ultima_msg_at,
       nao_lidas: c.nao_lidas,
       status: c.status,
+      aguardando_humano: c.aguardando_humano ?? false,
     }));
     setConversas(mapped);
     setLoadingConversas(false);

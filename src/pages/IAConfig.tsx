@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Bot, Save } from "lucide-react";
+import { Bot, Save, Send, Loader2 } from "lucide-react";
 
 export default function IAConfig() {
   const { profile } = useAuth();
@@ -23,6 +23,12 @@ export default function IAConfig() {
   const [usarEmojis, setUsarEmojis] = useState("pouco");
   const [instrucoesExtras, setInstrucoesExtras] = useState("");
   const [ativo, setAtivo] = useState(true);
+
+  // Preview state
+  const [perguntaTeste, setPerguntaTeste] = useState("");
+  const [respostaTeste, setRespostaTeste] = useState("");
+  const [fontesPreview, setFontesPreview] = useState<string[]>([]);
+  const [simulando, setSimulando] = useState(false);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -77,6 +83,32 @@ export default function IAConfig() {
       toast.error("Erro ao salvar: " + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSimular = async () => {
+    if (!tenantId || !perguntaTeste.trim()) return;
+    setSimulando(true);
+    setRespostaTeste("");
+    setFontesPreview([]);
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-responder", {
+        body: {
+          pergunta: perguntaTeste,
+          tenant_id: tenantId,
+          nome_assistente: nomeAssistente,
+          tom,
+          usar_emojis: usarEmojis,
+          instrucoes_extras: instrucoesExtras,
+        },
+      });
+      if (error) throw error;
+      setRespostaTeste(data.resposta || "Sem resposta.");
+      setFontesPreview(data.fontes || []);
+    } catch (err: any) {
+      toast.error("Erro na simulação: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setSimulando(false);
     }
   };
 
@@ -161,6 +193,41 @@ export default function IAConfig() {
             placeholder={"Ex:\n• Sempre ofereça ajuda de um atendente humano no final\n• Nunca fale de preços\n• Chame o cliente pelo nome\n• Responda em no máximo 3 frases"}
             rows={6}
           />
+        </CardContent>
+      </Card>
+
+      {/* Preview / Simulação */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🧪 Testar IA</CardTitle>
+          <CardDescription>Simule uma resposta com as configurações atuais do formulário (sem precisar salvar)</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              value={perguntaTeste}
+              onChange={(e) => setPerguntaTeste(e.target.value)}
+              placeholder="Digite uma pergunta de teste..."
+              onKeyDown={(e) => e.key === "Enter" && handleSimular()}
+            />
+            <Button onClick={handleSimular} disabled={simulando || !perguntaTeste.trim()} size="icon" className="shrink-0">
+              {simulando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+
+          {respostaTeste && (
+            <div className="space-y-2">
+              <div className="bg-muted rounded-lg p-3 text-sm whitespace-pre-wrap">
+                <p className="text-xs font-semibold text-primary mb-1">{nomeAssistente}</p>
+                {respostaTeste}
+              </div>
+              {fontesPreview.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Fontes: {fontesPreview.join(", ")}
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

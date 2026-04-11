@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { UserRound } from "lucide-react";
 
 interface ConversaItemProps {
   id: string;
@@ -11,6 +12,7 @@ interface ConversaItemProps {
   ultimaMsgAt: string | null;
   naoLidas: number;
   status: string;
+  aguardandoHumano?: boolean;
   selected: boolean;
   onClick: () => void;
 }
@@ -23,7 +25,7 @@ function formatTime(dateStr: string | null) {
   return format(d, "dd/MM", { locale: ptBR });
 }
 
-export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, selected, onClick }: ConversaItemProps) {
+export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const hasUnread = naoLidas > 0;
 
@@ -41,7 +43,10 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
       </Avatar>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0">{nomeContato}</span>
+          <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0 flex items-center gap-1">
+            {aguardandoHumano && <UserRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+            {nomeContato}
+          </span>
           <span className={cn(
             "text-[11px] whitespace-nowrap shrink-0",
             hasUnread ? "text-[#25D366] font-semibold" : "text-muted-foreground"

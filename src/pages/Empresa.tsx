@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2 } from "lucide-react";
@@ -21,8 +22,9 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function Empresa() {
-  const { profile, user } = useAuth();
+  const { profile, user, hasRole } = useAuth();
   const { toast } = useToast();
+  const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
 
   // Dados da Empresa
   const [tenantData, setTenantData] = useState({ nome: "", cnpj: "", telefone_empresa: "" });
@@ -43,6 +45,11 @@ export default function Empresa() {
   // Instâncias
   const [instances, setInstances] = useState<any[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(true);
+
+  // Remoção de membro
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; nome: string } | null>(null);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
 
   const tenantId = profile?.tenant_id;
 
@@ -90,7 +97,6 @@ export default function Empresa() {
 
     if (profiles) {
       setTeam(profiles);
-      // Load roles for each user
       const { data: allRoles } = await supabase
         .from("user_roles")
         .select("user_id, role")
@@ -115,7 +121,7 @@ export default function Empresa() {
   const handleInvite = async () => {
     if (!inviteEmail || !user) return;
     setSendingInvite(true);
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("convites" as any)
       .insert({
         tenant_id: tenantId!,
@@ -156,6 +162,36 @@ export default function Empresa() {
       .eq("tenant_id", tenantId!);
     setInstances(data || []);
     setLoadingInstances(false);
+  };
+
+  const handleUpdateRole = async (memberId: string, newRole: string) => {
+    setUpdatingRole(memberId);
+    const { data, error } = await supabase.functions.invoke("gerenciar-membro", {
+      body: { action: "update_role", user_id: memberId, new_role: newRole },
+    });
+    setUpdatingRole(null);
+    if (error || data?.error) {
+      toast({ title: "Erro ao alterar função", description: data?.error || error?.message, variant: "destructive" });
+    } else {
+      toast({ title: "Função alterada com sucesso!" });
+      setRoles((prev) => ({ ...prev, [memberId]: newRole }));
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!memberToRemove) return;
+    setRemovingMember(memberToRemove.id);
+    const { data, error } = await supabase.functions.invoke("gerenciar-membro", {
+      body: { action: "remove_member", user_id: memberToRemove.id },
+    });
+    setRemovingMember(null);
+    setMemberToRemove(null);
+    if (error || data?.error) {
+      toast({ title: "Erro ao remover membro", description: data?.error || error?.message, variant: "destructive" });
+    } else {
+      toast({ title: "Membro removido com sucesso!" });
+      loadTeam();
+    }
   };
 
   return (
@@ -224,9 +260,11 @@ export default function Empresa() {
                 <CardTitle>Equipe</CardTitle>
                 <CardDescription>Membros da sua empresa</CardDescription>
               </div>
-              <Button size="sm" onClick={() => setShowInvite(true)}>
-                <Plus className="h-4 w-4 mr-1" /> Convidar
-              </Button>
+              {isAdmin && (
+                <Button size="sm" onClick={() => setShowInvite(true)}>
+                  <Plus className="h-4 w-4 mr-1" /> Convidar
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {loadingTeam ? (
@@ -238,21 +276,64 @@ export default function Empresa() {
                       <TableHead>Nome</TableHead>
                       <TableHead>Departamento</TableHead>
                       <TableHead>Função</TableHead>
+                      {isAdmin && <TableHead className="w-20">Ações</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {team.map((member) => (
-                      <TableRow key={member.id}>
-                        <TableCell className="font-medium">
-                          {member.nome || "Sem nome"}
-                          {member.id === user?.id && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
-                        </TableCell>
-                        <TableCell>{member.departamento || "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{roleLabels[roles[member.id]] || roles[member.id] || "—"}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {team.map((member) => {
+                      const memberRole = roles[member.id] || "";
+                      const isSelf = member.id === user?.id;
+                      const isTargetMaster = memberRole === "admin_master";
+                      const canManage = isAdmin && !isSelf && !isTargetMaster;
+
+                      return (
+                        <TableRow key={member.id}>
+                          <TableCell className="font-medium">
+                            {member.nome || "Sem nome"}
+                            {isSelf && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
+                          </TableCell>
+                          <TableCell>{member.departamento || "—"}</TableCell>
+                          <TableCell>
+                            {canManage ? (
+                              <Select
+                                value={memberRole}
+                                onValueChange={(val) => handleUpdateRole(member.id, val)}
+                                disabled={updatingRole === member.id}
+                              >
+                                <SelectTrigger className="w-[140px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="admin_tenant">Admin</SelectItem>
+                                  <SelectItem value="atendente">Atendente</SelectItem>
+                                  <SelectItem value="caixa">Caixa</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge variant="secondary">{roleLabels[memberRole] || memberRole || "—"}</Badge>
+                            )}
+                          </TableCell>
+                          {isAdmin && (
+                            <TableCell>
+                              {canManage && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => setMemberToRemove({ id: member.id, nome: member.nome || "Sem nome" })}
+                                  disabled={removingMember === member.id}
+                                >
+                                  {removingMember === member.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  )}
+                                </Button>
+                              )}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -385,6 +466,24 @@ export default function Empresa() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog de remoção */}
+      <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover membro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover <strong>{memberToRemove?.nome}</strong> da equipe? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRemoveMember} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

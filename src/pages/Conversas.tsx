@@ -17,6 +17,7 @@ interface ConversaRow {
   ultima_msg_at: string | null;
   nao_lidas: number;
   status: string;
+  aguardando_humano: boolean;
 }
 
 interface MensagemRow {

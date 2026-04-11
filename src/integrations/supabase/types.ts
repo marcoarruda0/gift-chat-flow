@@ -218,6 +218,50 @@ export type Database = {
           },
         ]
       }
+      convites: {
+        Row: {
+          convidado_por: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          status: string
+          tenant_id: string
+          token: string
+        }
+        Insert: {
+          convidado_por: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          status?: string
+          tenant_id: string
+          token?: string
+        }
+        Update: {
+          convidado_por?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          status?: string
+          tenant_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "convites_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fluxos: {
         Row: {
           created_at: string
@@ -490,25 +534,31 @@ export type Database = {
       }
       tenants: {
         Row: {
+          cnpj: string | null
           created_at: string
           id: string
           nome: string
           plano: string | null
           status: string | null
+          telefone_empresa: string | null
         }
         Insert: {
+          cnpj?: string | null
           created_at?: string
           id?: string
           nome: string
           plano?: string | null
           status?: string | null
+          telefone_empresa?: string | null
         }
         Update: {
+          cnpj?: string | null
           created_at?: string
           id?: string
           nome?: string
           plano?: string | null
           status?: string | null
+          telefone_empresa?: string | null
         }
         Relationships: []
       }

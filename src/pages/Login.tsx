@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,15 +10,35 @@ import { useToast } from "@/hooks/use-toast";
 import { MessageSquare } from "lucide-react";
 
 export default function Login() {
+  const [searchParams] = useSearchParams();
+  const conviteToken = searchParams.get("convite");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(!!conviteToken);
   const [nome, setNome] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [inviteInfo, setInviteInfo] = useState<{ email: string; tenant_nome: string } | null>(null);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!conviteToken) return;
+    // Fetch invite info to pre-fill email
+    supabase
+      .from("convites" as any)
+      .select("email, tenants(nome)")
+      .eq("token", conviteToken)
+      .eq("status", "pendente")
+      .single()
+      .then(({ data }: any) => {
+        if (data) {
+          setInviteInfo({ email: data.email, tenant_nome: data.tenants?.nome || "" });
+          setEmail(data.email);
+        }
+      });
+  }, [conviteToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,9 +71,11 @@ export default function Login() {
             {isSignUp ? "Criar Conta" : "Entrar"}
           </CardTitle>
           <CardDescription>
-            {isSignUp
-              ? "Preencha os dados para criar sua conta"
-              : "Entre com suas credenciais para acessar a plataforma"}
+            {inviteInfo
+              ? `Você foi convidado para ${inviteInfo.tenant_nome}. Crie sua conta para entrar.`
+              : isSignUp
+                ? "Preencha os dados para criar sua conta"
+                : "Entre com suas credenciais para acessar a plataforma"}
           </CardDescription>
         </CardHeader>
         <CardContent>

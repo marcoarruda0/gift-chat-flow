@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2 } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2 } from "lucide-react";
+import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const roleLabels: Record<string, string> = {
@@ -212,6 +213,11 @@ export default function Empresa() {
           <TabsTrigger value="instancias" className="gap-2">
             <Wifi className="h-4 w-4" /> Instâncias
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="campos" className="gap-2">
+              <Settings2 className="h-4 w-4" /> Campos
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ── Dados da Empresa ── */}

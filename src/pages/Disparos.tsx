@@ -419,8 +419,14 @@ export default function Disparos() {
                     </Button>
                   </div>
                 )}
-                {tipoMidia === "imagem" && midiaUrl && (
+                {midiaUrl && tipoMidia === "imagem" && (
                   <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+                )}
+                {midiaUrl && tipoMidia === "video" && (
+                  <video src={midiaUrl} controls className="mt-2 rounded max-h-40 w-full" />
+                )}
+                {midiaUrl && tipoMidia === "audio" && (
+                  <audio src={midiaUrl} controls className="mt-2 w-full" />
                 )}
               </div>
             )}

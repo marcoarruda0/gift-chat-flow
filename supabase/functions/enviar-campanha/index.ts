@@ -5,6 +5,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function getZapiEndpointAndBody(
+  tipoMidia: string,
+  midiaUrl: string | null,
+  mensagemFinal: string,
+  phone: string
+) {
+  switch (tipoMidia) {
+    case "imagem":
+      return {
+        endpoint: "send-image",
+        body: { phone, image: midiaUrl, caption: mensagemFinal || undefined },
+      };
+    case "audio":
+      return {
+        endpoint: "send-audio",
+        body: { phone, audio: midiaUrl },
+      };
+    case "video":
+      return {
+        endpoint: "send-video",
+        body: { phone, video: midiaUrl, caption: mensagemFinal || undefined },
+      };
+    case "documento": {
+      const fileName = midiaUrl?.split("/").pop() || "arquivo";
+      return {
+        endpoint: "send-document",
+        body: { phone, document: midiaUrl, fileName, caption: mensagemFinal || undefined },
+      };
+    }
+    default:
+      return {
+        endpoint: "send-text",
+        body: { phone, message: mensagemFinal },
+      };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -48,7 +85,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get campaign
     const { data: campanha, error: campError } = await serviceClient
       .from("campanhas")
       .select("*")
@@ -62,7 +98,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get Z-API config
     const { data: zapiConfig } = await serviceClient
       .from("zapi_config")
       .select("instance_id, token, client_token")
@@ -76,13 +111,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Mark campaign as sending
     await serviceClient
       .from("campanhas")
       .update({ status: "enviando" })
       .eq("id", campanha_id);
 
-    // Get pending recipients
     const { data: destinatarios } = await serviceClient
       .from("campanha_destinatarios")
       .select("*, contatos:contato_id(nome)")
@@ -102,6 +135,8 @@ Deno.serve(async (req) => {
 
     let enviados = campanha.total_enviados || 0;
     let falhas = campanha.total_falhas || 0;
+    const tipoMidia = campanha.tipo_midia || "texto";
+    const midiaUrl = campanha.midia_url || null;
 
     for (const dest of destinatarios) {
       try {
@@ -110,9 +145,16 @@ Deno.serve(async (req) => {
           .replace(/\{nome\}/gi, nome)
           .replace(/\{telefone\}/gi, dest.telefone);
 
-        const zapiUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/send-text`;
-
         const phone = dest.telefone.replace(/\D/g, "");
+
+        const { endpoint, body: zapiBody } = getZapiEndpointAndBody(
+          tipoMidia,
+          midiaUrl,
+          mensagemFinal,
+          phone
+        );
+
+        const zapiUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/${endpoint}`;
 
         const zapiResponse = await fetch(zapiUrl, {
           method: "POST",
@@ -120,10 +162,7 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
             "Client-Token": zapiConfig.client_token,
           },
-          body: JSON.stringify({
-            phone,
-            message: mensagemFinal,
-          }),
+          body: JSON.stringify(zapiBody),
         });
 
         if (zapiResponse.ok) {
@@ -148,18 +187,15 @@ Deno.serve(async (req) => {
         falhas++;
       }
 
-      // Update counters periodically
       await serviceClient
         .from("campanhas")
         .update({ total_enviados: enviados, total_falhas: falhas })
         .eq("id", campanha_id);
 
-      // Anti-ban delay: 2-4 seconds
       const delay = 2000 + Math.random() * 2000;
       await new Promise((r) => setTimeout(r, delay));
     }
 
-    // Mark as completed
     await serviceClient
       .from("campanhas")
       .update({ status: "concluida", total_enviados: enviados, total_falhas: falhas })

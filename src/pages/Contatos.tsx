@@ -256,6 +256,13 @@ export default function Contatos() {
                   <Label>Notas</Label>
                   <Textarea value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
                 </div>
+                {camposConfig && camposConfig.length > 0 && (
+                  <CamposDinamicos
+                    campos={camposConfig as any}
+                    valores={camposPersonalizados}
+                    onChange={setCamposPersonalizados}
+                  />
+                )}
                 <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
                   {saveMutation.isPending ? "Salvando..." : "Salvar"}
                 </Button>

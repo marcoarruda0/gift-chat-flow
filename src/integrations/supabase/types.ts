@@ -218,9 +218,54 @@ export type Database = {
         }
         Relationships: []
       }
+      contato_campos_config: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          obrigatorio: boolean
+          opcoes: string[] | null
+          ordem: number
+          tenant_id: string
+          tipo: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          obrigatorio?: boolean
+          opcoes?: string[] | null
+          ordem?: number
+          tenant_id: string
+          tipo?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          obrigatorio?: boolean
+          opcoes?: string[] | null
+          ordem?: number
+          tenant_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contato_campos_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contatos: {
         Row: {
           avatar_url: string | null
+          campos_personalizados: Json
           cpf: string | null
           created_at: string
           data_nascimento: string | null
@@ -237,6 +282,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          campos_personalizados?: Json
           cpf?: string | null
           created_at?: string
           data_nascimento?: string | null
@@ -253,6 +299,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          campos_personalizados?: Json
           cpf?: string | null
           created_at?: string
           data_nascimento?: string | null

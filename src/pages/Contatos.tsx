@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Upload, Download, Pencil, Trash2, MessageSquarePlus } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import CamposDinamicos, { campoKey } from "@/components/contatos/CamposDinamicos";
 
 interface ContatoForm {
   nome: string;
@@ -46,6 +47,21 @@ export default function Contatos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ContatoForm>(emptyForm);
+  const [camposPersonalizados, setCamposPersonalizados] = useState<Record<string, any>>({});
+
+  const { data: camposConfig } = useQuery({
+    queryKey: ["campos-config", profile?.tenant_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contato_campos_config")
+        .select("*")
+        .eq("ativo", true)
+        .order("ordem", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!profile?.tenant_id,
+  });
 
   const { data: contatos, isLoading } = useQuery({
     queryKey: ["contatos", search],

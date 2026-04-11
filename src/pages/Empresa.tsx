@@ -219,6 +219,11 @@ export default function Empresa() {
               <Settings2 className="h-4 w-4" /> Campos
             </TabsTrigger>
           )}
+          {isAdmin && (
+            <TabsTrigger value="respostas" className="gap-2">
+              <Settings2 className="h-4 w-4" /> Respostas
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ── Dados da Empresa ── */}
@@ -436,6 +441,13 @@ export default function Empresa() {
         {isAdmin && (
           <TabsContent value="campos">
             <CamposPersonalizadosConfig />
+          </TabsContent>
+        )}
+
+        {/* ── Respostas Rápidas ── */}
+        {isAdmin && (
+          <TabsContent value="respostas">
+            <RespostasRapidasConfig />
           </TabsContent>
         )}
       </Tabs>

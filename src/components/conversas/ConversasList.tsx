@@ -95,6 +95,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               ultimaMsgAt={c.ultima_msg_at}
               naoLidas={c.nao_lidas}
               status={c.status}
+              aguardandoHumano={c.aguardando_humano}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

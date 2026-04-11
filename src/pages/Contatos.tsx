@@ -89,6 +89,7 @@ export default function Contatos() {
         endereco: formData.endereco || null,
         notas: formData.notas || null,
         tags: formData.tags ? formData.tags.split(",").map((t) => t.trim()) : [],
+        campos_personalizados: camposPersonalizados,
       };
       if (editingId) {
         const { error } = await supabase.from("contatos").update(payload).eq("id", editingId);
@@ -103,6 +104,7 @@ export default function Contatos() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-contatos"] });
       setDialogOpen(false);
       setForm(emptyForm);
+      setCamposPersonalizados({});
       setEditingId(null);
       toast({ title: editingId ? "Contato atualizado!" : "Contato criado!" });
     },
@@ -135,12 +137,14 @@ export default function Contatos() {
       notas: contato.notas || "",
       tags: (contato.tags || []).join(", "),
     });
+    setCamposPersonalizados(contato.campos_personalizados || {});
     setDialogOpen(true);
   };
 
   const openNew = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setCamposPersonalizados({});
     setDialogOpen(true);
   };
 

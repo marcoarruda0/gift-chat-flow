@@ -637,6 +637,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_same_tenant: { Args: { _target_user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"

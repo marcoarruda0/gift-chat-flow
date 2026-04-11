@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Send, Clock, Eye, Ban, Megaphone } from "lucide-react";
+import { Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X } from "lucide-react";
 import { format } from "date-fns";
 
 type Campanha = {
@@ -26,6 +26,8 @@ type Campanha = {
   total_enviados: number;
   total_falhas: number;
   created_at: string;
+  tipo_midia: string;
+  midia_url: string | null;
 };
 
 type Contato = {
@@ -43,6 +45,21 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   cancelada: { label: "Cancelada", variant: "destructive" },
 };
 
+const midiaIcon: Record<string, React.ReactNode> = {
+  texto: null,
+  imagem: <Image className="h-4 w-4" />,
+  audio: <Mic className="h-4 w-4" />,
+  video: <Video className="h-4 w-4" />,
+  documento: <FileText className="h-4 w-4" />,
+};
+
+const midiaAccept: Record<string, string> = {
+  imagem: "image/*",
+  audio: "audio/*",
+  video: "video/*",
+  documento: ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv",
+};
+
 export default function Disparos() {
   const { profile } = useAuth();
   const { toast } = useToast();
@@ -51,6 +68,7 @@ export default function Disparos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialog, setDetailDialog] = useState<string | null>(null);
   const [destinatariosDetail, setDestinatariosDetail] = useState<any[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [nome, setNome] = useState("");
@@ -62,6 +80,10 @@ export default function Disparos() {
   const [contatos, setContatos] = useState<Contato[]>([]);
   const [contatosSelecionados, setContatosSelecionados] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [tipoMidia, setTipoMidia] = useState("texto");
+  const [midiaUrl, setMidiaUrl] = useState<string | null>(null);
+  const [midiaFileName, setMidiaFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const tenantId = profile?.tenant_id;
 
@@ -100,9 +122,47 @@ export default function Disparos() {
     setContatos((data as Contato[]) || []);
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !tenantId) return;
+
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "bin";
+      const path = `campanhas/${tenantId}/${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage.from("chat-media").upload(path, file);
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(path);
+      setMidiaUrl(urlData.publicUrl);
+      setMidiaFileName(file.name);
+    } catch (err: any) {
+      toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeMidia() {
+    setMidiaUrl(null);
+    setMidiaFileName(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   async function criarCampanha() {
-    if (!tenantId || !nome.trim() || !mensagem.trim()) {
-      toast({ title: "Preencha nome e mensagem", variant: "destructive" });
+    if (!tenantId || !nome.trim()) {
+      toast({ title: "Preencha o nome da campanha", variant: "destructive" });
+      return;
+    }
+
+    if (tipoMidia === "texto" && !mensagem.trim()) {
+      toast({ title: "Preencha a mensagem", variant: "destructive" });
+      return;
+    }
+
+    if (tipoMidia !== "texto" && !midiaUrl) {
+      toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
       return;
     }
 
@@ -128,13 +188,14 @@ export default function Disparos() {
           agendada_para: agendar && agendarPara ? new Date(agendarPara).toISOString() : null,
           total_destinatarios: alvos.length,
           criado_por: profile?.id || "",
-        })
+          tipo_midia: tipoMidia,
+          midia_url: midiaUrl,
+        } as any)
         .select()
         .single();
 
       if (error) throw error;
 
-      // Insert recipients
       const destinatarios = alvos.map((c) => ({
         campanha_id: (campanha as any).id,
         contato_id: c.id,
@@ -163,7 +224,6 @@ export default function Disparos() {
       });
       if (error) throw error;
       toast({ title: "Envio iniciado!" });
-      // Refresh after a short delay
       setTimeout(fetchCampanhas, 2000);
     } catch (err: any) {
       toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
@@ -193,6 +253,9 @@ export default function Disparos() {
     setContatosSelecionados([]);
     setAgendar(false);
     setAgendarPara("");
+    setTipoMidia("texto");
+    setMidiaUrl(null);
+    setMidiaFileName(null);
   }
 
   function toggleTag(tag: string) {
@@ -243,6 +306,7 @@ export default function Disparos() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-center">Dest.</TableHead>
                   <TableHead className="text-center">Enviados</TableHead>
@@ -254,9 +318,15 @@ export default function Disparos() {
               <TableBody>
                 {campanhas.map((c) => {
                   const sc = statusConfig[c.status] || { label: c.status, variant: "outline" as const };
+                  const tm = c.tipo_midia || "texto";
                   return (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.nome}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1 text-muted-foreground capitalize">
+                          {midiaIcon[tm]} {tm}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={sc.variant}>{sc.label}</Badge>
                       </TableCell>
@@ -307,12 +377,61 @@ export default function Disparos() {
             </div>
 
             <div>
-              <Label>Mensagem</Label>
+              <Label>Tipo de mídia</Label>
+              <Select value={tipoMidia} onValueChange={(v) => { setTipoMidia(v); removeMidia(); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="texto">📝 Texto</SelectItem>
+                  <SelectItem value="imagem">🖼️ Imagem</SelectItem>
+                  <SelectItem value="audio">🎵 Áudio</SelectItem>
+                  <SelectItem value="video">🎬 Vídeo</SelectItem>
+                  <SelectItem value="documento">📄 Documento</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {tipoMidia !== "texto" && (
+              <div>
+                <Label>Arquivo de mídia</Label>
+                {midiaUrl ? (
+                  <div className="flex items-center gap-2 mt-1 p-2 border rounded bg-muted/30">
+                    {midiaIcon[tipoMidia]}
+                    <span className="text-sm truncate flex-1">{midiaFileName}</span>
+                    <Button size="sm" variant="ghost" onClick={removeMidia}><X className="h-4 w-4" /></Button>
+                  </div>
+                ) : (
+                  <div className="mt-1">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={midiaAccept[tipoMidia]}
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {uploading ? "Enviando..." : "Selecionar arquivo"}
+                    </Button>
+                  </div>
+                )}
+                {tipoMidia === "imagem" && midiaUrl && (
+                  <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+                )}
+              </div>
+            )}
+
+            <div>
+              <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
               <Textarea
                 value={mensagem}
                 onChange={(e) => setMensagem(e.target.value)}
                 placeholder="Olá {nome}, temos uma oferta especial..."
-                rows={4}
+                rows={3}
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>

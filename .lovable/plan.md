@@ -1,45 +1,46 @@
 
 
-# Correções e Melhorias no Módulo Conversas
+# Marcar Conversa como Não Lida
 
-## Problema 1: Badge de não lidas não atualiza
-Quando o usuário abre uma conversa com mensagens não lidas, o contador verde na lista lateral não zera. Motivo: não existe nenhum código que faça `UPDATE conversas SET nao_lidas = 0` ao selecionar/abrir uma conversa.
-
-## Problema 2: Sem seletor de emojis
-A barra de input de mensagens não possui um botão de emoji com biblioteca para seleção rápida.
-
----
+## Objetivo
+Adicionar botão no header do chat que marca a conversa como "não lida", exibindo um ponto verde (sem contador) na lista lateral — igual ao comportamento do WhatsApp.
 
 ## Alterações
 
-### 1. Zerar `nao_lidas` ao abrir conversa (`Conversas.tsx`)
+### 1. Coluna `marcada_nao_lida` na tabela `conversas`
 
-- No `useEffect` que dispara quando `selectedId` muda, após buscar mensagens, executar:
-  ```sql
-  UPDATE conversas SET nao_lidas = 0 WHERE id = selectedId
-  ```
-- Atualizar o estado local `conversas` para refletir imediatamente (sem esperar refetch)
+- Nova coluna `marcada_nao_lida` (boolean, default false)
+- Usada para diferenciar "não lida manual" (ponto verde) de "mensagens novas" (bola com número)
 
-### 2. Emoji Picker no ChatInput (`ChatInput.tsx`)
+### 2. ChatPanel — Botão "Marcar como não lida"
 
-- Instalar `emoji-mart` (ou `@emoji-mart/react` + `@emoji-mart/data`) — biblioteca leve e popular de emojis
-- Adicionar botão `Smile` (lucide) à esquerda do textarea
-- Ao clicar, abrir um `Popover` com o componente `<Picker>` do emoji-mart
-- Ao selecionar emoji, inserir no texto na posição do cursor
-- Fechar popover após seleção
+- Novo botão com ícone `MailOpen` / `Mail` (lucide) ao lado do botão de transferir
+- Nova prop `onMarkUnread` chamada ao clicar
+- Tooltip: "Marcar como não lida"
 
-### 3. Arquivos alterados
+### 3. Conversas.tsx — Lógica
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/Conversas.tsx` | Adicionar reset de `nao_lidas` ao selecionar conversa |
-| `src/components/conversas/ChatInput.tsx` | Adicionar botão emoji + Popover com picker |
-| `package.json` | Adicionar dependência `@emoji-mart/react` e `@emoji-mart/data` |
+- `handleMarkUnread`: faz `UPDATE conversas SET marcada_nao_lida = true` e deseleciona a conversa
+- No `useEffect` que zera `nao_lidas` ao abrir, também faz `marcada_nao_lida = false` (limpa ao abrir)
+- Passa a prop `onMarkUnread` ao `ChatPanel`
 
-## Detalhes Técnicos
+### 4. ConversaItem — Ponto verde
 
-- O reset de `nao_lidas` é feito tanto no banco (update) quanto no state local (para UI instantânea)
-- O emoji-mart renderiza a biblioteca completa de emojis com categorias, busca e skins — visual nativo
-- O Popover usa o componente shadcn/ui já existente no projeto
-- O emoji é inserido na posição atual do cursor via `selectionStart` do textarea
+- Receber nova prop `marcadaNaoLida`
+- Quando `marcadaNaoLida === true` e `naoLidas === 0`: exibir um **ponto verde** (`h-[10px] w-[10px] rounded-full bg-[#25D366]`) no lugar da bola com número
+- Quando `naoLidas > 0`: comportamento atual (bola com contador)
+
+### 5. ConversasList — Passar prop
+
+- Passar `marcadaNaoLida` da conversa para o `ConversaItem`
+
+## Arquivos
+
+| Arquivo | Tipo |
+|---------|------|
+| Migration (coluna `marcada_nao_lida`) | Novo |
+| `src/components/conversas/ChatPanel.tsx` | Alterado |
+| `src/pages/Conversas.tsx` | Alterado |
+| `src/components/conversas/ConversaItem.tsx` | Alterado |
+| `src/components/conversas/ConversasList.tsx` | Alterado |
 

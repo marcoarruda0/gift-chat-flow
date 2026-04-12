@@ -194,7 +194,7 @@ export default function Empresa() {
     }
   };
 
-
+  const handleUpdateRole = async (memberId: string, newRole: string) => {
     setUpdatingRole(memberId);
     const { data, error } = await supabase.functions.invoke("gerenciar-membro", {
       body: { action: "update_role", user_id: memberId, new_role: newRole },

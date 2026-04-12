@@ -552,6 +552,7 @@ export default function Conversas() {
             syncing={syncing}
             loading={loadingConversas}
             currentUserId={user?.id || null}
+            userDepartamentoId={(profile as any)?.departamento_id || null}
           />
         </div>
       )}

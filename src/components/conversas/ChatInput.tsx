@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send } from "lucide-react";
+import { Send, Smile } from "lucide-react";
 import { AudioRecorder } from "./AudioRecorder";
 import { AttachmentButton } from "./AttachmentButton";
 import { RespostasRapidasPopup } from "./RespostasRapidasPopup";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -28,6 +31,7 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
   const [respostas, setRespostas] = useState<RespostaRapida[]>([]);
   const [showPopup, setShowPopup] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const loadedRef = useRef(false);
 
   // Load respostas rapidas once
@@ -56,11 +60,29 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
   }, [text, respostas.length]);
 
   const handleSelectResposta = (conteudo: string) => {
-    // Replace /command with content
     const newText = text.replace(/(^|\s)\/\S*$/, (match, prefix) => prefix + conteudo);
     setText(newText);
     setShowPopup(false);
     ref.current?.focus();
+  };
+
+  const handleEmojiSelect = (emoji: any) => {
+    const textarea = ref.current;
+    if (textarea) {
+      const start = textarea.selectionStart ?? text.length;
+      const end = textarea.selectionEnd ?? text.length;
+      const newText = text.substring(0, start) + emoji.native + text.substring(end);
+      setText(newText);
+      // Set cursor position after emoji
+      requestAnimationFrame(() => {
+        textarea.focus();
+        const pos = start + emoji.native.length;
+        textarea.setSelectionRange(pos, pos);
+      });
+    } else {
+      setText(prev => prev + emoji.native);
+    }
+    setEmojiOpen(false);
   };
 
   const handleSend = () => {
@@ -72,7 +94,7 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (showPopup) return; // let popup handle keys
+    if (showPopup) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -88,6 +110,23 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
           onSelect={handleSelectResposta}
         />
       )}
+      <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+        <PopoverTrigger asChild>
+          <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" disabled={disabled}>
+            <Smile className="h-5 w-5 text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="start" className="w-auto p-0 border-0">
+          <Picker
+            data={data}
+            onEmojiSelect={handleEmojiSelect}
+            locale="pt"
+            theme="auto"
+            previewPosition="none"
+            skinTonePosition="search"
+          />
+        </PopoverContent>
+      </Popover>
       {onSendAttachment && (
         <AttachmentButton onSelect={onSendAttachment} disabled={disabled} />
       )}

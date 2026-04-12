@@ -101,8 +101,14 @@ export default function Conversas() {
   }, []);
 
   useEffect(() => {
-    if (selectedId) fetchMensagens(selectedId);
-    else setMensagens([]);
+    if (selectedId) {
+      fetchMensagens(selectedId);
+      // Reset unread count in DB and local state
+      supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", selectedId).then();
+      setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, nao_lidas: 0 } : c));
+    } else {
+      setMensagens([]);
+    }
   }, [selectedId, fetchMensagens]);
 
   // Realtime subscriptions

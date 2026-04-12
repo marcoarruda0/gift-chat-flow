@@ -20,6 +20,7 @@ interface ConversaRow {
   status: string;
   aguardando_humano: boolean;
   atendente_id: string | null;
+  departamento_id: string | null;
 }
 
 interface MensagemRow {
@@ -51,7 +52,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, contato_id, contatos(nome, telefone, avatar_url)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -68,6 +69,7 @@ export default function Conversas() {
       status: c.status,
       aguardando_humano: c.aguardando_humano ?? false,
       atendente_id: c.atendente_id || null,
+      departamento_id: c.departamento_id || null,
     }));
     setConversas(mapped);
     setLoadingConversas(false);
@@ -334,6 +336,38 @@ export default function Conversas() {
     }
   };
 
+  const handleTransferDepartamento = async (departamentoId: string, departamentoNome: string, motivo: string) => {
+    if (!selectedId || !tenantId || !profile) return;
+    try {
+      await supabase.from("conversas").update({
+        departamento_id: departamentoId,
+        atendente_id: null,
+      } as any).eq("id", selectedId);
+
+      await supabase.from("conversa_transferencias").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        de_user_id: user!.id,
+        para_user_id: user!.id, // self reference for dept transfers
+        motivo: `Transferido para departamento ${departamentoNome}${motivo ? ` — ${motivo}` : ""}`,
+      });
+
+      await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: `Conversa transferida para o departamento ${departamentoNome}${motivo ? ` — Motivo: ${motivo}` : ""}`,
+        remetente: "sistema" as any,
+        tipo: "texto" as any,
+      });
+
+      toast.success(`Conversa transferida para ${departamentoNome}`);
+      fetchConversas();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao transferir conversa");
+    }
+  };
+
   const handleSync = async () => {
     if (!tenantId) return;
     setSyncing(true);
@@ -518,6 +552,7 @@ export default function Conversas() {
             syncing={syncing}
             loading={loadingConversas}
             currentUserId={user?.id || null}
+            userDepartamentoId={(profile as any)?.departamento_id || null}
           />
         </div>
       )}
@@ -549,6 +584,7 @@ export default function Conversas() {
         open={transferDialogOpen}
         onOpenChange={setTransferDialogOpen}
         onConfirm={handleTransfer}
+        onConfirmDepartamento={handleTransferDepartamento}
       />
     </div>
   );

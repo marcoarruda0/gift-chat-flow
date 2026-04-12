@@ -375,6 +375,7 @@ export type Database = {
           atendente_id: string | null
           contato_id: string
           created_at: string
+          departamento_id: string | null
           id: string
           nao_lidas: number
           status: string
@@ -387,6 +388,7 @@ export type Database = {
           atendente_id?: string | null
           contato_id: string
           created_at?: string
+          departamento_id?: string | null
           id?: string
           nao_lidas?: number
           status?: string
@@ -399,6 +401,7 @@ export type Database = {
           atendente_id?: string | null
           contato_id?: string
           created_at?: string
+          departamento_id?: string | null
           id?: string
           nao_lidas?: number
           status?: string
@@ -419,6 +422,13 @@ export type Database = {
             columns: ["contato_id"]
             isOneToOne: false
             referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversas_departamento_id_fkey"
+            columns: ["departamento_id"]
+            isOneToOne: false
+            referencedRelation: "departamentos"
             referencedColumns: ["id"]
           },
           {
@@ -467,6 +477,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "convites_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departamentos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+          tenant_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          tenant_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departamentos_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -714,6 +759,7 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           departamento: string | null
+          departamento_id: string | null
           id: string
           nome: string | null
           tenant_id: string | null
@@ -722,6 +768,7 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           departamento?: string | null
+          departamento_id?: string | null
           id: string
           nome?: string | null
           tenant_id?: string | null
@@ -730,11 +777,19 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           departamento?: string | null
+          departamento_id?: string | null
           id?: string
           nome?: string | null
           tenant_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_departamento_id_fkey"
+            columns: ["departamento_id"]
+            isOneToOne: false
+            referencedRelation: "departamentos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_tenant_id_fkey"
             columns: ["tenant_id"]

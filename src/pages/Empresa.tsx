@@ -11,9 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2 } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree } from "lucide-react";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
+import DepartamentosConfig from "@/components/empresa/DepartamentosConfig";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const roleLabels: Record<string, string> = {
@@ -48,6 +49,9 @@ export default function Empresa() {
   const [instances, setInstances] = useState<any[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(true);
 
+  // Departamentos (for team select)
+  const [departamentos, setDepartamentos] = useState<any[]>([]);
+
   // Remoção de membro
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; nome: string } | null>(null);
@@ -61,6 +65,7 @@ export default function Empresa() {
     loadTeam();
     loadConvites();
     loadInstances();
+    loadDepartamentos();
   }, [tenantId]);
 
   const loadTenantData = async () => {
@@ -94,7 +99,7 @@ export default function Empresa() {
     setLoadingTeam(true);
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, nome, departamento")
+      .select("id, nome, departamento, departamento_id")
       .eq("tenant_id", tenantId!);
 
     if (profiles) {
@@ -166,6 +171,29 @@ export default function Empresa() {
     setLoadingInstances(false);
   };
 
+  const loadDepartamentos = async () => {
+    const { data } = await supabase
+      .from("departamentos")
+      .select("id, nome")
+      .eq("tenant_id", tenantId!)
+      .eq("ativo", true)
+      .order("nome");
+    setDepartamentos(data || []);
+  };
+
+  const handleUpdateDepartamento = async (memberId: string, departamentoId: string | null) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ departamento_id: departamentoId } as any)
+      .eq("id", memberId);
+    if (error) {
+      toast({ title: "Erro ao atualizar departamento", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Departamento atualizado!" });
+      loadTeam();
+    }
+  };
+
   const handleUpdateRole = async (memberId: string, newRole: string) => {
     setUpdatingRole(memberId);
     const { data, error } = await supabase.functions.invoke("gerenciar-membro", {
@@ -217,6 +245,11 @@ export default function Empresa() {
           {isAdmin && (
             <TabsTrigger value="campos" className="gap-2">
               <Settings2 className="h-4 w-4" /> Campos
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="departamentos" className="gap-2">
+              <FolderTree className="h-4 w-4" /> Deptos
             </TabsTrigger>
           )}
           {isAdmin && (
@@ -304,7 +337,26 @@ export default function Empresa() {
                             {member.nome || "Sem nome"}
                             {isSelf && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
                           </TableCell>
-                          <TableCell>{member.departamento || "—"}</TableCell>
+                          <TableCell>
+                            {canManage ? (
+                              <Select
+                                value={member.departamento_id || "none"}
+                                onValueChange={(val) => handleUpdateDepartamento(member.id, val === "none" ? null : val)}
+                              >
+                                <SelectTrigger className="w-[140px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Nenhum</SelectItem>
+                                  {departamentos.map(d => (
+                                    <SelectItem key={d.id} value={d.id}>{d.nome}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>{departamentos.find(d => d.id === member.departamento_id)?.nome || member.departamento || "—"}</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {canManage ? (
                               <Select
@@ -441,6 +493,13 @@ export default function Empresa() {
         {isAdmin && (
           <TabsContent value="campos">
             <CamposPersonalizadosConfig />
+          </TabsContent>
+        )}
+
+        {/* ── Departamentos ── */}
+        {isAdmin && (
+          <TabsContent value="departamentos">
+            <DepartamentosConfig />
           </TabsContent>
         )}
 

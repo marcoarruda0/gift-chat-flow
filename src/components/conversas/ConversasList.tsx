@@ -15,6 +15,7 @@ interface Conversa {
   status: string;
   aguardando_humano?: boolean;
   atendente_id?: string | null;
+  departamento_id?: string | null;
 }
 
 interface ConversasListProps {
@@ -26,11 +27,12 @@ interface ConversasListProps {
   syncing?: boolean;
   loading: boolean;
   currentUserId?: string | null;
+  userDepartamentoId?: string | null;
 }
 
-const FILTROS = ["Todas", "Abertas", "Minhas", "Fechadas"] as const;
+const FILTROS = ["Todas", "Abertas", "Minhas", "Meu Depto", "Fechadas"] as const;
 
-export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, syncing, loading, currentUserId }: ConversasListProps) {
+export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, syncing, loading, currentUserId, userDepartamentoId }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<typeof FILTROS[number]>("Todas");
 
@@ -38,6 +40,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
     if (filtro === "Abertas") return c.status === "aberta";
     if (filtro === "Minhas") return c.atendente_id === currentUserId;
+    if (filtro === "Meu Depto") return userDepartamentoId && c.departamento_id === userDepartamentoId;
     if (filtro === "Fechadas") return c.status === "fechada";
     return true;
   });

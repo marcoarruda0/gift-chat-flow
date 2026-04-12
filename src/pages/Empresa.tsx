@@ -65,6 +65,7 @@ export default function Empresa() {
     loadTeam();
     loadConvites();
     loadInstances();
+    loadDepartamentos();
   }, [tenantId]);
 
   const loadTenantData = async () => {
@@ -98,7 +99,7 @@ export default function Empresa() {
     setLoadingTeam(true);
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, nome, departamento")
+      .select("id, nome, departamento, departamento_id")
       .eq("tenant_id", tenantId!);
 
     if (profiles) {

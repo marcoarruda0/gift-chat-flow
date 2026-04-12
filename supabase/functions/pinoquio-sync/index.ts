@@ -41,7 +41,19 @@ function applyTemplate(template: string, cad: PinoquioCadastramento, link: strin
     .replace(/\{data_limite\}/g, limitDate);
 }
 
-async function fetchAllPages(apiBaseUrl: string, jwt: string): Promise<PinoquioCadastramento[]> {
+function decodeJwtIfNeeded(jwt: string): string {
+  // If it doesn't start with "eyJ" it might be base64-encoded
+  if (!jwt.startsWith("eyJ")) {
+    try {
+      const decoded = atob(jwt);
+      if (decoded.startsWith("eyJ")) return decoded;
+    } catch { /* not base64, use as-is */ }
+  }
+  return jwt;
+}
+
+async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<PinoquioCadastramento[]> {
+  const jwt = decodeJwtIfNeeded(rawJwt);
   const all: PinoquioCadastramento[] = [];
   let page = 1;
   let lastPage = 1;

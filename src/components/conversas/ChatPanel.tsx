@@ -63,6 +63,11 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
           <p className="text-sm font-medium text-foreground truncate">{contatoNome}</p>
           {contatoTelefone && <p className="text-xs text-muted-foreground">{contatoTelefone}</p>}
         </div>
+        {onTransfer && (
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onTransfer} title="Transferir conversa">
+            <ArrowRightLeft className="h-4 w-4" />
+          </Button>
+        )}
         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>

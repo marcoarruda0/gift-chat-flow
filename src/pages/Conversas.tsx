@@ -209,12 +209,18 @@ export default function Conversas() {
       text = text.replace(/\{nome\}/gi, selected.contato_nome || "");
       text = text.replace(/\{telefone\}/gi, selected.contato_telefone || "");
     }
+    // Build metadata with sender name if apelido is active
+    const senderName = profile?.mostrar_apelido && profile?.apelido ? profile.apelido : null;
+    const metadata: Record<string, any> = {};
+    if (senderName) metadata.senderName = senderName;
+
     const { error } = await supabase.from("mensagens").insert({
       conversa_id: selectedId,
       tenant_id: tenantId,
       conteudo: text,
       remetente: "atendente" as any,
       tipo: "texto" as any,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     });
     if (error) { toast.error("Erro ao enviar mensagem"); return; }
 
@@ -226,9 +232,11 @@ export default function Conversas() {
     // Send via Z-API if contact has phone
     if (selected?.contato_telefone) {
       try {
+        // Prefix message with bold nickname for WhatsApp
+        const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
         await callZapi("send-text", "POST", {
           phone: selected.contato_telefone.replace(/\D/g, ""),
-          message: text,
+          message: zapiMessage,
         });
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);

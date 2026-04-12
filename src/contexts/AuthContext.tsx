@@ -8,6 +8,8 @@ interface Profile {
   nome: string | null;
   avatar_url: string | null;
   departamento: string | null;
+  apelido: string | null;
+  mostrar_apelido: boolean;
 }
 
 interface AuthContextType {

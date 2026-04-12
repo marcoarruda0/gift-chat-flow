@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { RefreshCw, Send, TestTube, Eye, RotateCcw, Loader2 } from "lucide-react";
+import { RefreshCw, Send, TestTube, Eye, EyeOff, RotateCcw, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 const DEFAULT_TEMPLATE = `Aprovação da Captação: R-{id}
@@ -437,6 +437,7 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
   const [testing, setTesting] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [exists, setExists] = useState(false);
+  const [showJwt, setShowJwt] = useState(false);
 
   useEffect(() => {
     supabase.from("pinoquio_config").select("*").eq("tenant_id", tenantId).single()
@@ -473,12 +474,25 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
   };
 
   const testConnection = async () => {
+    if (!config.jwt_token.trim()) {
+      toast.error("Insira o JWT antes de testar.");
+      return;
+    }
     setTesting(true);
     try {
+      // Send current form values directly so no need to save first
       const { data, error } = await supabase.functions.invoke("pinoquio-sync", {
-        body: { tenant_id: tenantId, action: "test_connection" },
+        body: {
+          tenant_id: tenantId,
+          action: "test_connection",
+          jwt_token: config.jwt_token,
+          api_base_url: config.api_base_url,
+        },
       });
       if (error) throw error;
+      if (data?.warnings?.length) {
+        data.warnings.forEach((w: string) => toast.info("⚠️ " + w));
+      }
       if (data?.ok) {
         toast.success(`Conexão OK! ${data.total} cadastramentos pendentes na API.`);
       } else {
@@ -502,12 +516,19 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
       <CardContent className="space-y-6">
         <div className="space-y-2">
           <Label>JWT Token do Pinóquio</Label>
-          <Input
-            type="password"
-            value={config.jwt_token}
-            onChange={(e) => setConfig((c) => ({ ...c, jwt_token: e.target.value }))}
-            placeholder="Cole o JWT token aqui"
-          />
+          <div className="flex gap-2">
+            <Input
+              type={showJwt ? "text" : "password"}
+              value={config.jwt_token}
+              onChange={(e) => setConfig((c) => ({ ...c, jwt_token: e.target.value }))}
+              placeholder="Cole o JWT token aqui (sem 'Bearer')"
+              className="font-mono text-xs"
+            />
+            <Button type="button" variant="ghost" size="icon" onClick={() => setShowJwt((v) => !v)} tabIndex={-1}>
+              {showJwt ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Cole apenas o token JWT (começa com eyJ...). O sistema remove automaticamente prefixos como "Bearer".</p>
         </div>
 
         <div className="space-y-2">

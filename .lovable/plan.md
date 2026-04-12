@@ -1,68 +1,56 @@
 
 
-# Respostas Rápidas no Módulo Conversas
+# Transferência de Conversas entre Atendentes
 
 ## Objetivo
-Permitir que atendentes criem atalhos de texto (ex: `/saudacao`, `/preco`) que, ao digitar `/` no chat, exibem uma lista filtrável de respostas pré-configuradas para inserção rápida.
-
-## Arquitetura
-
-```text
-┌──────────────────────────────┐
-│  respostas_rapidas (tabela)  │
-│  atalho, conteudo, tenant_id │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│  ChatInput.tsx               │
-│  Detecta "/" → popup lista   │
-│  Filtra por digitação        │
-│  Click/Enter → insere texto  │
-└──────────────────────────────┘
-```
+Permitir que um atendente transfira uma conversa para outro membro da equipe, com registro de histórico e notificação.
 
 ## Alterações
 
-### 1. Migration — Tabela `respostas_rapidas`
+### 1. Migration — Tabela `conversa_transferencias` (histórico)
 
-Colunas: `id` (uuid), `tenant_id` (uuid), `atalho` (text, ex: "saudacao"), `conteudo` (text, o texto completo), `created_at`.
+Colunas: `id` (uuid), `conversa_id` (uuid), `tenant_id` (uuid), `de_user_id` (uuid), `para_user_id` (uuid), `motivo` (text, nullable), `created_at`.
 
-RLS: isolamento por `tenant_id`. Admin pode CRUD, todos do tenant podem ler.
+RLS: isolamento por `tenant_id`, todos do tenant podem ler, atendentes podem inserir.
 
-### 2. UI — Popup de atalhos no `ChatInput.tsx`
+A coluna `atendente_id` já existe na tabela `conversas` — será usada para indicar o atendente responsável atual.
 
-- Detectar quando o texto começa com `/` ou contém `/` após espaço
-- Buscar `respostas_rapidas` do tenant (cache local, fetch uma vez)
-- Exibir popup flutuante acima do input com lista filtrável (Command/Popover)
-- Navegação por setas (cima/baixo) e Enter para selecionar
-- Ao selecionar: substituir o `/atalho` pelo conteúdo completo no textarea
+### 2. UI — Botão "Transferir" no header do ChatPanel
 
-### 3. UI — Tela de gerenciamento de respostas rápidas
+- Novo botão no header do chat (ícone `ArrowRightLeft` ou `UserPlus`)
+- Ao clicar, abre um Dialog listando os membros do tenant (query em `profiles` onde `tenant_id` = atual, excluindo o usuário logado)
+- Campo opcional de motivo (textarea)
+- Ao confirmar: atualiza `conversas.atendente_id` para o novo atendente e insere registro em `conversa_transferencias`
+- Mensagem de sistema inserida na conversa ("Conversa transferida de X para Y")
 
-- Nova seção na página Empresa (aba "Respostas Rápidas") ou acessível via ícone no chat
-- CRUD de atalhos: nome do atalho + conteúdo (textarea)
-- Suporte a variáveis `{nome}`, `{telefone}` (substituídas ao enviar)
+### 3. Atualização do `Conversas.tsx`
 
-### 4. Substituição de variáveis
+- Passar `onTransfer` callback para `ChatPanel`
+- Função `handleTransfer(paraUserId, motivo)`:
+  1. Update `conversas.atendente_id = paraUserId`
+  2. Insert em `conversa_transferencias`
+  3. Insert mensagem de sistema (remetente: `"sistema"`, tipo: `"texto"`, conteúdo: "Transferido de X para Y")
+  4. Toast de confirmação
 
-- No `handleSend` do `Conversas.tsx`, antes de enviar, substituir `{nome}` e `{telefone}` pelos dados do contato selecionado
+### 4. Filtro "Minhas" na lista de conversas
+
+- O filtro "Minhas" na `ConversasList` (já existe o label) passará a funcionar filtrando por `atendente_id = auth.uid()`
+- Conversas sem `atendente_id` aparecem em "Todas" (fila geral)
 
 ## Arquivos criados/alterados
 
 | Arquivo | Tipo |
 |---------|------|
-| Migration (respostas_rapidas) | Novo |
-| `src/components/conversas/RespostasRapidasPopup.tsx` | Novo (popup filtrável) |
-| `src/components/conversas/RespostasRapidasConfig.tsx` | Novo (CRUD admin) |
-| `src/components/conversas/ChatInput.tsx` | Alterado (detecção `/` + popup) |
-| `src/pages/Empresa.tsx` | Alterado (nova aba) |
-| `src/pages/Conversas.tsx` | Alterado (substituição variáveis no send) |
+| Migration (conversa_transferencias + RLS) | Novo |
+| `src/components/conversas/TransferirDialog.tsx` | Novo (dialog de seleção de atendente) |
+| `src/components/conversas/ChatPanel.tsx` | Alterado (botão transferir no header) |
+| `src/pages/Conversas.tsx` | Alterado (handleTransfer + prop onTransfer + filtro "Minhas") |
+| `src/components/conversas/ConversasList.tsx` | Alterado (lógica do filtro "Minhas") |
 
 ## Detalhes Técnicos
 
-- O popup usa `Command` (cmdk) do shadcn para busca/filtro nativo com keyboard navigation
-- Respostas são carregadas uma vez e cacheadas em state; realtime opcional para sync entre abas
-- Atalhos são case-insensitive e sem caracteres especiais (slug)
-- Limite sugerido: 50 respostas rápidas por tenant
+- A query de membros usa a tabela `profiles` filtrada por `tenant_id`, já acessível via RLS existente
+- Mensagem de sistema usa remetente `"sistema"` — verificar se o enum `remetente_tipo` inclui esse valor; se não, adicionar via migration
+- O histórico em `conversa_transferencias` permite auditoria completa de quem transferiu para quem e quando
+- Realtime já está ativo na tabela `conversas`, então o novo atendente verá a conversa aparecer automaticamente
 

@@ -756,29 +756,35 @@ export type Database = {
       }
       profiles: {
         Row: {
+          apelido: string | null
           avatar_url: string | null
           created_at: string
           departamento: string | null
           departamento_id: string | null
           id: string
+          mostrar_apelido: boolean
           nome: string | null
           tenant_id: string | null
         }
         Insert: {
+          apelido?: string | null
           avatar_url?: string | null
           created_at?: string
           departamento?: string | null
           departamento_id?: string | null
           id: string
+          mostrar_apelido?: boolean
           nome?: string | null
           tenant_id?: string | null
         }
         Update: {
+          apelido?: string | null
           avatar_url?: string | null
           created_at?: string
           departamento?: string | null
           departamento_id?: string | null
           id?: string
+          mostrar_apelido?: boolean
           nome?: string | null
           tenant_id?: string | null
         }

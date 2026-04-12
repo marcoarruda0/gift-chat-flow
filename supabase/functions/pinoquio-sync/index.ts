@@ -41,21 +41,47 @@ function applyTemplate(template: string, cad: PinoquioCadastramento, link: strin
     .replace(/\{data_limite\}/g, limitDate);
 }
 
-function decodeJwtIfNeeded(jwt: string): string {
-  // Clean whitespace/newlines
-  let clean = jwt.replace(/\s+/g, "");
+function cleanJwt(raw: string): { token: string; warnings: string[] } {
+  const warnings: string[] = [];
+  let clean = raw.trim();
+  // Remove surrounding quotes
+  if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
+    clean = clean.slice(1, -1);
+    warnings.push("Aspas removidas do token");
+  }
+  // Remove "Bearer " prefix
+  if (/^Bearer\s+/i.test(clean)) {
+    clean = clean.replace(/^Bearer\s+/i, "");
+    warnings.push("Prefixo 'Bearer' removido do token");
+  }
+  // Remove whitespace/newlines
+  clean = clean.replace(/\s+/g, "");
   // If it doesn't start with "eyJ" it might be base64-encoded
   if (!clean.startsWith("eyJ")) {
     try {
       const decoded = atob(clean);
-      if (decoded.startsWith("eyJ")) return decoded.replace(/\s+/g, "");
+      if (decoded.startsWith("eyJ")) {
+        clean = decoded.replace(/\s+/g, "");
+        warnings.push("Token decodificado de base64");
+      }
     } catch { /* not base64, use as-is */ }
   }
-  return clean;
+  return { token: clean, warnings };
+}
+
+function validateJwtFormat(token: string): string | null {
+  if (!token) return "Token vazio";
+  if (!token.startsWith("eyJ")) return "Token não parece ser um JWT válido (deve começar com 'eyJ')";
+  const parts = token.split(".");
+  if (parts.length < 2) return "Token JWT malformado (esperado pelo menos 2 partes separadas por '.')";
+  return null;
 }
 
 async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<PinoquioCadastramento[]> {
-  const jwt = decodeJwtIfNeeded(rawJwt);
+  const { token: jwt } = cleanJwt(rawJwt);
+  const formatError = validateJwtFormat(jwt);
+  if (formatError) throw new Error(formatError);
+
   const all: PinoquioCadastramento[] = [];
   let page = 1;
   let lastPage = 1;
@@ -66,6 +92,9 @@ async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<Pinoqu
       headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
     });
 
+    if (res.status === 401) {
+      throw new Error("Token recusado pela API Pinóquio (401). Verifique se o token está correto e não expirou.");
+    }
     if (!res.ok) {
       throw new Error(`Pinóquio API error: ${res.status} ${res.statusText}`);
     }
@@ -258,40 +287,63 @@ Deno.serve(async (req) => {
 
     // Action: test_connection — just test the Pinóquio API
     if (action === "test_connection" && tenant_id) {
-      const { data: config } = await serviceClient
-        .from("pinoquio_config")
-        .select("*")
-        .eq("tenant_id", tenant_id)
-        .single();
+      // Accept inline jwt/url from request body, fallback to DB
+      let jwtRaw = body.jwt_token;
+      let apiBaseUrl = body.api_base_url;
 
-      if (!config?.jwt_token) {
+      if (!jwtRaw || !apiBaseUrl) {
+        const { data: config } = await serviceClient
+          .from("pinoquio_config")
+          .select("*")
+          .eq("tenant_id", tenant_id)
+          .single();
+        if (!jwtRaw) jwtRaw = config?.jwt_token;
+        if (!apiBaseUrl) apiBaseUrl = config?.api_base_url;
+      }
+
+      if (!jwtRaw) {
         return new Response(
-          JSON.stringify({ error: "JWT não configurado" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ ok: false, error: "JWT não configurado. Salve a configuração primeiro." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { token: jwt, warnings } = cleanJwt(jwtRaw);
+      const formatError = validateJwtFormat(jwt);
+      if (formatError) {
+        return new Response(
+          JSON.stringify({ ok: false, error: formatError, warnings }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       try {
-        const url = `${config.api_base_url}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=1&perPage=1&qtyBoxes=0&aquisitionTypes=`;
-        const jwt = decodeJwtIfNeeded(config.jwt_token);
+        const url = `${apiBaseUrl}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=1&perPage=1&qtyBoxes=0&aquisitionTypes=`;
         const res = await fetch(url, {
           headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
         });
+        if (res.status === 401) {
+          const text = await res.text();
+          return new Response(
+            JSON.stringify({ ok: false, error: "Token recusado pela API Pinóquio (401). Verifique se o token está correto e não expirou.", warnings }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         if (!res.ok) {
           const text = await res.text();
           return new Response(
-            JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${text}` }),
+            JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${text}`, warnings }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         const data = await res.json();
         return new Response(
-          JSON.stringify({ ok: true, total: data.total || 0 }),
+          JSON.stringify({ ok: true, total: data.total || 0, warnings }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (e) {
         return new Response(
-          JSON.stringify({ ok: false, error: e.message }),
+          JSON.stringify({ ok: false, error: e.message, warnings }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }

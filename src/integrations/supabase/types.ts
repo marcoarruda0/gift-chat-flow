@@ -72,6 +72,7 @@ export type Database = {
       campanhas: {
         Row: {
           agendada_para: string | null
+          atraso_tipo: string
           created_at: string
           criado_por: string
           filtro_valor: string[] | null
@@ -90,6 +91,7 @@ export type Database = {
         }
         Insert: {
           agendada_para?: string | null
+          atraso_tipo?: string
           created_at?: string
           criado_por: string
           filtro_valor?: string[] | null
@@ -108,6 +110,7 @@ export type Database = {
         }
         Update: {
           agendada_para?: string | null
+          atraso_tipo?: string
           created_at?: string
           criado_por?: string
           filtro_valor?: string[] | null

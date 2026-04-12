@@ -42,6 +42,14 @@ function getZapiEndpointAndBody(
   }
 }
 
+const ATRASO_RANGES: Record<string, [number, number]> = {
+  muito_curto: [1000, 5000],
+  curto: [5000, 20000],
+  medio: [20000, 60000],
+  longo: [60000, 180000],
+  muito_longo: [180000, 300000],
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -138,7 +146,17 @@ Deno.serve(async (req) => {
     const tipoMidia = campanha.tipo_midia || "texto";
     const midiaUrl = campanha.midia_url || null;
 
-    for (const dest of destinatarios) {
+    const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
+
+    for (let i = 0; i < destinatarios.length; i++) {
+      const dest = destinatarios[i];
+
+      // First message sends immediately, subsequent ones wait
+      if (i > 0) {
+        const delay = delayMin + Math.random() * (delayMax - delayMin);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+
       try {
         const nome = (dest.contatos as any)?.nome || "";
         const mensagemFinal = campanha.mensagem
@@ -191,9 +209,6 @@ Deno.serve(async (req) => {
         .from("campanhas")
         .update({ total_enviados: enviados, total_falhas: falhas })
         .eq("id", campanha_id);
-
-      const delay = 2000 + Math.random() * 2000;
-      await new Promise((r) => setTimeout(r, delay));
     }
 
     await serviceClient

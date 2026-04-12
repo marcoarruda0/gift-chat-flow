@@ -1,0 +1,1 @@
+ALTER TABLE public.campanhas ADD COLUMN atraso_tipo text NOT NULL DEFAULT 'medio';

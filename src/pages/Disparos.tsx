@@ -14,6 +14,16 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X } from "lucide-react";
 import { format } from "date-fns";
 
+type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
+
+const atrasoConfig: Record<AtrasoTipo, { label: string; desc: string }> = {
+  muito_curto: { label: "Muito Curto", desc: "1s a 5s" },
+  curto: { label: "Curto", desc: "5s a 20s" },
+  medio: { label: "Médio", desc: "20s a 60s" },
+  longo: { label: "Longo", desc: "60s a 180s" },
+  muito_longo: { label: "Muito Longo", desc: "180s a 300s" },
+};
+
 type Campanha = {
   id: string;
   nome: string;
@@ -28,6 +38,7 @@ type Campanha = {
   created_at: string;
   tipo_midia: string;
   midia_url: string | null;
+  atraso_tipo: AtrasoTipo;
 };
 
 type Contato = {
@@ -84,6 +95,7 @@ export default function Disparos() {
   const [midiaUrl, setMidiaUrl] = useState<string | null>(null);
   const [midiaFileName, setMidiaFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [atrasoTipo, setAtrasoTipo] = useState<AtrasoTipo>("medio");
 
   const tenantId = profile?.tenant_id;
 
@@ -190,6 +202,7 @@ export default function Disparos() {
           criado_por: profile?.id || "",
           tipo_midia: tipoMidia,
           midia_url: midiaUrl,
+          atraso_tipo: atrasoTipo,
         } as any)
         .select()
         .single();
@@ -256,6 +269,7 @@ export default function Disparos() {
     setTipoMidia("texto");
     setMidiaUrl(null);
     setMidiaFileName(null);
+    setAtrasoTipo("medio");
   }
 
   function toggleTag(tag: string) {
@@ -307,6 +321,7 @@ export default function Disparos() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Atraso</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-center">Dest.</TableHead>
                   <TableHead className="text-center">Enviados</TableHead>
@@ -325,6 +340,11 @@ export default function Disparos() {
                       <TableCell>
                         <span className="flex items-center gap-1 text-muted-foreground capitalize">
                           {midiaIcon[tm]} {tm}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {atrasoConfig[(c.atraso_tipo || "medio") as AtrasoTipo]?.label || "Médio"}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -492,6 +512,23 @@ export default function Disparos() {
                 ))}
               </div>
             )}
+
+            <div>
+              <Label>Atraso Inteligente</Label>
+              <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(atrasoConfig) as [AtrasoTipo, { label: string; desc: string }][]).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key}>
+                      ⏱️ {cfg.label} ({cfg.desc})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Intervalo aleatório entre cada envio para reduzir risco de banimento
+              </p>
+            </div>
 
             <div className="bg-muted/50 rounded p-3 text-sm">
               <strong>{contatosFiltrados.length}</strong> contato(s) serão atingidos

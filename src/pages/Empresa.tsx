@@ -99,7 +99,7 @@ export default function Empresa() {
     setLoadingTeam(true);
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, nome, departamento, departamento_id")
+      .select("id, nome, departamento, departamento_id, apelido, mostrar_apelido")
       .eq("tenant_id", tenantId!);
 
     if (profiles) {
@@ -319,6 +319,7 @@ export default function Empresa() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nome</TableHead>
+                      <TableHead>Apelido</TableHead>
                       <TableHead>Departamento</TableHead>
                       <TableHead>Função</TableHead>
                       {isAdmin && <TableHead className="w-20">Ações</TableHead>}
@@ -336,6 +337,40 @@ export default function Empresa() {
                           <TableCell className="font-medium">
                             {member.nome || "Sem nome"}
                             {isSelf && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {canManage || isSelf ? (
+                                <Input
+                                  className="h-8 w-[120px]"
+                                  placeholder="Apelido"
+                                  defaultValue={member.apelido || ""}
+                                  onBlur={async (e) => {
+                                    const val = e.target.value.trim();
+                                    if (val !== (member.apelido || "")) {
+                                      await supabase.from("profiles").update({ apelido: val || null } as any).eq("id", member.id);
+                                      loadTeam();
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span>{member.apelido || "—"}</span>
+                              )}
+                              {(canManage || isSelf) && (
+                                <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={member.mostrar_apelido || false}
+                                    onChange={async (e) => {
+                                      await supabase.from("profiles").update({ mostrar_apelido: e.target.checked } as any).eq("id", member.id);
+                                      loadTeam();
+                                    }}
+                                    className="rounded"
+                                  />
+                                  Mostrar
+                                </label>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {canManage ? (

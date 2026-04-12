@@ -28,7 +28,8 @@ function getNameColor(name: string) {
 
 export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar }: MessageBubbleProps) {
   const isOutgoing = remetente === "atendente" || remetente === "bot";
-  const showSender = !isOutgoing && !!senderName;
+  const showSenderIncoming = !isOutgoing && !!senderName;
+  const showSenderOutgoing = isOutgoing && remetente === "atendente" && !!senderName;
 
   const renderContent = () => {
     switch (tipo) {
@@ -59,7 +60,7 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
 
   return (
     <div className={cn("flex mb-2", isOutgoing ? "justify-end" : "justify-start")}>
-      {showSender && (
+      {showSenderIncoming && (
         <Avatar className="h-6 w-6 mt-1 mr-1.5 shrink-0">
           {senderAvatar && <AvatarImage src={senderAvatar} alt={senderName} />}
           <AvatarFallback className="text-[8px] bg-muted">
@@ -78,12 +79,17 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
         {remetente === "bot" && (
           <span className="text-[10px] font-medium opacity-70 block mb-0.5">Bot</span>
         )}
-        {showSender && (
+        {showSenderIncoming && (
           <span
             className="text-[11px] font-semibold block mb-0.5"
             style={{ color: getNameColor(senderName) }}
           >
             {senderName}
+          </span>
+        )}
+        {showSenderOutgoing && (
+          <span className="text-[11px] font-bold block mb-0.5 opacity-90">
+            {senderName}:
           </span>
         )}
         {renderContent()}

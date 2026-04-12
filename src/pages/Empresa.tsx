@@ -49,6 +49,9 @@ export default function Empresa() {
   const [instances, setInstances] = useState<any[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(true);
 
+  // Departamentos (for team select)
+  const [departamentos, setDepartamentos] = useState<any[]>([]);
+
   // Remoção de membro
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; nome: string } | null>(null);

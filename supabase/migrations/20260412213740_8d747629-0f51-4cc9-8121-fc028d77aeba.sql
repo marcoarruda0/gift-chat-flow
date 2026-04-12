@@ -1,0 +1,1 @@
+ALTER TABLE public.conversas ADD COLUMN marcada_nao_lida boolean NOT NULL DEFAULT false;

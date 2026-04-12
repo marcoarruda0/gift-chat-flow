@@ -1,53 +1,60 @@
 
 
-# Campo "Apelido" com Assinatura nas Mensagens
+# Distribuição Automática Round-Robin de Conversas por Departamento
 
 ## Objetivo
-Adicionar campo "apelido" no perfil do usuário e um checkbox por membro na gestão de equipe ("Mostrar apelido"). Quando ativo, as mensagens enviadas pelo atendente no módulo Conversas exibirão o apelido em negrito acima do texto.
+Quando uma nova conversa chega e o departamento tem mais de um atendente, distribuir automaticamente usando round-robin (alternando entre os membros).
 
 ## Alterações
 
-### 1. Migration — Novas colunas em `profiles`
+### 1. Migration — Tabela `departamento_distribuicao`
 
-- `apelido` (text, nullable) — o apelido do atendente
-- `mostrar_apelido` (boolean, default false) — se o apelido deve aparecer nas mensagens
+Nova tabela para rastrear o último atendente que recebeu conversa em cada departamento:
 
-### 2. Página Empresa (aba Equipe)
+- `id` (uuid PK)
+- `tenant_id` (uuid)
+- `departamento_id` (uuid)
+- `ultimo_atendente_id` (uuid) — o último que recebeu
+- `updated_at` (timestamp)
+- Unique constraint em `(tenant_id, departamento_id)`
+- RLS: isolamento por tenant_id
 
-- Adicionar coluna "Apelido" na tabela de membros com input editável (admin pode alterar)
-- Adicionar checkbox "Mostrar" ao lado do apelido para controlar `mostrar_apelido`
-- Ao alterar, fazer update direto em `profiles`
+### 2. Função SQL `distribuir_atendente`
 
-### 3. Envio de mensagens (`Conversas.tsx`)
+Criar function `distribuir_atendente(p_tenant_id uuid, p_departamento_id uuid)` que:
+1. Busca todos os profiles do departamento, ordenados por `id`
+2. Busca o `ultimo_atendente_id` da tabela `departamento_distribuicao`
+3. Seleciona o próximo na lista (round-robin circular)
+4. Atualiza `departamento_distribuicao` com o novo atendente
+5. Retorna o `user_id` escolhido
 
-- No `handleSend`, se o usuário logado tem `mostrar_apelido = true` e `apelido` preenchido:
-  - Prefixar a mensagem com `*{apelido}:*\n` (negrito WhatsApp) antes de enviar via Z-API
-  - Salvar no banco com o apelido no campo `metadata.senderName` para exibição local
-- Mesma lógica para `handleSendAudio` e `handleSendAttachment`
+### 3. Webhook `zapi-webhook/index.ts`
 
-### 4. Exibição no chat (`MessageBubble.tsx`)
+Na função `findOrCreateConversa`, quando uma conversa **nova** é criada:
+- Buscar o departamento padrão do tenant (ou usar lógica de roteamento existente)
+- Chamar `distribuir_atendente` via RPC para obter o atendente
+- Setar `atendente_id` e `departamento_id` na conversa criada
 
-- Mensagens do tipo `atendente` que possuem `metadata.senderName` já exibem o nome (lógica existente para mensagens de contato)
-- Ajustar para também exibir em mensagens outgoing (remetente = "atendente") quando `senderName` está presente, em negrito
+### 4. Transferência para departamento (`Conversas.tsx`)
 
-### 5. AuthContext — Expor apelido no profile
-
-- Adicionar `apelido` e `mostrar_apelido` à interface `Profile` no AuthContext para acesso fácil
+Quando uma conversa é transferida para um departamento (sem atendente específico):
+- Chamar `distribuir_atendente` para o departamento alvo
+- Atribuir automaticamente ao próximo atendente da fila round-robin
+- Mensagem de sistema: "Conversa atribuída a {nome} (Departamento {depto})"
 
 ## Arquivos criados/alterados
 
 | Arquivo | Tipo |
 |---------|------|
-| Migration (colunas apelido + mostrar_apelido) | Novo |
-| `src/contexts/AuthContext.tsx` | Alterado (interface Profile) |
-| `src/pages/Empresa.tsx` | Alterado (coluna apelido + checkbox na equipe) |
-| `src/pages/Conversas.tsx` | Alterado (prefixar mensagem com apelido) |
-| `src/components/conversas/MessageBubble.tsx` | Alterado (exibir apelido em mensagens outgoing) |
+| Migration (tabela + função SQL) | Novo |
+| `supabase/functions/zapi-webhook/index.ts` | Alterado (auto-assign ao criar conversa) |
+| `src/pages/Conversas.tsx` | Alterado (round-robin na transferência para depto) |
 
 ## Detalhes Técnicos
 
-- No WhatsApp, `*texto*` renderiza em negrito — o apelido será enviado como `*Marco Arruda:*\n mensagem`
-- No sistema, o `MessageBubble` usará `metadata.senderName` para exibir o apelido em negrito com `font-semibold`
-- O checkbox `mostrar_apelido` é por usuário, controlado pelo admin na aba Equipe
-- A coluna `apelido` também pode ser editada pelo próprio usuário no futuro (perfil pessoal)
+- A função SQL usa `SECURITY DEFINER` para acessar profiles sem depender de RLS
+- Round-robin é determinístico: ordena membros do depto por `id`, encontra o próximo após o último atribuído
+- Se o departamento tem 1 membro, sempre atribui a ele
+- Se não há membros no departamento, `atendente_id` fica null (fila do depto)
+- Realtime já ativo — o atendente verá a conversa aparecer automaticamente
 

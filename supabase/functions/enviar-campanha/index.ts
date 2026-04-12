@@ -50,36 +50,58 @@ const ATRASO_RANGES: Record<string, [number, number]> = {
   muito_longo: [180000, 300000],
 };
 
+function scheduleNextInvocation(campanhaId: string, delayMs: number) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha`;
+
+  setTimeout(() => {
+    fetch(functionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ campanha_id: campanhaId, internal: true }),
+    }).catch((err) => {
+      console.error("Failed to schedule next invocation:", err);
+    });
+  }, delayMs);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const body = await req.json();
-    const { campanha_id } = body;
+    const { campanha_id, internal } = body;
+
+    // Auth: internal calls use service role key, external calls need user auth
+    if (!internal) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     if (!campanha_id) {
       return new Response(JSON.stringify({ error: "campanha_id is required" }), {
@@ -93,6 +115,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Fetch campaign
     const { data: campanha, error: campError } = await serviceClient
       .from("campanhas")
       .select("*")
@@ -106,6 +129,14 @@ Deno.serve(async (req) => {
       });
     }
 
+    // If campaign was cancelled, stop processing
+    if (campanha.status === "cancelada") {
+      return new Response(JSON.stringify({ message: "Campanha cancelada" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Fetch Z-API config
     const { data: zapiConfig } = await serviceClient
       .from("zapi_config")
       .select("instance_id, token, client_token")
@@ -119,105 +150,117 @@ Deno.serve(async (req) => {
       });
     }
 
-    await serviceClient
-      .from("campanhas")
-      .update({ status: "enviando" })
-      .eq("id", campanha_id);
+    // Mark as sending on first call
+    if (!internal) {
+      await serviceClient
+        .from("campanhas")
+        .update({ status: "enviando" })
+        .eq("id", campanha_id);
+    }
 
+    // Fetch ONE pending recipient
     const { data: destinatarios } = await serviceClient
       .from("campanha_destinatarios")
       .select("*, contatos:contato_id(nome)")
       .eq("campanha_id", campanha_id)
-      .eq("status", "pendente");
+      .eq("status", "pendente")
+      .limit(1);
 
     if (!destinatarios || destinatarios.length === 0) {
+      // No more pending — mark campaign as done
       await serviceClient
         .from("campanhas")
         .update({ status: "concluida" })
         .eq("id", campanha_id);
 
-      return new Response(JSON.stringify({ message: "Nenhum destinatário pendente" }), {
+      return new Response(JSON.stringify({ message: "Campanha concluída" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    const dest = destinatarios[0];
     let enviados = campanha.total_enviados || 0;
     let falhas = campanha.total_falhas || 0;
     const tipoMidia = campanha.tipo_midia || "texto";
     const midiaUrl = campanha.midia_url || null;
 
-    const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
+    try {
+      const nome = (dest.contatos as any)?.nome || "";
+      const mensagemFinal = campanha.mensagem
+        .replace(/\{nome\}/gi, nome)
+        .replace(/\{telefone\}/gi, dest.telefone);
 
-    for (let i = 0; i < destinatarios.length; i++) {
-      const dest = destinatarios[i];
+      const phone = dest.telefone.replace(/\D/g, "");
 
-      // First message sends immediately, subsequent ones wait
-      if (i > 0) {
-        const delay = delayMin + Math.random() * (delayMax - delayMin);
-        await new Promise((r) => setTimeout(r, delay));
-      }
+      const { endpoint, body: zapiBody } = getZapiEndpointAndBody(
+        tipoMidia,
+        midiaUrl,
+        mensagemFinal,
+        phone
+      );
 
-      try {
-        const nome = (dest.contatos as any)?.nome || "";
-        const mensagemFinal = campanha.mensagem
-          .replace(/\{nome\}/gi, nome)
-          .replace(/\{telefone\}/gi, dest.telefone);
+      const zapiUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/${endpoint}`;
 
-        const phone = dest.telefone.replace(/\D/g, "");
+      const zapiResponse = await fetch(zapiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": zapiConfig.client_token,
+        },
+        body: JSON.stringify(zapiBody),
+      });
 
-        const { endpoint, body: zapiBody } = getZapiEndpointAndBody(
-          tipoMidia,
-          midiaUrl,
-          mensagemFinal,
-          phone
-        );
-
-        const zapiUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/${endpoint}`;
-
-        const zapiResponse = await fetch(zapiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Client-Token": zapiConfig.client_token,
-          },
-          body: JSON.stringify(zapiBody),
-        });
-
-        if (zapiResponse.ok) {
-          await serviceClient
-            .from("campanha_destinatarios")
-            .update({ status: "enviado", enviado_at: new Date().toISOString() })
-            .eq("id", dest.id);
-          enviados++;
-        } else {
-          const errBody = await zapiResponse.text();
-          await serviceClient
-            .from("campanha_destinatarios")
-            .update({ status: "falha", erro: errBody.substring(0, 500) })
-            .eq("id", dest.id);
-          falhas++;
-        }
-      } catch (err) {
+      if (zapiResponse.ok) {
         await serviceClient
           .from("campanha_destinatarios")
-          .update({ status: "falha", erro: (err as Error).message?.substring(0, 500) })
+          .update({ status: "enviado", enviado_at: new Date().toISOString() })
+          .eq("id", dest.id);
+        enviados++;
+      } else {
+        const errBody = await zapiResponse.text();
+        await serviceClient
+          .from("campanha_destinatarios")
+          .update({ status: "falha", erro: errBody.substring(0, 500) })
           .eq("id", dest.id);
         falhas++;
       }
+    } catch (err) {
+      await serviceClient
+        .from("campanha_destinatarios")
+        .update({ status: "falha", erro: (err as Error).message?.substring(0, 500) })
+        .eq("id", dest.id);
+      falhas++;
+    }
 
+    // Update campaign counters
+    await serviceClient
+      .from("campanhas")
+      .update({ total_enviados: enviados, total_falhas: falhas })
+      .eq("id", campanha_id);
+
+    // Check if there are more pending recipients
+    const { count } = await serviceClient
+      .from("campanha_destinatarios")
+      .select("id", { count: "exact", head: true })
+      .eq("campanha_id", campanha_id)
+      .eq("status", "pendente");
+
+    if (count && count > 0) {
+      // Schedule next invocation with delay
+      const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
+      const delay = delayMin + Math.random() * (delayMax - delayMin);
+      console.log(`Scheduling next send in ${Math.round(delay / 1000)}s (${count} remaining)`);
+      scheduleNextInvocation(campanha_id, delay);
+    } else {
+      // All done
       await serviceClient
         .from("campanhas")
-        .update({ total_enviados: enviados, total_falhas: falhas })
+        .update({ status: "concluida", total_enviados: enviados, total_falhas: falhas })
         .eq("id", campanha_id);
     }
 
-    await serviceClient
-      .from("campanhas")
-      .update({ status: "concluida", total_enviados: enviados, total_falhas: falhas })
-      .eq("id", campanha_id);
-
     return new Response(
-      JSON.stringify({ message: "Campanha concluída", enviados, falhas }),
+      JSON.stringify({ message: "Destinatário processado", enviados, falhas, remaining: count || 0 }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

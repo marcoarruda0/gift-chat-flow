@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { campanha_id, internal } = body;
+    const { campanha_id, internal, remaining_delay_ms } = body;
 
     // Auth: internal calls use service role key, external calls need user auth
     if (!internal) {

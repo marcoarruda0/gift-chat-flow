@@ -517,6 +517,7 @@ export default function Conversas() {
             onSync={handleSync}
             syncing={syncing}
             loading={loadingConversas}
+            currentUserId={user?.id || null}
           />
         </div>
       )}

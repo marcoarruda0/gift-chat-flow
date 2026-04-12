@@ -533,6 +533,7 @@ export default function Conversas() {
             onSendAttachment={handleSendAttachment}
             onClose={handleClose}
             onBack={isMobile ? () => setSelectedId(null) : undefined}
+            onTransfer={() => setTransferDialogOpen(true)}
             loading={loadingMsgs}
           />
         ) : (
@@ -543,6 +544,11 @@ export default function Conversas() {
         open={novaConversaOpen}
         onOpenChange={setNovaConversaOpen}
         onSelectContato={criarConversa}
+      />
+      <TransferirDialog
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
+        onConfirm={handleTransfer}
       />
     </div>
   );

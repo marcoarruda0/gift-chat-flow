@@ -248,6 +248,11 @@ export default function Empresa() {
             </TabsTrigger>
           )}
           {isAdmin && (
+            <TabsTrigger value="departamentos" className="gap-2">
+              <FolderTree className="h-4 w-4" /> Deptos
+            </TabsTrigger>
+          )}
+          {isAdmin && (
             <TabsTrigger value="respostas" className="gap-2">
               <Settings2 className="h-4 w-4" /> Respostas
             </TabsTrigger>
@@ -332,7 +337,26 @@ export default function Empresa() {
                             {member.nome || "Sem nome"}
                             {isSelf && <Badge variant="outline" className="ml-2 text-xs">Você</Badge>}
                           </TableCell>
-                          <TableCell>{member.departamento || "—"}</TableCell>
+                          <TableCell>
+                            {canManage ? (
+                              <Select
+                                value={member.departamento_id || "none"}
+                                onValueChange={(val) => handleUpdateDepartamento(member.id, val === "none" ? null : val)}
+                              >
+                                <SelectTrigger className="w-[140px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Nenhum</SelectItem>
+                                  {departamentos.map(d => (
+                                    <SelectItem key={d.id} value={d.id}>{d.nome}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>{departamentos.find(d => d.id === member.departamento_id)?.nome || member.departamento || "—"}</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {canManage ? (
                               <Select

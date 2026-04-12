@@ -98,8 +98,17 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<number | "all" | null>(null);
   const [filterStatus, setFilterStatus] = useState("todos");
+  const [configReady, setConfigReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    supabase.from("pinoquio_config").select("jwt_token").eq("tenant_id", tenantId).single()
+      .then(({ data }) => {
+        setConfigReady(!!data?.jwt_token);
+      });
+  }, [tenantId]);
 
   const fetchData = useCallback(async () => {
+    if (configReady === false) return;
     setLoading(true);
     try {
       const { data: result, error } = await supabase.functions.invoke("pinoquio-sync", {
@@ -112,7 +121,7 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, configReady]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

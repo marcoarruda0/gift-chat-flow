@@ -21,6 +21,7 @@ interface ConversaRow {
   aguardando_humano: boolean;
   atendente_id: string | null;
   departamento_id: string | null;
+  marcada_nao_lida: boolean;
 }
 
 interface MensagemRow {
@@ -52,7 +53,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, contato_id, contatos(nome, telefone, avatar_url)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, marcada_nao_lida, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -70,6 +71,7 @@ export default function Conversas() {
       aguardando_humano: c.aguardando_humano ?? false,
       atendente_id: c.atendente_id || null,
       departamento_id: c.departamento_id || null,
+      marcada_nao_lida: c.marcada_nao_lida ?? false,
     }));
     setConversas(mapped);
     setLoadingConversas(false);
@@ -103,9 +105,9 @@ export default function Conversas() {
   useEffect(() => {
     if (selectedId) {
       fetchMensagens(selectedId);
-      // Reset unread count in DB and local state
-      supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", selectedId).then();
-      setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, nao_lidas: 0 } : c));
+      // Reset unread count and marcada_nao_lida in DB and local state
+      supabase.from("conversas").update({ nao_lidas: 0, marcada_nao_lida: false } as any).eq("id", selectedId).then();
+      setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, nao_lidas: 0, marcada_nao_lida: false } : c));
     } else {
       setMensagens([]);
     }
@@ -316,6 +318,13 @@ export default function Conversas() {
     await supabase.from("conversas").update({ status: "fechada" }).eq("id", selectedId);
     setSelectedId(null);
     fetchConversas();
+  };
+
+  const handleMarkUnread = async () => {
+    if (!selectedId) return;
+    await supabase.from("conversas").update({ marcada_nao_lida: true } as any).eq("id", selectedId);
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, marcada_nao_lida: true } : c));
+    setSelectedId(null);
   };
 
   const handleTransfer = async (paraUserId: string, paraUserNome: string, motivo: string) => {
@@ -609,6 +618,7 @@ export default function Conversas() {
             onClose={handleClose}
             onBack={isMobile ? () => setSelectedId(null) : undefined}
             onTransfer={() => setTransferDialogOpen(true)}
+            onMarkUnread={handleMarkUnread}
             loading={loadingMsgs}
           />
         ) : (

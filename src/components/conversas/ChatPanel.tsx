@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, X, MessageSquare, ArrowRightLeft } from "lucide-react";
+import { ArrowLeft, X, MessageSquare, ArrowRightLeft, MailOpen } from "lucide-react";
 
 interface Mensagem {
   id: string;
@@ -26,6 +26,7 @@ interface ChatPanelProps {
   onClose: () => void;
   onBack?: () => void;
   onTransfer?: () => void;
+  onMarkUnread?: () => void;
   loading: boolean;
 }
 
@@ -39,7 +40,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -66,6 +67,11 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensage
         {onTransfer && (
           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onTransfer} title="Transferir conversa">
             <ArrowRightLeft className="h-4 w-4" />
+          </Button>
+        )}
+        {onMarkUnread && (
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onMarkUnread} title="Marcar como não lida">
+            <MailOpen className="h-4 w-4" />
           </Button>
         )}
         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onClose}>

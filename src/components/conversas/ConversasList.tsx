@@ -14,6 +14,7 @@ interface Conversa {
   nao_lidas: number;
   status: string;
   aguardando_humano?: boolean;
+  marcada_nao_lida?: boolean;
   atendente_id?: string | null;
   departamento_id?: string | null;
 }
@@ -103,6 +104,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               naoLidas={c.nao_lidas}
               status={c.status}
               aguardandoHumano={c.aguardando_humano}
+              marcadaNaoLida={c.marcada_nao_lida}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

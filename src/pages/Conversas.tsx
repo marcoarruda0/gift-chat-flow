@@ -302,6 +302,38 @@ export default function Conversas() {
     fetchConversas();
   };
 
+  const handleTransfer = async (paraUserId: string, paraUserNome: string, motivo: string) => {
+    if (!selectedId || !tenantId || !profile) return;
+    try {
+      // Update atendente_id
+      await supabase.from("conversas").update({ atendente_id: paraUserId }).eq("id", selectedId);
+
+      // Insert transfer record
+      await supabase.from("conversa_transferencias").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        de_user_id: user!.id,
+        para_user_id: paraUserId,
+        motivo: motivo || null,
+      });
+
+      // Insert system message
+      await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: `Conversa transferida de ${profile.nome || "Atendente"} para ${paraUserNome}${motivo ? ` — Motivo: ${motivo}` : ""}`,
+        remetente: "sistema" as any,
+        tipo: "texto" as any,
+      });
+
+      toast.success(`Conversa transferida para ${paraUserNome}`);
+      fetchConversas();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao transferir conversa");
+    }
+  };
+
   const handleSync = async () => {
     if (!tenantId) return;
     setSyncing(true);

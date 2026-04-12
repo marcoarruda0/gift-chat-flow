@@ -41,7 +41,21 @@ function applyTemplate(template: string, cad: PinoquioCadastramento, link: strin
     .replace(/\{data_limite\}/g, limitDate);
 }
 
-async function fetchAllPages(apiBaseUrl: string, jwt: string): Promise<PinoquioCadastramento[]> {
+function decodeJwtIfNeeded(jwt: string): string {
+  // Clean whitespace/newlines
+  let clean = jwt.replace(/\s+/g, "");
+  // If it doesn't start with "eyJ" it might be base64-encoded
+  if (!clean.startsWith("eyJ")) {
+    try {
+      const decoded = atob(clean);
+      if (decoded.startsWith("eyJ")) return decoded.replace(/\s+/g, "");
+    } catch { /* not base64, use as-is */ }
+  }
+  return clean;
+}
+
+async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<PinoquioCadastramento[]> {
+  const jwt = decodeJwtIfNeeded(rawJwt);
   const all: PinoquioCadastramento[] = [];
   let page = 1;
   let lastPage = 1;
@@ -259,8 +273,9 @@ Deno.serve(async (req) => {
 
       try {
         const url = `${config.api_base_url}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=1&perPage=1&qtyBoxes=0&aquisitionTypes=`;
+        const jwt = decodeJwtIfNeeded(config.jwt_token);
         const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${config.jwt_token}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
         });
         if (!res.ok) {
           const text = await res.text();

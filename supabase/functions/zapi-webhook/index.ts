@@ -11,7 +11,6 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Only accept POST
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
@@ -25,7 +24,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Z-API sends instanceId in the payload
     const instanceId = payload.instanceId;
     if (!instanceId) {
       return new Response(JSON.stringify({ error: "No instanceId" }), {
@@ -34,7 +32,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Find tenant by instanceId
     const { data: zapiConfig } = await supabase
       .from("zapi_config")
       .select("tenant_id")
@@ -51,66 +48,38 @@ Deno.serve(async (req) => {
     const tenantId = zapiConfig.tenant_id;
 
     // Detect message type and content
-    let messageText: string | null = null;
-    let messageType = "texto";
-    let messageContent: string | null = null;
+    const { messageType, messageContent, messageText } = parseMessageContent(payload);
 
-    if (payload.text?.message) {
-      messageText = payload.text.message;
-      messageType = "texto";
-      messageContent = payload.text.message;
-    } else if (payload.image) {
-      messageType = "imagem";
-      messageContent = payload.image.imageUrl || payload.image.thumbnailUrl || "";
-      messageText = payload.image.caption || "📷 Imagem";
-    } else if (payload.document) {
-      messageType = "documento";
-      messageContent = payload.document.documentUrl || "";
-      messageText = "📎 " + (payload.document.fileName || "Documento");
-    } else if (payload.audio) {
-      messageType = "audio";
-      messageContent = payload.audio.audioUrl || "";
-      messageText = "🎤 Áudio";
-    } else if (payload.video) {
-      messageType = "imagem";
-      messageContent = payload.video.videoUrl || "";
-      messageText = "🎬 Vídeo";
-    } else if (payload.sticker) {
-      messageType = "imagem";
-      messageContent = payload.sticker.stickerUrl || "";
-      messageText = "Sticker";
-    }
-
-    // Handle incoming message (on-message-received)
+    // Handle incoming or outgoing message
     if (payload.phone && messageContent) {
+      const isFromMe = payload.fromMe === true;
       const rawPhone = payload.phone || "";
       const isGroup = payload.isGroup === true || rawPhone.includes("@g.us");
       const phone = isGroup ? rawPhone : rawPhone.replace(/\D/g, "");
       const groupName = payload.chatName || "Grupo";
       const senderName = payload.senderName || payload.chatName || phone;
       const contactName = isGroup ? groupName : senderName;
+      const zapiMessageId = payload.messageId || payload.id?.id || null;
 
-      // Find or create contact
-      let { data: contato } = await supabase
-        .from("contatos")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("telefone", phone)
-        .single();
-
-      if (!contato) {
-        const { data: newContato } = await supabase
-          .from("contatos")
-          .insert({
-            tenant_id: tenantId,
-            nome: contactName,
-            telefone: phone,
-          })
+      // Deduplication: check if message already exists by messageId
+      if (zapiMessageId) {
+        const { data: existing } = await supabase
+          .from("mensagens")
           .select("id")
-          .single();
-        contato = newContato;
+          .eq("tenant_id", tenantId)
+          .eq("metadata->>messageId", zapiMessageId)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          console.log("Duplicate message, skipping:", zapiMessageId);
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
 
+      // Find or create contact
+      const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
       if (!contato) {
         console.error("Could not find/create contact");
         return new Response(JSON.stringify({ ok: true }), {
@@ -119,27 +88,7 @@ Deno.serve(async (req) => {
       }
 
       // Find or create conversation
-      let { data: conversa } = await supabase
-        .from("conversas")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("contato_id", contato.id)
-        .eq("status", "aberta")
-        .single();
-
-      if (!conversa) {
-        const { data: newConversa } = await supabase
-          .from("conversas")
-          .insert({
-            tenant_id: tenantId,
-            contato_id: contato.id,
-            status: "aberta",
-          })
-          .select("id")
-          .single();
-        conversa = newConversa;
-      }
-
+      const conversa = await findOrCreateConversa(supabase, tenantId, contato.id);
       if (!conversa) {
         console.error("Could not find/create conversation");
         return new Response(JSON.stringify({ ok: true }), {
@@ -147,34 +96,53 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Determine remetente based on fromMe
+      const remetente = isFromMe ? "atendente" : "contato";
+
       // Insert message
       await supabase.from("mensagens").insert({
         conversa_id: conversa.id,
         tenant_id: tenantId,
-        conteudo: messageContent!,
-        remetente: "contato",
+        conteudo: messageContent,
+        remetente,
         tipo: messageType,
         metadata: {
           senderName: payload.senderName || payload.chatName || null,
           senderAvatar: payload.senderPhoto || payload.photo || null,
+          messageId: zapiMessageId,
         },
       });
 
       // Update conversation
       const previewText = isGroup ? `${senderName}: ${messageText}`.slice(0, 100) : messageText;
-      await supabase
-        .from("conversas")
-        .update({
-          ultimo_texto: previewText,
-          ultima_msg_at: new Date().toISOString(),
-          nao_lidas: (await supabase
-            .from("conversas")
-            .select("nao_lidas")
-            .eq("id", conversa.id)
-            .single()
-            .then(r => (r.data?.nao_lidas || 0) + 1)),
-        })
-        .eq("id", conversa.id);
+
+      if (isFromMe) {
+        // For outgoing messages, just update preview text (no unread increment)
+        await supabase
+          .from("conversas")
+          .update({
+            ultimo_texto: previewText,
+            ultima_msg_at: new Date().toISOString(),
+          })
+          .eq("id", conversa.id);
+      } else {
+        // For incoming messages, increment unread count
+        const currentUnread = await supabase
+          .from("conversas")
+          .select("nao_lidas")
+          .eq("id", conversa.id)
+          .single()
+          .then(r => r.data?.nao_lidas || 0);
+
+        await supabase
+          .from("conversas")
+          .update({
+            ultimo_texto: previewText,
+            ultima_msg_at: new Date().toISOString(),
+            nao_lidas: currentUnread + 1,
+          })
+          .eq("id", conversa.id);
+      }
 
       // Update group name if changed
       if (isGroup && payload.chatName) {
@@ -192,54 +160,151 @@ Deno.serve(async (req) => {
           .eq("id", contato.id);
       }
 
-      console.log("Message saved for conversa:", conversa.id);
+      console.log(`Message saved (${remetente}) for conversa:`, conversa.id);
 
-      // === AI Auto-Responder ===
-      if (!isGroup && !payload.fromMe && messageType === "texto" && messageContent) {
-        try {
-          // 0. Check ia_config for this tenant
-          const { data: iaConfig } = await supabase
-            .from("ia_config")
-            .select("*")
-            .eq("tenant_id", tenantId)
-            .maybeSingle();
+      // AI Auto-Responder — only for incoming text messages (not fromMe, not group)
+      if (!isFromMe && !isGroup && messageType === "texto" && messageContent) {
+        await handleAIAutoResponder(supabase, tenantId, phone, messageContent, conversa.id);
+      }
+    }
 
-          // If config exists and ativo=false, skip
-          if (iaConfig && !iaConfig.ativo) {
-            console.log("AI auto-responder disabled for tenant:", tenantId);
-          } else {
-            // 1. Fetch active knowledge base articles
-            const { data: artigos } = await supabase
-              .from("conhecimento_base")
-              .select("titulo, conteudo, categoria")
-              .eq("tenant_id", tenantId)
-              .eq("ativo", true);
+    // Handle message status updates
+    if (payload.status) {
+      console.log("Status update:", payload.status);
+    }
 
-            if (artigos && artigos.length > 0) {
-              // 2. Build context
-              const contexto = artigos
-                .map((a: any, i: number) => `[${i + 1}] ${a.titulo} (${a.categoria})\n${a.conteudo}`)
-                .join("\n\n---\n\n");
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
 
-              // 3. Build dynamic system prompt based on ia_config
-              const nome = iaConfig?.nome_assistente || "Assistente Virtual";
-              const tom = iaConfig?.tom || "amigavel";
-              const emojis = iaConfig?.usar_emojis || "pouco";
-              const extras = iaConfig?.instrucoes_extras || "";
+// --- Helper functions ---
 
-              const tomMap: Record<string, string> = {
-                formal: "Responda de forma profissional, formal e objetiva. Use linguagem corporativa e evite gírias.",
-                amigavel: "Responda de forma cordial, simpática e próxima, como um atendente bem treinado e educado. Seja natural.",
-                casual: "Responda de forma descontraída, leve e informal, como se estivesse conversando com um amigo.",
-              };
+function parseMessageContent(payload: any) {
+  let messageText: string | null = null;
+  let messageType = "texto";
+  let messageContent: string | null = null;
 
-              const emojiMap: Record<string, string> = {
-                nao: "NÃO use emojis em nenhuma circunstância.",
-                pouco: "Use emojis com moderação, apenas quando for natural e ajudar na comunicação (1-2 por mensagem no máximo).",
-                sim: "Use emojis de forma abundante para tornar a conversa mais expressiva e acolhedora.",
-              };
+  if (payload.text?.message) {
+    messageText = payload.text.message;
+    messageType = "texto";
+    messageContent = payload.text.message;
+  } else if (payload.image) {
+    messageType = "imagem";
+    messageContent = payload.image.imageUrl || payload.image.thumbnailUrl || "";
+    messageText = payload.image.caption || "📷 Imagem";
+  } else if (payload.document) {
+    messageType = "documento";
+    messageContent = payload.document.documentUrl || "";
+    messageText = "📎 " + (payload.document.fileName || "Documento");
+  } else if (payload.audio) {
+    messageType = "audio";
+    messageContent = payload.audio.audioUrl || "";
+    messageText = "🎤 Áudio";
+  } else if (payload.video) {
+    messageType = "imagem";
+    messageContent = payload.video.videoUrl || "";
+    messageText = "🎬 Vídeo";
+  } else if (payload.sticker) {
+    messageType = "imagem";
+    messageContent = payload.sticker.stickerUrl || "";
+    messageText = "Sticker";
+  }
 
-              const systemPrompt = `Você é ${nome}, assistente virtual de atendimento ao cliente via WhatsApp.
+  return { messageType, messageContent, messageText };
+}
+
+async function findOrCreateContact(supabase: any, tenantId: string, phone: string, name: string) {
+  let { data: contato } = await supabase
+    .from("contatos")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("telefone", phone)
+    .single();
+
+  if (!contato) {
+    const { data: newContato } = await supabase
+      .from("contatos")
+      .insert({ tenant_id: tenantId, nome: name, telefone: phone })
+      .select("id")
+      .single();
+    contato = newContato;
+  }
+
+  return contato;
+}
+
+async function findOrCreateConversa(supabase: any, tenantId: string, contatoId: string) {
+  let { data: conversa } = await supabase
+    .from("conversas")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("contato_id", contatoId)
+    .eq("status", "aberta")
+    .single();
+
+  if (!conversa) {
+    const { data: newConversa } = await supabase
+      .from("conversas")
+      .insert({ tenant_id: tenantId, contato_id: contatoId, status: "aberta" })
+      .select("id")
+      .single();
+    conversa = newConversa;
+  }
+
+  return conversa;
+}
+
+async function handleAIAutoResponder(supabase: any, tenantId: string, phone: string, messageContent: string, conversaId: string) {
+  try {
+    const { data: iaConfig } = await supabase
+      .from("ia_config")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (iaConfig && !iaConfig.ativo) {
+      console.log("AI auto-responder disabled for tenant:", tenantId);
+      return;
+    }
+
+    const { data: artigos } = await supabase
+      .from("conhecimento_base")
+      .select("titulo, conteudo, categoria")
+      .eq("tenant_id", tenantId)
+      .eq("ativo", true);
+
+    if (!artigos || artigos.length === 0) return;
+
+    const contexto = artigos
+      .map((a: any, i: number) => `[${i + 1}] ${a.titulo} (${a.categoria})\n${a.conteudo}`)
+      .join("\n\n---\n\n");
+
+    const nome = iaConfig?.nome_assistente || "Assistente Virtual";
+    const tom = iaConfig?.tom || "amigavel";
+    const emojis = iaConfig?.usar_emojis || "pouco";
+    const extras = iaConfig?.instrucoes_extras || "";
+
+    const tomMap: Record<string, string> = {
+      formal: "Responda de forma profissional, formal e objetiva. Use linguagem corporativa e evite gírias.",
+      amigavel: "Responda de forma cordial, simpática e próxima, como um atendente bem treinado e educado. Seja natural.",
+      casual: "Responda de forma descontraída, leve e informal, como se estivesse conversando com um amigo.",
+    };
+
+    const emojiMap: Record<string, string> = {
+      nao: "NÃO use emojis em nenhuma circunstância.",
+      pouco: "Use emojis com moderação, apenas quando for natural e ajudar na comunicação (1-2 por mensagem no máximo).",
+      sim: "Use emojis de forma abundante para tornar a conversa mais expressiva e acolhedora.",
+    };
+
+    const systemPrompt = `Você é ${nome}, assistente virtual de atendimento ao cliente via WhatsApp.
 
 ${tomMap[tom] || tomMap.amigavel}
 ${emojiMap[emojis] || emojiMap.pouco}
@@ -252,144 +317,114 @@ ${extras ? `\nINSTRUÇÕES ADICIONAIS:\n${extras}` : ""}
 BASE DE CONHECIMENTO:
 ${contexto}`;
 
-              const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-              if (LOVABLE_API_KEY) {
-                const aiResponse = await fetch(
-                  "https://ai.gateway.lovable.dev/v1/chat/completions",
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      model: "google/gemini-2.5-flash",
-                      messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: messageContent },
-                      ],
-                    }),
-                  }
-                );
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) return;
 
-                if (aiResponse.ok) {
-                  const aiData = await aiResponse.json();
-                  const resposta = aiData.choices?.[0]?.message?.content || "";
-
-                  if (resposta && !resposta.includes("SEM_INFO")) {
-                    const { data: zapiCfg } = await supabase
-                      .from("zapi_config")
-                      .select("instance_id, token, client_token")
-                      .eq("tenant_id", tenantId)
-                      .single();
-
-                    if (zapiCfg) {
-                      const sendUrl = `https://api.z-api.io/instances/${zapiCfg.instance_id}/token/${zapiCfg.token}/send-text`;
-                      const sendResp = await fetch(sendUrl, {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          "Client-Token": zapiCfg.client_token,
-                        },
-                        body: JSON.stringify({ phone, message: resposta }),
-                      });
-                      console.log("AI reply sent via Z-API:", sendResp.status);
-
-                      await supabase.from("mensagens").insert({
-                        conversa_id: conversa.id,
-                        tenant_id: tenantId,
-                        conteudo: resposta,
-                        remetente: "bot",
-                        tipo: "texto",
-                      });
-
-                      await supabase
-                        .from("conversas")
-                        .update({ ultimo_texto: resposta, ultima_msg_at: new Date().toISOString() })
-                        .eq("id", conversa.id);
-
-                      console.log("AI auto-reply saved for conversa:", conversa.id);
-                    }
-                  } else {
-                    // SEM_INFO — transfer to human agent
-                    console.log("AI had no relevant answer, transferring to human");
-
-                    const transferMsg = "Não consegui encontrar essa informação na nossa base. Vou transferir você para um atendente humano 🙏";
-
-                    // Send transfer message via Z-API
-                    const { data: zapiCfg2 } = await supabase
-                      .from("zapi_config")
-                      .select("instance_id, token, client_token")
-                      .eq("tenant_id", tenantId)
-                      .single();
-
-                    if (zapiCfg2) {
-                      const sendUrl2 = `https://api.z-api.io/instances/${zapiCfg2.instance_id}/token/${zapiCfg2.token}/send-text`;
-                      await fetch(sendUrl2, {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          "Client-Token": zapiCfg2.client_token,
-                        },
-                        body: JSON.stringify({ phone, message: transferMsg }),
-                      });
-
-                      // Save bot message
-                      await supabase.from("mensagens").insert({
-                        conversa_id: conversa.id,
-                        tenant_id: tenantId,
-                        conteudo: transferMsg,
-                        remetente: "bot",
-                        tipo: "texto",
-                      });
-
-                      // Mark conversation as awaiting human + increment unread
-                      const currentUnread = await supabase
-                        .from("conversas")
-                        .select("nao_lidas")
-                        .eq("id", conversa.id)
-                        .single()
-                        .then(r => r.data?.nao_lidas || 0);
-
-                      await supabase
-                        .from("conversas")
-                        .update({
-                          aguardando_humano: true,
-                          ultimo_texto: transferMsg,
-                          ultima_msg_at: new Date().toISOString(),
-                          nao_lidas: currentUnread + 1,
-                        })
-                        .eq("id", conversa.id);
-
-                      console.log("Conversa marked as aguardando_humano:", conversa.id);
-                    }
-                  }
-                } else {
-                  console.error("AI gateway error:", aiResponse.status);
-                }
-              }
-            }
-          }
-        } catch (aiErr) {
-          console.error("AI auto-responder error:", aiErr);
-        }
+    const aiResponse = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: messageContent },
+          ],
+        }),
       }
+    );
+
+    if (!aiResponse.ok) {
+      console.error("AI gateway error:", aiResponse.status);
+      return;
     }
 
-    // Handle message status updates (delivery, read)
-    if (payload.status) {
-      console.log("Status update:", payload.status);
-      // Future: update message metadata with delivery/read status
-    }
+    const aiData = await aiResponse.json();
+    const resposta = aiData.choices?.[0]?.message?.content || "";
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200, // Always return 200 to Z-API to avoid retries
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const { data: zapiCfg } = await supabase
+      .from("zapi_config")
+      .select("instance_id, token, client_token")
+      .eq("tenant_id", tenantId)
+      .single();
+
+    if (!zapiCfg) return;
+
+    if (resposta && !resposta.includes("SEM_INFO")) {
+      // Send AI reply
+      const sendUrl = `https://api.z-api.io/instances/${zapiCfg.instance_id}/token/${zapiCfg.token}/send-text`;
+      const sendResp = await fetch(sendUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": zapiCfg.client_token,
+        },
+        body: JSON.stringify({ phone, message: resposta }),
+      });
+      console.log("AI reply sent via Z-API:", sendResp.status);
+
+      await supabase.from("mensagens").insert({
+        conversa_id: conversaId,
+        tenant_id: tenantId,
+        conteudo: resposta,
+        remetente: "bot",
+        tipo: "texto",
+      });
+
+      await supabase
+        .from("conversas")
+        .update({ ultimo_texto: resposta, ultima_msg_at: new Date().toISOString() })
+        .eq("id", conversaId);
+
+      console.log("AI auto-reply saved for conversa:", conversaId);
+    } else {
+      // SEM_INFO — transfer to human
+      console.log("AI had no relevant answer, transferring to human");
+
+      const transferMsg = "Não consegui encontrar essa informação na nossa base. Vou transferir você para um atendente humano 🙏";
+
+      const sendUrl = `https://api.z-api.io/instances/${zapiCfg.instance_id}/token/${zapiCfg.token}/send-text`;
+      await fetch(sendUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": zapiCfg.client_token,
+        },
+        body: JSON.stringify({ phone, message: transferMsg }),
+      });
+
+      await supabase.from("mensagens").insert({
+        conversa_id: conversaId,
+        tenant_id: tenantId,
+        conteudo: transferMsg,
+        remetente: "bot",
+        tipo: "texto",
+      });
+
+      const currentUnread = await supabase
+        .from("conversas")
+        .select("nao_lidas")
+        .eq("id", conversaId)
+        .single()
+        .then((r: any) => r.data?.nao_lidas || 0);
+
+      await supabase
+        .from("conversas")
+        .update({
+          aguardando_humano: true,
+          ultimo_texto: transferMsg,
+          ultima_msg_at: new Date().toISOString(),
+          nao_lidas: currentUnread + 1,
+        })
+        .eq("id", conversaId);
+
+      console.log("Conversa marked as aguardando_humano:", conversaId);
+    }
+  } catch (aiErr) {
+    console.error("AI auto-responder error:", aiErr);
   }
-});
+}

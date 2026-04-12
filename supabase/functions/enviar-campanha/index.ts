@@ -50,25 +50,6 @@ const ATRASO_RANGES: Record<string, [number, number]> = {
   muito_longo: [180000, 300000],
 };
 
-function scheduleNextInvocation(campanhaId: string, delayMs: number) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha`;
-
-  setTimeout(() => {
-    fetch(functionUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${serviceRoleKey}`,
-      },
-      body: JSON.stringify({ campanha_id: campanhaId, internal: true }),
-    }).catch((err) => {
-      console.error("Failed to schedule next invocation:", err);
-    });
-  }, delayMs);
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -134,6 +115,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ message: "Campanha cancelada" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // === DELAY: internal calls sleep BEFORE processing ===
+    if (internal) {
+      const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
+      const delay = delayMin + Math.random() * (delayMax - delayMin);
+      console.log(`Waiting ${Math.round(delay / 1000)}s before next send...`);
+      await new Promise((r) => setTimeout(r, delay));
+
+      // Re-check if cancelled during the wait
+      const { data: freshCampanha } = await serviceClient
+        .from("campanhas")
+        .select("status")
+        .eq("id", campanha_id)
+        .single();
+
+      if (freshCampanha?.status === "cancelada") {
+        console.log("Campanha cancelled during delay, stopping.");
+        return new Response(JSON.stringify({ message: "Campanha cancelada" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Fetch Z-API config
@@ -246,11 +249,24 @@ Deno.serve(async (req) => {
       .eq("status", "pendente");
 
     if (count && count > 0) {
-      // Schedule next invocation with delay
-      const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
-      const delay = delayMin + Math.random() * (delayMax - delayMin);
-      console.log(`Scheduling next send in ${Math.round(delay / 1000)}s (${count} remaining)`);
-      scheduleNextInvocation(campanha_id, delay);
+      // Fire-and-forget: trigger next invocation IMMEDIATELY
+      // The next invocation will sleep at the start before processing
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha`;
+
+      console.log(`Triggering next invocation immediately (${count} remaining)`);
+
+      fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({ campanha_id, internal: true }),
+      }).catch((err) => {
+        console.error("Failed to trigger next invocation:", err);
+      });
     } else {
       // All done
       await serviceClient

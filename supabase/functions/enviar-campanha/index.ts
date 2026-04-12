@@ -219,6 +219,51 @@ Deno.serve(async (req) => {
           .update({ status: "enviado", enviado_at: new Date().toISOString() })
           .eq("id", dest.id);
         enviados++;
+
+        // Register message in conversas module
+        try {
+          let conversaId: string;
+          const { data: existingConv } = await serviceClient
+            .from("conversas")
+            .select("id")
+            .eq("tenant_id", campanha.tenant_id)
+            .eq("contato_id", dest.contato_id)
+            .eq("status", "aberta")
+            .limit(1)
+            .maybeSingle();
+
+          if (existingConv) {
+            conversaId = existingConv.id;
+          } else {
+            const { data: newConv } = await serviceClient
+              .from("conversas")
+              .insert({
+                tenant_id: campanha.tenant_id,
+                contato_id: dest.contato_id,
+                status: "aberta",
+              })
+              .select("id")
+              .single();
+            conversaId = newConv!.id;
+          }
+
+          const tipoMsg = tipoMidia === "texto" ? "texto" : tipoMidia;
+          await serviceClient.from("mensagens").insert({
+            conversa_id: conversaId,
+            tenant_id: campanha.tenant_id,
+            conteudo: mensagemFinal,
+            remetente: "atendente",
+            tipo: tipoMsg,
+            metadata: { fromCampanha: campanha.nome },
+          });
+
+          await serviceClient.from("conversas").update({
+            ultimo_texto: mensagemFinal.slice(0, 80),
+            ultima_msg_at: new Date().toISOString(),
+          }).eq("id", conversaId);
+        } catch (convErr) {
+          console.error("Failed to log message to conversas:", convErr);
+        }
       } else {
         const errBody = await zapiResponse.text();
         await serviceClient

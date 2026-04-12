@@ -336,6 +336,38 @@ export default function Conversas() {
     }
   };
 
+  const handleTransferDepartamento = async (departamentoId: string, departamentoNome: string, motivo: string) => {
+    if (!selectedId || !tenantId || !profile) return;
+    try {
+      await supabase.from("conversas").update({
+        departamento_id: departamentoId,
+        atendente_id: null,
+      } as any).eq("id", selectedId);
+
+      await supabase.from("conversa_transferencias").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        de_user_id: user!.id,
+        para_user_id: user!.id, // self reference for dept transfers
+        motivo: `Transferido para departamento ${departamentoNome}${motivo ? ` — ${motivo}` : ""}`,
+      });
+
+      await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: `Conversa transferida para o departamento ${departamentoNome}${motivo ? ` — Motivo: ${motivo}` : ""}`,
+        remetente: "sistema" as any,
+        tipo: "texto" as any,
+      });
+
+      toast.success(`Conversa transferida para ${departamentoNome}`);
+      fetchConversas();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao transferir conversa");
+    }
+  };
+
   const handleSync = async () => {
     if (!tenantId) return;
     setSyncing(true);

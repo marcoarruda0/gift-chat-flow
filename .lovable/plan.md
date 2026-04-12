@@ -1,57 +1,45 @@
 
 
-# Atraso Inteligente para Campanhas de Disparo
+# Correções e Melhorias no Módulo Conversas
 
-## Objetivo
-Adicionar uma opção de "Atraso Inteligente" ao criar campanhas, permitindo ao usuário escolher o intervalo de tempo aleatório entre cada envio para reduzir risco de banimento no WhatsApp.
+## Problema 1: Badge de não lidas não atualiza
+Quando o usuário abre uma conversa com mensagens não lidas, o contador verde na lista lateral não zera. Motivo: não existe nenhum código que faça `UPDATE conversas SET nao_lidas = 0` ao selecionar/abrir uma conversa.
+
+## Problema 2: Sem seletor de emojis
+A barra de input de mensagens não possui um botão de emoji com biblioteca para seleção rápida.
+
+---
 
 ## Alterações
 
-### 1. Migration — Nova coluna `atraso_tipo` na tabela `campanhas`
+### 1. Zerar `nao_lidas` ao abrir conversa (`Conversas.tsx`)
 
-- `atraso_tipo` (text, default `'medio'`) — valores: `muito_curto`, `curto`, `medio`, `longo`, `muito_longo`
-
-### 2. Frontend — Seletor no dialog de nova campanha (`Disparos.tsx`)
-
-- Novo estado `atrasoTipo` (default `"medio"`)
-- Adicionar `Select` com as 5 opções e descrição dos intervalos:
-  - Muito Curto (1s a 5s)
-  - Curto (5s a 20s)
-  - Médio (20s a 60s)
-  - Longo (60s a 180s)
-  - Muito Longo (180s a 300s)
-- Incluir `atraso_tipo` no insert da campanha
-- Mostrar o atraso selecionado na tabela de campanhas (coluna ou tooltip)
-
-### 3. Edge Function — Usar atraso da campanha (`enviar-campanha/index.ts`)
-
-- Ler `campanha.atraso_tipo` do registro
-- Mapear para intervalos em ms:
+- No `useEffect` que dispara quando `selectedId` muda, após buscar mensagens, executar:
+  ```sql
+  UPDATE conversas SET nao_lidas = 0 WHERE id = selectedId
   ```
-  muito_curto: [1000, 5000]
-  curto: [5000, 20000]
-  medio: [20000, 60000]
-  longo: [60000, 180000]
-  muito_longo: [180000, 300000]
-  ```
-- Substituir o delay fixo atual (`2000 + Math.random() * 2000`) pelo intervalo correspondente
-- Primeira mensagem enviada sem atraso
+- Atualizar o estado local `conversas` para refletir imediatamente (sem esperar refetch)
 
-### 4. Tipo `Campanha` no frontend
+### 2. Emoji Picker no ChatInput (`ChatInput.tsx`)
 
-- Adicionar `atraso_tipo` ao type `Campanha`
+- Instalar `emoji-mart` (ou `@emoji-mart/react` + `@emoji-mart/data`) — biblioteca leve e popular de emojis
+- Adicionar botão `Smile` (lucide) à esquerda do textarea
+- Ao clicar, abrir um `Popover` com o componente `<Picker>` do emoji-mart
+- Ao selecionar emoji, inserir no texto na posição do cursor
+- Fechar popover após seleção
 
-## Arquivos criados/alterados
+### 3. Arquivos alterados
 
-| Arquivo | Tipo |
-|---------|------|
-| Migration (coluna `atraso_tipo`) | Novo |
-| `src/pages/Disparos.tsx` | Alterado (seletor + state + type) |
-| `supabase/functions/enviar-campanha/index.ts` | Alterado (delay dinâmico) |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/Conversas.tsx` | Adicionar reset de `nao_lidas` ao selecionar conversa |
+| `src/components/conversas/ChatInput.tsx` | Adicionar botão emoji + Popover com picker |
+| `package.json` | Adicionar dependência `@emoji-mart/react` e `@emoji-mart/data` |
 
 ## Detalhes Técnicos
 
-- O delay atual na edge function (linha ~196) é `2000 + Math.random() * 2000` — será substituído por `min + Math.random() * (max - min)` baseado no `atraso_tipo`
-- A primeira mensagem do loop (index 0) é enviada imediatamente, sem espera
-- O delay é aplicado **antes** de enviar cada mensagem subsequente, conforme o exemplo prático descrito
+- O reset de `nao_lidas` é feito tanto no banco (update) quanto no state local (para UI instantânea)
+- O emoji-mart renderiza a biblioteca completa de emojis com categorias, busca e skins — visual nativo
+- O Popover usa o componente shadcn/ui já existente no projeto
+- O emoji é inserido na posição atual do cursor via `selectionStart` do textarea
 

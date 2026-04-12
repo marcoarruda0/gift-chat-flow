@@ -24,6 +24,7 @@ interface ConversasListProps {
   onSync?: () => void;
   syncing?: boolean;
   loading: boolean;
+  currentUserId?: string | null;
 }
 
 const FILTROS = ["Todas", "Abertas", "Minhas", "Fechadas"] as const;

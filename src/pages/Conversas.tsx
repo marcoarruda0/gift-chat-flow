@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ConversasList } from "@/components/conversas/ConversasList";
 import { ChatPanel, ChatPanelEmpty } from "@/components/conversas/ChatPanel";
 import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
+import { TransferirDialog } from "@/components/conversas/TransferirDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 
@@ -39,6 +40,7 @@ export default function Conversas() {
   const [loadingConversas, setLoadingConversas] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const tenantId = profile?.tenant_id;

@@ -1,56 +1,65 @@
 
 
-# Transferência de Conversas entre Atendentes
+# Funcionalidade de Departamentos
 
 ## Objetivo
-Permitir que um atendente transfira uma conversa para outro membro da equipe, com registro de histórico e notificação.
+Criar uma estrutura de departamentos (ex: "Vendas", "Suporte", "Financeiro") onde atendentes são vinculados, permitindo transferir conversas tanto para atendentes individuais quanto para departamentos inteiros.
 
 ## Alterações
 
-### 1. Migration — Tabela `conversa_transferencias` (histórico)
+### 1. Migration — Tabela `departamentos`
 
-Colunas: `id` (uuid), `conversa_id` (uuid), `tenant_id` (uuid), `de_user_id` (uuid), `para_user_id` (uuid), `motivo` (text, nullable), `created_at`.
+Nova tabela `departamentos`: `id` (uuid), `tenant_id` (uuid), `nome` (text), `descricao` (text, nullable), `ativo` (bool default true), `created_at`.
 
-RLS: isolamento por `tenant_id`, todos do tenant podem ler, atendentes podem inserir.
+Adicionar coluna `departamento_id` (uuid, nullable) na tabela `profiles` — substitui o campo texto `departamento` atual por uma FK real.
 
-A coluna `atendente_id` já existe na tabela `conversas` — será usada para indicar o atendente responsável atual.
+Adicionar coluna `departamento_id` (uuid, nullable) na tabela `conversas` — permite atribuir conversa a um departamento.
 
-### 2. UI — Botão "Transferir" no header do ChatPanel
+RLS: isolamento por `tenant_id`. Admin pode CRUD, todos do tenant podem ler.
 
-- Novo botão no header do chat (ícone `ArrowRightLeft` ou `UserPlus`)
-- Ao clicar, abre um Dialog listando os membros do tenant (query em `profiles` onde `tenant_id` = atual, excluindo o usuário logado)
-- Campo opcional de motivo (textarea)
-- Ao confirmar: atualiza `conversas.atendente_id` para o novo atendente e insere registro em `conversa_transferencias`
-- Mensagem de sistema inserida na conversa ("Conversa transferida de X para Y")
+### 2. UI — CRUD de Departamentos (Empresa.tsx)
 
-### 3. Atualização do `Conversas.tsx`
+Nova aba "Departamentos" na página Empresa:
+- Listar departamentos do tenant (nome, qtd membros)
+- Criar/editar/excluir departamentos
+- Componente: `DepartamentosConfig.tsx`
 
-- Passar `onTransfer` callback para `ChatPanel`
-- Função `handleTransfer(paraUserId, motivo)`:
-  1. Update `conversas.atendente_id = paraUserId`
-  2. Insert em `conversa_transferencias`
-  3. Insert mensagem de sistema (remetente: `"sistema"`, tipo: `"texto"`, conteúdo: "Transferido de X para Y")
-  4. Toast de confirmação
+### 3. UI — Vincular atendente a departamento (Empresa.tsx)
 
-### 4. Filtro "Minhas" na lista de conversas
+Na aba "Equipe", adicionar Select de departamento ao lado de cada membro:
+- Buscar departamentos do tenant
+- Ao alterar, fazer update em `profiles.departamento_id`
+- Exibir badge do departamento na listagem
 
-- O filtro "Minhas" na `ConversasList` (já existe o label) passará a funcionar filtrando por `atendente_id = auth.uid()`
-- Conversas sem `atendente_id` aparecem em "Todas" (fila geral)
+### 4. UI — Transferir para Departamento (TransferirDialog.tsx)
+
+Expandir o dialog de transferência com duas opções (Tabs):
+- **Atendente**: comportamento atual (lista membros)
+- **Departamento**: lista departamentos do tenant; ao transferir, seta `conversas.departamento_id` e limpa `atendente_id` (fica na fila do depto)
+
+O `handleTransfer` em `Conversas.tsx` será atualizado para suportar ambos os tipos.
+
+### 5. Filtro por Departamento (ConversasList.tsx)
+
+Adicionar filtro "Meu Depto" nos filtros existentes:
+- Filtra conversas onde `departamento_id` = departamento do usuário logado
+- Conversas na fila do departamento (sem `atendente_id`) ficam visíveis para qualquer membro do depto
 
 ## Arquivos criados/alterados
 
 | Arquivo | Tipo |
 |---------|------|
-| Migration (conversa_transferencias + RLS) | Novo |
-| `src/components/conversas/TransferirDialog.tsx` | Novo (dialog de seleção de atendente) |
-| `src/components/conversas/ChatPanel.tsx` | Alterado (botão transferir no header) |
-| `src/pages/Conversas.tsx` | Alterado (handleTransfer + prop onTransfer + filtro "Minhas") |
-| `src/components/conversas/ConversasList.tsx` | Alterado (lógica do filtro "Minhas") |
+| Migration (departamentos + colunas) | Novo |
+| `src/components/empresa/DepartamentosConfig.tsx` | Novo |
+| `src/components/conversas/TransferirDialog.tsx` | Alterado (tabs atendente/depto) |
+| `src/pages/Empresa.tsx` | Alterado (aba Departamentos + select na equipe) |
+| `src/pages/Conversas.tsx` | Alterado (handleTransfer com tipo depto) |
+| `src/components/conversas/ConversasList.tsx` | Alterado (filtro "Meu Depto") |
 
 ## Detalhes Técnicos
 
-- A query de membros usa a tabela `profiles` filtrada por `tenant_id`, já acessível via RLS existente
-- Mensagem de sistema usa remetente `"sistema"` — verificar se o enum `remetente_tipo` inclui esse valor; se não, adicionar via migration
-- O histórico em `conversa_transferencias` permite auditoria completa de quem transferiu para quem e quando
-- Realtime já está ativo na tabela `conversas`, então o novo atendente verá a conversa aparecer automaticamente
+- A coluna `profiles.departamento` (texto livre) existente será mantida temporariamente; o novo `departamento_id` referencia a tabela `departamentos`
+- Conversa transferida para departamento: `atendente_id = null`, `departamento_id = X` — qualquer membro do depto pode "puxar" a conversa
+- Mensagem de sistema: "Conversa transferida para o departamento Vendas"
+- Realtime já ativo em `conversas`, então membros do depto veem a conversa aparecer automaticamente
 

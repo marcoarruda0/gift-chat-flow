@@ -251,12 +251,68 @@ async function findOrCreateConversa(supabase: any, tenantId: string, contatoId: 
     .single();
 
   if (!conversa) {
+    // Try to find a default department for round-robin assignment
+    const { data: defaultDepto } = await supabase
+      .from("departamentos")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("ativo", true)
+      .order("created_at")
+      .limit(1)
+      .single();
+
+    let atendenteId: string | null = null;
+    let departamentoId: string | null = null;
+
+    if (defaultDepto) {
+      departamentoId = defaultDepto.id;
+      const { data: nextAgent } = await supabase.rpc("distribuir_atendente", {
+        p_tenant_id: tenantId,
+        p_departamento_id: departamentoId,
+      });
+      if (nextAgent) {
+        atendenteId = nextAgent;
+      }
+    }
+
     const { data: newConversa } = await supabase
       .from("conversas")
-      .insert({ tenant_id: tenantId, contato_id: contatoId, status: "aberta" })
+      .insert({
+        tenant_id: tenantId,
+        contato_id: contatoId,
+        status: "aberta",
+        departamento_id: departamentoId,
+        atendente_id: atendenteId,
+      })
       .select("id")
       .single();
     conversa = newConversa;
+
+    // Add system message about assignment
+    if (conversa && atendenteId) {
+      const { data: agentProfile } = await supabase
+        .from("profiles")
+        .select("nome")
+        .eq("id", atendenteId)
+        .single();
+
+      const { data: deptoData } = await supabase
+        .from("departamentos")
+        .select("nome")
+        .eq("id", departamentoId)
+        .single();
+
+      const agentName = agentProfile?.nome || "Atendente";
+      const deptoName = deptoData?.nome || "Departamento";
+
+      await supabase.from("mensagens").insert({
+        conversa_id: conversa.id,
+        tenant_id: tenantId,
+        conteudo: `Conversa atribuída a ${agentName} (${deptoName})`,
+        remetente: "sistema",
+        tipo: "texto",
+      });
+    }
   }
 
   return conversa;

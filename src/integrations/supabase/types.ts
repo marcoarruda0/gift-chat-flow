@@ -484,6 +484,45 @@ export type Database = {
           },
         ]
       }
+      departamento_distribuicao: {
+        Row: {
+          departamento_id: string
+          id: string
+          tenant_id: string
+          ultimo_atendente_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          departamento_id: string
+          id?: string
+          tenant_id: string
+          ultimo_atendente_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          departamento_id?: string
+          id?: string
+          tenant_id?: string
+          ultimo_atendente_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departamento_distribuicao_departamento_id_fkey"
+            columns: ["departamento_id"]
+            isOneToOne: false
+            referencedRelation: "departamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departamento_distribuicao_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departamentos: {
         Row: {
           ativo: boolean
@@ -934,6 +973,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      distribuir_atendente: {
+        Args: { p_departamento_id: string; p_tenant_id: string }
+        Returns: string
+      }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

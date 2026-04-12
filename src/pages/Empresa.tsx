@@ -496,6 +496,13 @@ export default function Empresa() {
           </TabsContent>
         )}
 
+        {/* ── Departamentos ── */}
+        {isAdmin && (
+          <TabsContent value="departamentos">
+            <DepartamentosConfig />
+          </TabsContent>
+        )}
+
         {/* ── Respostas Rápidas ── */}
         {isAdmin && (
           <TabsContent value="respostas">

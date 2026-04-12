@@ -171,7 +171,30 @@ export default function Empresa() {
     setLoadingInstances(false);
   };
 
-  const handleUpdateRole = async (memberId: string, newRole: string) => {
+  const loadDepartamentos = async () => {
+    const { data } = await supabase
+      .from("departamentos")
+      .select("id, nome")
+      .eq("tenant_id", tenantId!)
+      .eq("ativo", true)
+      .order("nome");
+    setDepartamentos(data || []);
+  };
+
+  const handleUpdateDepartamento = async (memberId: string, departamentoId: string | null) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ departamento_id: departamentoId } as any)
+      .eq("id", memberId);
+    if (error) {
+      toast({ title: "Erro ao atualizar departamento", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Departamento atualizado!" });
+      loadTeam();
+    }
+  };
+
+
     setUpdatingRole(memberId);
     const { data, error } = await supabase.functions.invoke("gerenciar-membro", {
       body: { action: "update_role", user_id: memberId, new_role: newRole },

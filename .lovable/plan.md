@@ -1,65 +1,53 @@
 
 
-# Funcionalidade de Departamentos
+# Sincronização de Mensagens Enviadas pelo WhatsApp
 
-## Objetivo
-Criar uma estrutura de departamentos (ex: "Vendas", "Suporte", "Financeiro") onde atendentes são vinculados, permitindo transferir conversas tanto para atendentes individuais quanto para departamentos inteiros.
+## Problema
+Quando o atendente envia uma mensagem diretamente pelo WhatsApp (celular ou WhatsApp Web), essa mensagem não aparece no sistema. O webhook atual só processa mensagens recebidas (`payload.phone` + conteúdo), ignorando mensagens enviadas pelo próprio número.
+
+## Solução
+A Z-API envia webhooks também para mensagens enviadas pelo próprio número, com o campo `payload.fromMe = true`. Atualmente o webhook ignora essas mensagens. A solução é detectar `fromMe` e salvá-las como mensagens do tipo `"atendente"`.
 
 ## Alterações
 
-### 1. Migration — Tabela `departamentos`
+### 1. Webhook `zapi-webhook/index.ts`
 
-Nova tabela `departamentos`: `id` (uuid), `tenant_id` (uuid), `nome` (text), `descricao` (text, nullable), `ativo` (bool default true), `created_at`.
+Após a detecção de tipo de mensagem (linha ~85), adicionar tratamento para `fromMe`:
 
-Adicionar coluna `departamento_id` (uuid, nullable) na tabela `profiles` — substitui o campo texto `departamento` atual por uma FK real.
+- Se `payload.fromMe === true` e há conteúdo:
+  - Buscar contato pelo telefone de destino (`payload.phone`)
+  - Buscar/criar conversa aberta para esse contato
+  - Inserir mensagem com `remetente: "atendente"` (mensagem enviada pelo número)
+  - Atualizar `ultimo_texto` e `ultima_msg_at` da conversa
+  - **Pular** o AI auto-responder (não responder a mensagens próprias)
 
-Adicionar coluna `departamento_id` (uuid, nullable) na tabela `conversas` — permite atribuir conversa a um departamento.
+A lógica atual que processa mensagens recebidas será condicionada a `!payload.fromMe`.
 
-RLS: isolamento por `tenant_id`. Admin pode CRUD, todos do tenant podem ler.
+### 2. Deduplicação
 
-### 2. UI — CRUD de Departamentos (Empresa.tsx)
+Para evitar duplicatas (mensagens enviadas pelo sistema que já foram salvas), adicionar verificação:
+- Salvar `messageId` do Z-API (`payload.messageId`) na coluna `metadata` da mensagem
+- Antes de inserir, verificar se já existe mensagem com esse `messageId` para a mesma conversa
+- Se já existir, ignorar (mensagem já foi registrada pelo sistema ao enviar)
 
-Nova aba "Departamentos" na página Empresa:
-- Listar departamentos do tenant (nome, qtd membros)
-- Criar/editar/excluir departamentos
-- Componente: `DepartamentosConfig.tsx`
+### 3. Migration — Índice para deduplicação
 
-### 3. UI — Vincular atendente a departamento (Empresa.tsx)
+Criar índice GIN/BTREE em `mensagens.metadata` para busca eficiente por `messageId`:
+```sql
+CREATE INDEX idx_mensagens_message_id ON mensagens ((metadata->>'messageId'));
+```
 
-Na aba "Equipe", adicionar Select de departamento ao lado de cada membro:
-- Buscar departamentos do tenant
-- Ao alterar, fazer update em `profiles.departamento_id`
-- Exibir badge do departamento na listagem
-
-### 4. UI — Transferir para Departamento (TransferirDialog.tsx)
-
-Expandir o dialog de transferência com duas opções (Tabs):
-- **Atendente**: comportamento atual (lista membros)
-- **Departamento**: lista departamentos do tenant; ao transferir, seta `conversas.departamento_id` e limpa `atendente_id` (fica na fila do depto)
-
-O `handleTransfer` em `Conversas.tsx` será atualizado para suportar ambos os tipos.
-
-### 5. Filtro por Departamento (ConversasList.tsx)
-
-Adicionar filtro "Meu Depto" nos filtros existentes:
-- Filtra conversas onde `departamento_id` = departamento do usuário logado
-- Conversas na fila do departamento (sem `atendente_id`) ficam visíveis para qualquer membro do depto
-
-## Arquivos criados/alterados
+## Arquivos alterados
 
 | Arquivo | Tipo |
 |---------|------|
-| Migration (departamentos + colunas) | Novo |
-| `src/components/empresa/DepartamentosConfig.tsx` | Novo |
-| `src/components/conversas/TransferirDialog.tsx` | Alterado (tabs atendente/depto) |
-| `src/pages/Empresa.tsx` | Alterado (aba Departamentos + select na equipe) |
-| `src/pages/Conversas.tsx` | Alterado (handleTransfer com tipo depto) |
-| `src/components/conversas/ConversasList.tsx` | Alterado (filtro "Meu Depto") |
+| Migration (índice metadata) | Novo |
+| `supabase/functions/zapi-webhook/index.ts` | Alterado (tratamento fromMe + deduplicação) |
 
 ## Detalhes Técnicos
 
-- A coluna `profiles.departamento` (texto livre) existente será mantida temporariamente; o novo `departamento_id` referencia a tabela `departamentos`
-- Conversa transferida para departamento: `atendente_id = null`, `departamento_id = X` — qualquer membro do depto pode "puxar" a conversa
-- Mensagem de sistema: "Conversa transferida para o departamento Vendas"
-- Realtime já ativo em `conversas`, então membros do depto veem a conversa aparecer automaticamente
+- Z-API envia `fromMe: true` no payload quando a mensagem é do próprio número
+- O `messageId` do Z-API é único por mensagem e serve como chave de deduplicação
+- Mensagens enviadas pelo sistema (via `zapi-proxy`) já são salvas no banco pelo `Conversas.tsx`, então a deduplicação evita duplicatas
+- Nenhuma alteração no frontend — as mensagens aparecerão automaticamente via realtime já configurado
 

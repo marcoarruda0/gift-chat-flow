@@ -1,46 +1,35 @@
 
+# Indicador Visual de Status da Conversa (Aberta/Fechada)
 
-# Marcar Conversa como Não Lida
+## Problema
+Na lista de conversas, não há nenhum indicador visual que diferencie conversas abertas de fechadas. O status é recebido como prop mas nunca renderizado.
 
-## Objetivo
-Adicionar botão no header do chat que marca a conversa como "não lida", exibindo um ponto verde (sem contador) na lista lateral — igual ao comportamento do WhatsApp.
+## Solução
+Adicionar um pequeno ícone de status ao lado do nome do contato no `ConversaItem`:
+- **Aberta**: ícone `MessageCircle` (lucide) em verde (`text-green-500`)
+- **Fechada**: ícone `CheckCircle2` (lucide) em cinza (`text-muted-foreground`)
 
-## Alterações
+O ícone ficará antes do nome do contato, na mesma linha do ícone de "aguardando humano" (quando existir).
 
-### 1. Coluna `marcada_nao_lida` na tabela `conversas`
+## Alteração
 
-- Nova coluna `marcada_nao_lida` (boolean, default false)
-- Usada para diferenciar "não lida manual" (ponto verde) de "mensagens novas" (bola com número)
+### `src/components/conversas/ConversaItem.tsx`
 
-### 2. ChatPanel — Botão "Marcar como não lida"
-
-- Novo botão com ícone `MailOpen` / `Mail` (lucide) ao lado do botão de transferir
-- Nova prop `onMarkUnread` chamada ao clicar
-- Tooltip: "Marcar como não lida"
-
-### 3. Conversas.tsx — Lógica
-
-- `handleMarkUnread`: faz `UPDATE conversas SET marcada_nao_lida = true` e deseleciona a conversa
-- No `useEffect` que zera `nao_lidas` ao abrir, também faz `marcada_nao_lida = false` (limpa ao abrir)
-- Passa a prop `onMarkUnread` ao `ChatPanel`
-
-### 4. ConversaItem — Ponto verde
-
-- Receber nova prop `marcadaNaoLida`
-- Quando `marcadaNaoLida === true` e `naoLidas === 0`: exibir um **ponto verde** (`h-[10px] w-[10px] rounded-full bg-[#25D366]`) no lugar da bola com número
-- Quando `naoLidas > 0`: comportamento atual (bola com contador)
-
-### 5. ConversasList — Passar prop
-
-- Passar `marcadaNaoLida` da conversa para o `ConversaItem`
+- Importar `MessageCircle` e `CheckCircle2` de lucide-react
+- Na linha do nome, antes do `{nomeContato}`, adicionar:
+  ```tsx
+  {status === "fechada" ? (
+    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+  ) : (
+    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
+  )}
+  ```
+- O ícone de `aguardandoHumano` (UserRound amber) continua aparecendo quando aplicável, ao lado do ícone de status
 
 ## Arquivos
 
-| Arquivo | Tipo |
-|---------|------|
-| Migration (coluna `marcada_nao_lida`) | Novo |
-| `src/components/conversas/ChatPanel.tsx` | Alterado |
-| `src/pages/Conversas.tsx` | Alterado |
-| `src/components/conversas/ConversaItem.tsx` | Alterado |
-| `src/components/conversas/ConversasList.tsx` | Alterado |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/conversas/ConversaItem.tsx` | Adicionar ícones de status aberta/fechada |
 
+Apenas 1 arquivo alterado — sem migrations ou mudanças de lógica.

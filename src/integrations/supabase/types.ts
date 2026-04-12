@@ -324,6 +324,51 @@ export type Database = {
           },
         ]
       }
+      conversa_transferencias: {
+        Row: {
+          conversa_id: string
+          created_at: string
+          de_user_id: string
+          id: string
+          motivo: string | null
+          para_user_id: string
+          tenant_id: string
+        }
+        Insert: {
+          conversa_id: string
+          created_at?: string
+          de_user_id: string
+          id?: string
+          motivo?: string | null
+          para_user_id: string
+          tenant_id: string
+        }
+        Update: {
+          conversa_id?: string
+          created_at?: string
+          de_user_id?: string
+          id?: string
+          motivo?: string | null
+          para_user_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversa_transferencias_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversa_transferencias_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversas: {
         Row: {
           aguardando_humano: boolean
@@ -853,7 +898,7 @@ export type Database = {
       ia_emojis: "nao" | "pouco" | "sim"
       ia_tom: "formal" | "amigavel" | "casual"
       mensagem_tipo: "texto" | "imagem" | "audio" | "video" | "documento"
-      remetente_tipo: "contato" | "atendente" | "bot"
+      remetente_tipo: "contato" | "atendente" | "bot" | "sistema"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -996,7 +1041,7 @@ export const Constants = {
       ia_emojis: ["nao", "pouco", "sim"],
       ia_tom: ["formal", "amigavel", "casual"],
       mensagem_tipo: ["texto", "imagem", "audio", "video", "documento"],
-      remetente_tipo: ["contato", "atendente", "bot"],
+      remetente_tipo: ["contato", "atendente", "bot", "sistema"],
     },
   },
 } as const

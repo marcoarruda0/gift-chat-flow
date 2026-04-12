@@ -42,14 +42,16 @@ function applyTemplate(template: string, cad: PinoquioCadastramento, link: strin
 }
 
 function decodeJwtIfNeeded(jwt: string): string {
+  // Clean whitespace/newlines
+  let clean = jwt.replace(/\s+/g, "");
   // If it doesn't start with "eyJ" it might be base64-encoded
-  if (!jwt.startsWith("eyJ")) {
+  if (!clean.startsWith("eyJ")) {
     try {
-      const decoded = atob(jwt);
-      if (decoded.startsWith("eyJ")) return decoded;
+      const decoded = atob(clean);
+      if (decoded.startsWith("eyJ")) return decoded.replace(/\s+/g, "");
     } catch { /* not base64, use as-is */ }
   }
-  return jwt;
+  return clean;
 }
 
 async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<PinoquioCadastramento[]> {

@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { UserRound } from "lucide-react";
+import { UserRound, MessageCircle, CheckCircle2 } from "lucide-react";
 
 interface ConversaItemProps {
   id: string;
@@ -45,6 +45,11 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
           <span className="font-medium text-sm text-foreground truncate flex-1 min-w-0 flex items-center gap-1">
+            {status === "fechada" ? (
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
+            )}
             {aguardandoHumano && <UserRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
             {nomeContato}
           </span>

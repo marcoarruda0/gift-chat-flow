@@ -1,0 +1,1 @@
+ALTER TABLE public.pinoquio_config ADD COLUMN store_id text NOT NULL DEFAULT '32';

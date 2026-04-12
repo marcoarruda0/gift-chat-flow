@@ -807,6 +807,7 @@ export type Database = {
           intervalo_polling_min: number
           jwt_token: string
           polling_ativo: boolean
+          store_id: string
           template_mensagem: string
           tenant_id: string
           updated_at: string
@@ -818,6 +819,7 @@ export type Database = {
           intervalo_polling_min?: number
           jwt_token?: string
           polling_ativo?: boolean
+          store_id?: string
           template_mensagem?: string
           tenant_id: string
           updated_at?: string
@@ -829,6 +831,7 @@ export type Database = {
           intervalo_polling_min?: number
           jwt_token?: string
           polling_ativo?: boolean
+          store_id?: string
           template_mensagem?: string
           tenant_id?: string
           updated_at?: string

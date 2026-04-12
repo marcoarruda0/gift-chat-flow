@@ -430,6 +430,7 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
   const [config, setConfig] = useState({
     jwt_token: "",
     api_base_url: "https://api-pinoquio.pecararabrecho.com.br/api",
+    store_id: "32",
     intervalo_polling_min: 10,
     polling_ativo: false,
   });
@@ -446,6 +447,7 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
           setConfig({
             jwt_token: data.jwt_token,
             api_base_url: data.api_base_url,
+            store_id: (data as any).store_id || "32",
             intervalo_polling_min: data.intervalo_polling_min,
             polling_ativo: data.polling_ativo,
           });
@@ -460,13 +462,19 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
     if (exists) {
       const { error } = await supabase
         .from("pinoquio_config")
-        .update(config)
+        .update({
+          jwt_token: config.jwt_token,
+          api_base_url: config.api_base_url,
+          store_id: config.store_id,
+          intervalo_polling_min: config.intervalo_polling_min,
+          polling_ativo: config.polling_ativo,
+        } as any)
         .eq("tenant_id", tenantId);
       if (error) toast.error("Erro ao salvar"); else toast.success("Configuração salva");
     } else {
       const { error } = await supabase
         .from("pinoquio_config")
-        .insert({ ...config, tenant_id: tenantId });
+        .insert({ ...config, tenant_id: tenantId } as any);
       if (error) toast.error("Erro ao criar config: " + error.message);
       else { toast.success("Configuração criada"); setExists(true); }
     }
@@ -475,24 +483,21 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
 
   const testConnection = async () => {
     if (!config.jwt_token.trim()) {
-      toast.error("Insira o JWT antes de testar.");
+      toast.error("Insira o token antes de testar.");
       return;
     }
     setTesting(true);
     try {
-      // Send current form values directly so no need to save first
       const { data, error } = await supabase.functions.invoke("pinoquio-sync", {
         body: {
           tenant_id: tenantId,
           action: "test_connection",
           jwt_token: config.jwt_token,
           api_base_url: config.api_base_url,
+          store_id: config.store_id,
         },
       });
       if (error) throw error;
-      if (data?.warnings?.length) {
-        data.warnings.forEach((w: string) => toast.info("⚠️ " + w));
-      }
       if (data?.ok) {
         toast.success(`Conexão OK! ${data.total} cadastramentos pendentes na API.`);
       } else {
@@ -515,28 +520,39 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <Label>JWT Token do Pinóquio</Label>
+          <Label>Token de Autenticação</Label>
           <div className="flex gap-2">
             <Input
               type={showJwt ? "text" : "password"}
               value={config.jwt_token}
               onChange={(e) => setConfig((c) => ({ ...c, jwt_token: e.target.value }))}
-              placeholder="Cole o JWT token aqui (sem 'Bearer')"
+              placeholder="Cole o token de autenticação aqui"
               className="font-mono text-xs"
             />
             <Button type="button" variant="ghost" size="icon" onClick={() => setShowJwt((v) => !v)} tabIndex={-1}>
               {showJwt ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">Cole apenas o token JWT (começa com eyJ...). O sistema remove automaticamente prefixos como "Bearer".</p>
+          <p className="text-xs text-muted-foreground">Token base64 da API Pinóquio. Enviado direto no header authorization (sem prefixo "Bearer").</p>
         </div>
 
-        <div className="space-y-2">
-          <Label>URL Base da API</Label>
-          <Input
-            value={config.api_base_url}
-            onChange={(e) => setConfig((c) => ({ ...c, api_base_url: e.target.value }))}
-          />
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>URL Base da API</Label>
+            <Input
+              value={config.api_base_url}
+              onChange={(e) => setConfig((c) => ({ ...c, api_base_url: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Store ID</Label>
+            <Input
+              value={config.store_id}
+              onChange={(e) => setConfig((c) => ({ ...c, store_id: e.target.value }))}
+              placeholder="32"
+            />
+            <p className="text-xs text-muted-foreground">Identificador da loja no Pinóquio (ex: 32 = PR Tatuapé)</p>
+          </div>
         </div>
 
         <div className="space-y-2">

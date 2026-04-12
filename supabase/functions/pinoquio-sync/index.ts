@@ -41,46 +41,33 @@ function applyTemplate(template: string, cad: PinoquioCadastramento, link: strin
     .replace(/\{data_limite\}/g, limitDate);
 }
 
-function cleanJwt(raw: string): { token: string; warnings: string[] } {
-  const warnings: string[] = [];
+function sanitizeToken(raw: string): string {
   let clean = raw.trim();
   // Remove surrounding quotes
   if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
     clean = clean.slice(1, -1);
-    warnings.push("Aspas removidas do token");
   }
-  // Remove "Bearer " prefix
+  // Remove "Bearer " prefix if accidentally included
   if (/^Bearer\s+/i.test(clean)) {
     clean = clean.replace(/^Bearer\s+/i, "");
-    warnings.push("Prefixo 'Bearer' removido do token");
   }
   // Remove whitespace/newlines
   clean = clean.replace(/\s+/g, "");
-  // If it doesn't start with "eyJ" it might be base64-encoded
-  if (!clean.startsWith("eyJ")) {
-    try {
-      const decoded = atob(clean);
-      if (decoded.startsWith("eyJ")) {
-        clean = decoded.replace(/\s+/g, "");
-        warnings.push("Token decodificado de base64");
-      }
-    } catch { /* not base64, use as-is */ }
-  }
-  return { token: clean, warnings };
+  return clean;
 }
 
-function validateJwtFormat(token: string): string | null {
-  if (!token) return "Token vazio";
-  if (!token.startsWith("eyJ")) return "Token não parece ser um JWT válido (deve começar com 'eyJ')";
-  const parts = token.split(".");
-  if (parts.length < 2) return "Token JWT malformado (esperado pelo menos 2 partes separadas por '.')";
-  return null;
+function buildPinoquioHeaders(token: string, storeId: string): Record<string, string> {
+  return {
+    "accept": "application/json",
+    "authorization": token,
+    "content-type": "application/json",
+    "store-id": storeId,
+  };
 }
 
-async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<PinoquioCadastramento[]> {
-  const { token: jwt } = cleanJwt(rawJwt);
-  const formatError = validateJwtFormat(jwt);
-  if (formatError) throw new Error(formatError);
+async function fetchAllPages(apiBaseUrl: string, rawToken: string, storeId: string): Promise<PinoquioCadastramento[]> {
+  const token = sanitizeToken(rawToken);
+  if (!token) throw new Error("Token vazio");
 
   const all: PinoquioCadastramento[] = [];
   let page = 1;
@@ -89,7 +76,7 @@ async function fetchAllPages(apiBaseUrl: string, rawJwt: string): Promise<Pinoqu
   do {
     const url = `${apiBaseUrl}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=${page}&perPage=50&qtyBoxes=0&aquisitionTypes=`;
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      headers: buildPinoquioHeaders(token, storeId),
     });
 
     if (res.status === 401) {
@@ -146,7 +133,7 @@ async function processTenant(
 
   let cadastramentos: PinoquioCadastramento[];
   try {
-    cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token);
+    cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token, config.store_id || "32");
   } catch (e) {
     console.error(`Error fetching Pinóquio for tenant ${tenantId}:`, e);
     await serviceClient.from("pinoquio_execucoes").insert({
@@ -159,14 +146,12 @@ async function processTenant(
     return { error: e.message, stats };
   }
 
-  // Filter by specific IDs if provided
   if (specificIds && specificIds.length > 0) {
     cadastramentos = cadastramentos.filter((c) => specificIds.includes(c.id));
   }
 
   stats.total_pendentes = cadastramentos.length;
 
-  // Get existing notifications to avoid duplicates
   const existingIds = specificIds && forceResend
     ? []
     : (await serviceClient
@@ -177,7 +162,6 @@ async function processTenant(
       ).data?.map((n: any) => n.cadastramento_id) || [];
 
   for (const cad of cadastramentos) {
-    // Skip if already approved or payment chosen
     if (cad.is_products_approved_by_fornecedor === true) {
       stats.total_ignorados++;
       continue;
@@ -187,7 +171,6 @@ async function processTenant(
       continue;
     }
 
-    // Skip if already notified (unless force resend)
     if (!forceResend && existingIds.includes(cad.id)) {
       stats.total_ignorados++;
       continue;
@@ -197,9 +180,7 @@ async function processTenant(
     const lote = `R-${cad.id}`;
     const phone = formatPhone(cad.fornecedor_telefone);
 
-    // No phone
     if (!phone) {
-      // Upsert notification as sem_telefone
       await serviceClient.from("pinoquio_notificacoes").upsert(
         {
           tenant_id: tenantId,
@@ -220,7 +201,6 @@ async function processTenant(
 
     const message = applyTemplate(config.template_mensagem, cad, link);
 
-    // Send via Z-API
     const result = await sendViaZapi(
       zapiConfig.instance_id,
       zapiConfig.token,
@@ -253,7 +233,6 @@ async function processTenant(
     }
   }
 
-  // Log execution
   await serviceClient.from("pinoquio_execucoes").insert({
     tenant_id: tenantId,
     total_pendentes: stats.total_pendentes,
@@ -280,39 +259,41 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      // No body = cron call, process all active tenants
+      // No body = cron call
     }
 
     const { tenant_id, cadastramento_ids, force_resend, action } = body;
 
-    // Action: test_connection — just test the Pinóquio API
+    // Action: test_connection
     if (action === "test_connection" && tenant_id) {
-      // Accept inline jwt/url from request body, fallback to DB
-      let jwtRaw = body.jwt_token;
+      let tokenRaw = body.jwt_token;
       let apiBaseUrl = body.api_base_url;
+      let storeId = body.store_id;
 
-      if (!jwtRaw || !apiBaseUrl) {
+      if (!tokenRaw || !apiBaseUrl) {
         const { data: config } = await serviceClient
           .from("pinoquio_config")
           .select("*")
           .eq("tenant_id", tenant_id)
           .single();
-        if (!jwtRaw) jwtRaw = config?.jwt_token;
+        if (!tokenRaw) tokenRaw = config?.jwt_token;
         if (!apiBaseUrl) apiBaseUrl = config?.api_base_url;
+        if (!storeId) storeId = config?.store_id;
       }
 
-      if (!jwtRaw) {
+      if (!storeId) storeId = "32";
+
+      if (!tokenRaw) {
         return new Response(
-          JSON.stringify({ ok: false, error: "JWT não configurado. Salve a configuração primeiro." }),
+          JSON.stringify({ ok: false, error: "Token não configurado. Salve a configuração primeiro." }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const { token: jwt, warnings } = cleanJwt(jwtRaw);
-      const formatError = validateJwtFormat(jwt);
-      if (formatError) {
+      const token = sanitizeToken(tokenRaw);
+      if (!token) {
         return new Response(
-          JSON.stringify({ ok: false, error: formatError, warnings }),
+          JSON.stringify({ ok: false, error: "Token vazio após limpeza" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -320,36 +301,35 @@ Deno.serve(async (req) => {
       try {
         const url = `${apiBaseUrl}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=1&perPage=1&qtyBoxes=0&aquisitionTypes=`;
         const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+          headers: buildPinoquioHeaders(token, storeId),
         });
         if (res.status === 401) {
-          const text = await res.text();
           return new Response(
-            JSON.stringify({ ok: false, error: "Token recusado pela API Pinóquio (401). Verifique se o token está correto e não expirou.", warnings }),
+            JSON.stringify({ ok: false, error: "Token recusado pela API Pinóquio (401). Verifique se o token está correto e não expirou." }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         if (!res.ok) {
           const text = await res.text();
           return new Response(
-            JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${text}`, warnings }),
+            JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${text}` }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         const data = await res.json();
         return new Response(
-          JSON.stringify({ ok: true, total: data.total || 0, warnings }),
+          JSON.stringify({ ok: true, total: data.total || 0 }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (e) {
         return new Response(
-          JSON.stringify({ ok: false, error: e.message, warnings }),
+          JSON.stringify({ ok: false, error: e.message }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }
 
-    // Action: fetch_pendentes — just return the list without sending
+    // Action: fetch_pendentes
     if (action === "fetch_pendentes" && tenant_id) {
       const { data: config } = await serviceClient
         .from("pinoquio_config")
@@ -359,14 +339,13 @@ Deno.serve(async (req) => {
 
       if (!config?.jwt_token) {
         return new Response(
-          JSON.stringify({ error: "JWT não configurado" }),
+          JSON.stringify({ error: "Token não configurado" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token);
+      const cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token, config.store_id || "32");
 
-      // Enrich with notification status
       const { data: notifs } = await serviceClient
         .from("pinoquio_notificacoes")
         .select("cadastramento_id, status, enviado_at")
@@ -426,7 +405,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Cron mode: process all active tenants
+    // Cron mode
     const { data: activeConfigs } = await serviceClient
       .from("pinoquio_config")
       .select("*")

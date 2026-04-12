@@ -271,8 +271,9 @@ Deno.serve(async (req) => {
 
       try {
         const url = `${config.api_base_url}/collections/registration-parts?step_id=registro_de_pecas&status_id=aguardando_fornecedor&page=1&perPage=1&qtyBoxes=0&aquisitionTypes=`;
+        const jwt = decodeJwtIfNeeded(config.jwt_token);
         const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${config.jwt_token}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
         });
         if (!res.ok) {
           const text = await res.text();

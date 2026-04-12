@@ -32,7 +32,7 @@ interface MensagemRow {
 }
 
 export default function Conversas() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversas, setConversas] = useState<ConversaRow[]>([]);

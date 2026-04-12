@@ -1,136 +1,129 @@
 
+# Diagnóstico do erro ao clicar em "Testar Conexão"
 
-# Módulo "Peça Rara" — Notificações Automáticas via Pinóquio + Z-API
+## O que eu verifiquei
+Encontrei 2 chamadas diferentes para a mesma function:
 
-## Resumo
+1. `fetch_pendentes` disparada automaticamente pelo Dashboard  
+   - `POST /functions/v1/pinoquio-sync`
+   - body: `{"tenant_id":"...","action":"fetch_pendentes"}`
+   - resposta: `500 {"error":"Pinóquio API error: 401 Unauthorized"}`
 
-Novo módulo genérico multi-tenant que consulta a API do sistema Pinóquio para buscar cadastramentos pendentes de aprovação e envia notificações automáticas via WhatsApp (Z-API já integrada). Inclui dashboard, histórico, template editável, configuração e polling automático via cron job.
+2. `test_connection` disparada pelo botão "Testar Conexão"  
+   - `POST /functions/v1/pinoquio-sync`
+   - body: `{"tenant_id":"...","action":"test_connection"}`
+   - resposta: `200 {"ok":false,"error":"HTTP 401: {\"message\":\"Unauthorized\"}"}`
 
-## Arquitetura
+## O erro, detalhado
+O problema real não é na conexão com o backend da plataforma nem na Z-API. O erro vem da API externa do Pinóquio recusando a autenticação.
 
-```text
-┌──────────────────┐     ┌──────────────────────┐     ┌──────────────┐
-│  Frontend (React)│────▶│  Edge: pinoquio-sync  │────▶│  API Pinóquio│
-│  4 telas/abas    │     │  (cron + manual)      │     └──────────────┘
-└──────────────────┘     │                       │
-                         │  Para cada pendente:  │     ┌──────────────┐
-                         │  envia via Z-API ─────│────▶│  Z-API (já   │
-                         │  registra notificação │     │  configurada)│
-                         └──────────────────────┘     └──────────────┘
+Em termos práticos:
+- a function está conseguindo ler a configuração do tenant
+- ela está chegando até a API do Pinóquio
+- o Pinóquio está respondendo `401 Unauthorized`
+
+Ou seja: o JWT enviado ao Pinóquio está inválido para essa API, ou está sendo enviado no formato errado.
+
+## Pontos importantes no código que explicam isso
+
+### 1) O botão "Testar Conexão" não usa o JWT digitado na tela
+Em `src/pages/PecaRara.tsx`, o botão envia apenas:
+```ts
+{ tenant_id, action: "test_connection" }
 ```
+Então a function lê o JWT salvo no banco, e não o valor que está no input naquele momento.
 
-## Banco de Dados (3 tabelas + cron)
+Impacto:
+- se você colou um JWT novo e clicou direto em "Testar Conexão" sem salvar antes, o teste usa o token antigo
+- isso explica perfeitamente erros como "JWT não configurado" ou `401` mesmo após colar um token novo
 
-### Tabela `pinoquio_config`
-Configuração por tenant (JWT, polling, template).
+### 2) O sanitizador atual do JWT é incompleto
+Em `supabase/functions/pinoquio-sync/index.ts`, a função:
+- remove espaços/quebras de linha
+- tenta decodificar base64 se não começar com `eyJ`
 
-| Coluna | Tipo | Default |
-|--------|------|---------|
-| id | uuid PK | gen_random_uuid() |
-| tenant_id | uuid NOT NULL | — |
-| jwt_token | text NOT NULL | — |
-| intervalo_polling_min | int | 10 |
-| polling_ativo | boolean | false |
-| template_mensagem | text | (template padrão do prompt) |
-| api_base_url | text | 'https://api-pinoquio.pecararabrecho.com.br/api' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
+Mas ela não remove:
+- prefixo `Bearer `
+- aspas extras
+- outros formatos comuns de cola/copiar
 
-RLS: mesmo padrão admin_tenant (select all tenant, insert/update/delete admin only). UNIQUE on tenant_id.
+Se o usuário colar:
+```text
+Bearer eyJ...
+```
+o header final vira:
+```text
+Authorization: Bearer Bearer eyJ...
+```
+e isso gera `401`.
 
-### Tabela `pinoquio_notificacoes`
-Log de cada notificação enviada (ou tentada).
+### 3) O Dashboard faz chamada automática e gera um segundo erro
+Ao abrir `/peca-rara`, a aba Dashboard tenta buscar pendentes automaticamente se existir qualquer `jwt_token` salvo.
 
-| Coluna | Tipo |
-|--------|------|
-| id | uuid PK |
-| tenant_id | uuid NOT NULL |
-| cadastramento_id | int NOT NULL |
-| cadastramento_id_external | text |
-| fornecedor_nome | text |
-| fornecedor_telefone | text |
-| lote | text |
-| link_aprovacao | text |
-| mensagem_enviada | text |
-| status | text ('pendente'/'enviado'/'erro'/'sem_telefone'/'ignorado') |
-| erro_mensagem | text nullable |
-| enviado_at | timestamptz nullable |
-| created_at | timestamptz default now() |
+Então hoje acontecem dois comportamentos ao mesmo tempo:
+- o Dashboard tenta `fetch_pendentes` e pode estourar `500`
+- o botão "Testar Conexão" retorna `ok:false` com `401`
 
-RLS: tenant isolation. UNIQUE(tenant_id, cadastramento_id) para evitar duplicatas.
+Isso deixa a percepção confusa, porque parece que o clique no botão causou tudo, mas há uma chamada automática em paralelo.
 
-### Tabela `pinoquio_execucoes`
-Log de cada execução do polling.
+## Conclusão do diagnóstico
+A causa mais provável está em uma destas 3 situações:
 
-| Coluna | Tipo |
-|--------|------|
-| id | uuid PK |
-| tenant_id | uuid NOT NULL |
-| executado_em | timestamptz default now() |
-| total_pendentes | int |
-| total_novos_enviados | int |
-| total_erros | int |
-| total_ignorados | int |
+1. O JWT novo foi digitado mas não salvo antes do teste  
+2. O JWT salvo está com formato incorreto, especialmente com `Bearer ` na frente  
+3. O JWT salvo realmente não é aceito pela API do Pinóquio
 
-RLS: tenant isolation (select only).
+## Plano de correção
+Sem alterar banco, eu corrigiria assim:
 
-### Cron Job
-Usando `pg_cron` + `pg_net` para invocar a edge function `pinoquio-sync` a cada 5 minutos. A function verifica internamente quais tenants têm `polling_ativo = true` e processa cada um.
+1. Em `src/pages/PecaRara.tsx`
+   - fazer "Testar Conexão" usar os valores atuais do formulário
+   - ou salvar automaticamente antes de testar
+   - mostrar mensagem clara quando houver alterações não salvas
 
-## Edge Function: `pinoquio-sync`
+2. Em `supabase/functions/pinoquio-sync/index.ts`
+   - melhorar a normalização do token:
+     - trim
+     - remover `Bearer ` no início
+     - remover aspas
+     - remover quebras de linha
+     - continuar tentando base64 quando fizer sentido
+   - validar formato mínimo do JWT antes de chamar o Pinóquio
 
-Lógica principal:
-1. Recebe `{ tenant_id }` (manual) ou sem body (cron — processa todos tenants ativos)
-2. Busca `pinoquio_config` do tenant
-3. Chama API Pinóquio com paginação (percorre todas as páginas)
-4. Para cada cadastramento:
-   - Verifica regras: `is_products_approved_by_fornecedor != true`, `acquisition_type_choosed == null`
-   - Verifica se já existe em `pinoquio_notificacoes` (já notificado → ignora)
-   - Se sem telefone → registra como "sem_telefone"
-   - Monta link: `https://pinoquio.pecararabrecho.com.br/external/fornecedor/{id_external}/confirmacao-produtos?origin=link`
-   - Aplica template com variáveis: `{id}`, `{link}`, `{fornecedor_name}`, `{qty_total}`, `{valor_pix}`, `{valor_consignacao}`, `{data_limite}`
-   - Envia via Z-API (reutiliza `zapi_config` do tenant)
-   - Registra resultado em `pinoquio_notificacoes`
-5. Registra execução em `pinoquio_execucoes`
+3. Ainda na function
+   - tratar `401` de forma estruturada, sem virar erro genérico
+   - retornar diagnóstico amigável, por exemplo:
+     - token ausente
+     - token salvo mas inválido
+     - token com prefixo `Bearer`
+     - token malformado
 
-## Frontend: 4 abas em nova página `/peca-rara`
+4. No Dashboard
+   - evitar auto-fetch agressivo quando a conexão ainda não foi validada
+   - ou exibir erro inline em vez de deixar a chamada parecer falha crítica
 
-### Aba 1 — Dashboard
-- Tabela com cadastramentos pendentes da API Pinóquio (fetch ao vivo)
-- Colunas: Lote (R-{id}), Fornecedor, Telefone, Peças, Valor Pix, Valor Consignação, Data Limite, Status Notificação
-- Botão "Notificar" individual + "Notificar Todos Pendentes"
-- Filtros por data e status
+## Ajuste de UX que eu recomendo
+Além da correção técnica, eu deixaria a tela de Configuração assim:
+- botão "Salvar Configuração"
+- botão "Testar Conexão"
+- aviso: "O teste usa os dados salvos" ou então o teste passa a usar os dados atuais
+- botão mostrar/ocultar JWT para facilitar conferência visual
 
-### Aba 2 — Histórico
-- Lista de `pinoquio_notificacoes` com data/hora, lote, fornecedor, telefone, status, erro
-- Botão reenviar para mensagens com erro
+## O que isso deve resolver
+Depois dessa correção, o usuário vai conseguir distinguir claramente entre:
+- JWT não salvo
+- JWT mal formatado
+- JWT inválido no Pinóquio
 
-### Aba 3 — Template
-- Editor de texto com variáveis disponíveis
-- Preview ao vivo com dados de exemplo
+E o módulo deixará de disparar `500` confuso só porque o Dashboard tentou carregar antes da validação.
 
-### Aba 4 — Configuração
-- JWT do Pinóquio, URL base da API
-- Intervalo de polling (5/10/15 min), toggle ativo/desativo
-- Botão "Testar Conexão" (GET na API Pinóquio)
+## Arquivos envolvidos
+- `src/pages/PecaRara.tsx`
+- `supabase/functions/pinoquio-sync/index.ts`
 
-### Sidebar
-- Novo item "Peça Rara" (ou "Notificações") com ícone adequado
-
-## Arquivos a criar/modificar
-
-| Arquivo | Ação |
-|---------|------|
-| Migration SQL | 3 tabelas + RLS + cron job |
-| `supabase/functions/pinoquio-sync/index.ts` | Edge function principal |
-| `src/pages/PecaRara.tsx` | Página com 4 abas |
-| `src/components/AppSidebar.tsx` | Adicionar item "Peça Rara" |
-| `src/App.tsx` | Adicionar rota `/peca-rara` |
-
-## Regras de Negócio (resumo)
-- Cada cadastramento recebe apenas 1 notificação automática; reenvio só manual
-- Não notificar se já aprovado ou já escolheu pagamento
-- Não notificar sem telefone (registrar como "sem_telefone")
-- Prefixo `55` no telefone se necessário
-- Template editável por tenant
-
+## Validação manual depois da correção
+1. Colar JWT cru começando com `eyJ...`
+2. Testar conexão sem salvar
+3. Testar conexão após salvar
+4. Testar também com valor colado como `Bearer eyJ...`
+5. Confirmar que o sistema mostra diagnóstico correto e não gera `500` confuso no Dashboard

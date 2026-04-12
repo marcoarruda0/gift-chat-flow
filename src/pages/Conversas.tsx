@@ -347,28 +347,54 @@ export default function Conversas() {
   const handleTransferDepartamento = async (departamentoId: string, departamentoNome: string, motivo: string) => {
     if (!selectedId || !tenantId || !profile) return;
     try {
+      // Round-robin: get next agent for the department
+      const { data: nextAgentId } = await supabase.rpc("distribuir_atendente", {
+        p_tenant_id: tenantId,
+        p_departamento_id: departamentoId,
+      });
+
       await supabase.from("conversas").update({
         departamento_id: departamentoId,
-        atendente_id: null,
+        atendente_id: nextAgentId || null,
       } as any).eq("id", selectedId);
+
+      const paraUserId = nextAgentId || user!.id;
 
       await supabase.from("conversa_transferencias").insert({
         conversa_id: selectedId,
         tenant_id: tenantId,
         de_user_id: user!.id,
-        para_user_id: user!.id, // self reference for dept transfers
+        para_user_id: paraUserId,
         motivo: `Transferido para departamento ${departamentoNome}${motivo ? ` — ${motivo}` : ""}`,
       });
+
+      // Get assigned agent name for system message
+      let assignedName = "";
+      if (nextAgentId) {
+        const { data: agentProfile } = await supabase
+          .from("profiles")
+          .select("nome")
+          .eq("id", nextAgentId)
+          .single();
+        assignedName = agentProfile?.nome || "Atendente";
+      }
+
+      const systemMsg = nextAgentId
+        ? `Conversa transferida para ${departamentoNome} — Atribuída a ${assignedName}${motivo ? ` — Motivo: ${motivo}` : ""}`
+        : `Conversa transferida para o departamento ${departamentoNome}${motivo ? ` — Motivo: ${motivo}` : ""}`;
 
       await supabase.from("mensagens").insert({
         conversa_id: selectedId,
         tenant_id: tenantId,
-        conteudo: `Conversa transferida para o departamento ${departamentoNome}${motivo ? ` — Motivo: ${motivo}` : ""}`,
+        conteudo: systemMsg,
         remetente: "sistema" as any,
         tipo: "texto" as any,
       });
 
-      toast.success(`Conversa transferida para ${departamentoNome}`);
+      toast.success(nextAgentId 
+        ? `Conversa transferida para ${departamentoNome} (${assignedName})`
+        : `Conversa transferida para ${departamentoNome}`
+      );
       fetchConversas();
     } catch (e) {
       console.error(e);

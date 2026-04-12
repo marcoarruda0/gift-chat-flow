@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, X, MessageSquare } from "lucide-react";
+import { ArrowLeft, X, MessageSquare, ArrowRightLeft } from "lucide-react";
 
 interface Mensagem {
   id: string;

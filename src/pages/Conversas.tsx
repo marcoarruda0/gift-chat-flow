@@ -583,6 +583,7 @@ export default function Conversas() {
         open={transferDialogOpen}
         onOpenChange={setTransferDialogOpen}
         onConfirm={handleTransfer}
+        onConfirmDepartamento={handleTransferDepartamento}
       />
     </div>
   );

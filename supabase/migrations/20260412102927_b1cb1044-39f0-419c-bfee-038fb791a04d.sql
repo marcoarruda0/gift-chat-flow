@@ -1,0 +1,1 @@
+CREATE INDEX idx_mensagens_message_id ON public.mensagens ((metadata->>'messageId'));

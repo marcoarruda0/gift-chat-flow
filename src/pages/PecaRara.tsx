@@ -98,8 +98,17 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<number | "all" | null>(null);
   const [filterStatus, setFilterStatus] = useState("todos");
+  const [configReady, setConfigReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    supabase.from("pinoquio_config").select("jwt_token").eq("tenant_id", tenantId).single()
+      .then(({ data }) => {
+        setConfigReady(!!data?.jwt_token);
+      });
+  }, [tenantId]);
 
   const fetchData = useCallback(async () => {
+    if (configReady === false) return;
     setLoading(true);
     try {
       const { data: result, error } = await supabase.functions.invoke("pinoquio-sync", {
@@ -112,9 +121,17 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, configReady]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { if (configReady) fetchData(); }, [fetchData, configReady]);
+
+  if (configReady === null) return <Card><CardContent className="py-8 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></CardContent></Card>;
+  if (configReady === false) return (
+    <Card><CardContent className="py-8 text-center space-y-2">
+      <p className="text-muted-foreground">Configuração do Pinóquio não encontrada.</p>
+      <p className="text-sm text-muted-foreground">Acesse a aba <strong>Configuração</strong> para inserir o JWT e a URL da API.</p>
+    </CardContent></Card>
+  );
 
   const sendNotification = async (ids: number[]) => {
     setSending(ids.length === 1 ? ids[0] : "all");

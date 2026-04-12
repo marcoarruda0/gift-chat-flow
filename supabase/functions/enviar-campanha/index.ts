@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { campanha_id, internal } = body;
+    const { campanha_id, internal, remaining_delay_ms } = body;
 
     // Auth: internal calls use service role key, external calls need user auth
     if (!internal) {
@@ -117,25 +117,58 @@ Deno.serve(async (req) => {
       });
     }
 
-    // === DELAY: internal calls sleep BEFORE processing ===
+    // === DELAY: internal calls sleep BEFORE processing (chunked to avoid 150s gateway timeout) ===
     if (internal) {
-      const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
-      const delay = delayMin + Math.random() * (delayMax - delayMin);
-      console.log(`Waiting ${Math.round(delay / 1000)}s before next send...`);
-      await new Promise((r) => setTimeout(r, delay));
+      const MAX_SLEEP = 120000; // 120s — safe under 150s gateway limit
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha`;
 
-      // Re-check if cancelled during the wait
-      const { data: freshCampanha } = await serviceClient
-        .from("campanhas")
-        .select("status")
-        .eq("id", campanha_id)
-        .single();
+      let remainingDelay = remaining_delay_ms ?? 0;
 
-      if (freshCampanha?.status === "cancelada") {
-        console.log("Campanha cancelled during delay, stopping.");
-        return new Response(JSON.stringify({ message: "Campanha cancelada" }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      // Calculate fresh delay if none passed
+      if (remainingDelay <= 0) {
+        const [delayMin, delayMax] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
+        remainingDelay = delayMin + Math.random() * (delayMax - delayMin);
+      }
+
+      console.log(`Delay: ${Math.round(remainingDelay / 1000)}s remaining`);
+
+      if (remainingDelay > 0) {
+        const sleepTime = Math.min(remainingDelay, MAX_SLEEP);
+        await new Promise((r) => setTimeout(r, sleepTime));
+        remainingDelay -= sleepTime;
+
+        // Re-check if cancelled during the wait
+        const { data: freshCampanha } = await serviceClient
+          .from("campanhas")
+          .select("status")
+          .eq("id", campanha_id)
+          .single();
+
+        if (freshCampanha?.status === "cancelada") {
+          console.log("Campanha cancelled during delay, stopping.");
+          return new Response(JSON.stringify({ message: "Campanha cancelada" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (remainingDelay > 0) {
+          // Still more delay — chain to self with remaining time
+          console.log(`Chaining: ${Math.round(remainingDelay / 1000)}s still remaining`);
+          fetch(functionUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({ campanha_id, internal: true, remaining_delay_ms: remainingDelay }),
+          }).catch((err) => console.error("Failed to chain delay:", err));
+
+          return new Response(JSON.stringify({ message: "Delay in progress" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     }
 

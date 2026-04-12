@@ -563,7 +563,7 @@ export default function Disparos() {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Destinatários da Campanha</DialogTitle>
             <DialogDescription>Status individual de cada destinatário.</DialogDescription>
@@ -574,6 +574,7 @@ export default function Disparos() {
                 <TableHead>Contato</TableHead>
                 <TableHead>Telefone</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Data/Hora</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -587,12 +588,15 @@ export default function Disparos() {
                       <Badge variant={ds.variant}>{ds.label}</Badge>
                       {d.erro && <p className="text-xs text-destructive mt-1">{d.erro}</p>}
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {d.enviado_at ? new Date(d.enviado_at).toLocaleString("pt-BR") : "—"}
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {destinatariosDetail.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
                 </TableRow>
               )}
             </TableBody>

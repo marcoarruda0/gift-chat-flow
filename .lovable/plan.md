@@ -1,97 +1,136 @@
 
 
-# Diagnóstico Completo: TESTE8 — Mesmo Problema
+# Módulo "Peça Rara" — Notificações Automáticas via Pinóquio + Z-API
 
-## O que aconteceu (timeline exata)
+## Resumo
 
-```text
-22:22:20  Boot — 1ª invocação (frontend)
-22:22:22  Msg 1 enviada OK → Response 200 (2.3s)
-22:22:22  "Triggering next invocation immediately (1 remaining)"
-22:22:22  Boot — 2ª invocação (internal)
-22:22:22  "Waiting 251s before next send..."
-22:24:52  ⛔ 504 Gateway Timeout (150.1s de execução)
-22:25:39  Shutdown — função morta
-```
+Novo módulo genérico multi-tenant que consulta a API do sistema Pinóquio para buscar cadastramentos pendentes de aprovação e envia notificações automáticas via WhatsApp (Z-API já integrada). Inclui dashboard, histórico, template editável, configuração e polling automático via cron job.
 
-**Resultado**: 1/2 enviado, 1 pendente, status travado em "enviando".
-
-## Causa raiz
-
-A correção anterior (mover o `await sleep()` para o início) resolve o **idle timeout** mas **não resolve o gateway timeout**. O proxy HTTP do Supabase corta qualquer resposta que demore mais de ~150s. Com `muito_longo` (180-300s), o delay **sempre** excede esse limite.
-
-## Solução definitiva: Dividir delay em chunks de 120s
-
-Em vez de um único `await sleep(251s)`, fazer sleep em pedaços de no máximo **120 segundos**. A cada chunk, a função verifica se foi cancelada. Isso garante que o tempo total de sleep pode ser qualquer valor, enquanto cada invocação individual não excede o gateway timeout.
-
-**Porém**, o problema real é que o gateway mata a invocação inteira (não só o sleep). A solução correta é:
-
-### Abordagem: Responder ANTES de dormir
-
-A função deve **retornar a resposta HTTP imediatamente** e usar o tempo restante antes do idle timeout (~150-197s) para delays menores. Para delays maiores que ~120s, a função deve se **auto-invocar em cadeia** sem delay algum, passando o tempo restante como parâmetro, e cada invocação dorme apenas até ~120s.
+## Arquitetura
 
 ```text
-Fluxo para delay de 251s:
-  1ª auto-invocação: sleep(120s) → auto-invoca com remaining_delay=131s
-  2ª auto-invocação: sleep(120s) → auto-invoca com remaining_delay=11s  
-  3ª auto-invocação: sleep(11s)  → processa destinatário → auto-invoca próximo
+┌──────────────────┐     ┌──────────────────────┐     ┌──────────────┐
+│  Frontend (React)│────▶│  Edge: pinoquio-sync  │────▶│  API Pinóquio│
+│  4 telas/abas    │     │  (cron + manual)      │     └──────────────┘
+└──────────────────┘     │                       │
+                         │  Para cada pendente:  │     ┌──────────────┐
+                         │  envia via Z-API ─────│────▶│  Z-API (já   │
+                         │  registra notificação │     │  configurada)│
+                         └──────────────────────┘     └──────────────┘
 ```
 
-### Implementação em `enviar-campanha/index.ts`
+## Banco de Dados (3 tabelas + cron)
 
-1. Adicionar parâmetro `remaining_delay_ms` ao body da requisição
-2. No início de chamadas internas:
-   - Se `remaining_delay_ms > 0`: dormir `min(remaining_delay_ms, 120000)`, depois:
-     - Se ainda sobrou delay: auto-invocar com `remaining_delay_ms - dormido` e retornar
-     - Se delay zerou: processar normalmente
-3. Ao disparar a próxima invocação: calcular o delay total e passar como `remaining_delay_ms`
-4. Cada invocação individual leva no máximo ~122s (120s sleep + 2s overhead), dentro do limite de 150s do gateway
+### Tabela `pinoquio_config`
+Configuração por tenant (JWT, polling, template).
 
-### Código chave
+| Coluna | Tipo | Default |
+|--------|------|---------|
+| id | uuid PK | gen_random_uuid() |
+| tenant_id | uuid NOT NULL | — |
+| jwt_token | text NOT NULL | — |
+| intervalo_polling_min | int | 10 |
+| polling_ativo | boolean | false |
+| template_mensagem | text | (template padrão do prompt) |
+| api_base_url | text | 'https://api-pinoquio.pecararabrecho.com.br/api' |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | now() |
 
-```typescript
-if (internal) {
-  let remainingDelay = remaining_delay_ms ?? 0;
-  
-  if (remainingDelay <= 0) {
-    // Calculate fresh delay for this recipient
-    const [min, max] = ATRASO_RANGES[campanha.atraso_tipo] || ATRASO_RANGES.medio;
-    remainingDelay = min + Math.random() * (max - min);
-  }
-  
-  const MAX_SLEEP = 120000; // 120s — safe under 150s gateway limit
-  
-  if (remainingDelay > 0) {
-    const sleepTime = Math.min(remainingDelay, MAX_SLEEP);
-    await new Promise(r => setTimeout(r, sleepTime));
-    remainingDelay -= sleepTime;
-    
-    // Check cancellation
-    const { data: fresh } = await serviceClient
-      .from("campanhas").select("status").eq("id", campanha_id).single();
-    if (fresh?.status === "cancelada") return response("Cancelada");
-    
-    if (remainingDelay > 0) {
-      // Still more delay — chain to self with remaining time
-      fetch(functionUrl, { body: { campanha_id, internal: true, remaining_delay_ms: remainingDelay } });
-      return response("Delay in progress");
-    }
-  }
-  
-  // Delay completed — process recipient below
-}
-```
+RLS: mesmo padrão admin_tenant (select all tenant, insert/update/delete admin only). UNIQUE on tenant_id.
 
-## Arquivos
+### Tabela `pinoquio_notificacoes`
+Log de cada notificação enviada (ou tentada).
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/enviar-campanha/index.ts` | Implementar delay em chunks de 120s com auto-invocação em cadeia |
+| Coluna | Tipo |
+|--------|------|
+| id | uuid PK |
+| tenant_id | uuid NOT NULL |
+| cadastramento_id | int NOT NULL |
+| cadastramento_id_external | text |
+| fornecedor_nome | text |
+| fornecedor_telefone | text |
+| lote | text |
+| link_aprovacao | text |
+| mensagem_enviada | text |
+| status | text ('pendente'/'enviado'/'erro'/'sem_telefone'/'ignorado') |
+| erro_mensagem | text nullable |
+| enviado_at | timestamptz nullable |
+| created_at | timestamptz default now() |
 
-## Por que funciona
+RLS: tenant isolation. UNIQUE(tenant_id, cadastramento_id) para evitar duplicatas.
 
-- Cada invocação individual leva no máximo ~122s — dentro do limite de 150s do gateway
-- O delay total pode ser qualquer valor (1s a 300s) — dividido em pedaços seguros
-- Verificação de cancelamento a cada chunk
-- Sem mudanças no banco de dados
+### Tabela `pinoquio_execucoes`
+Log de cada execução do polling.
+
+| Coluna | Tipo |
+|--------|------|
+| id | uuid PK |
+| tenant_id | uuid NOT NULL |
+| executado_em | timestamptz default now() |
+| total_pendentes | int |
+| total_novos_enviados | int |
+| total_erros | int |
+| total_ignorados | int |
+
+RLS: tenant isolation (select only).
+
+### Cron Job
+Usando `pg_cron` + `pg_net` para invocar a edge function `pinoquio-sync` a cada 5 minutos. A function verifica internamente quais tenants têm `polling_ativo = true` e processa cada um.
+
+## Edge Function: `pinoquio-sync`
+
+Lógica principal:
+1. Recebe `{ tenant_id }` (manual) ou sem body (cron — processa todos tenants ativos)
+2. Busca `pinoquio_config` do tenant
+3. Chama API Pinóquio com paginação (percorre todas as páginas)
+4. Para cada cadastramento:
+   - Verifica regras: `is_products_approved_by_fornecedor != true`, `acquisition_type_choosed == null`
+   - Verifica se já existe em `pinoquio_notificacoes` (já notificado → ignora)
+   - Se sem telefone → registra como "sem_telefone"
+   - Monta link: `https://pinoquio.pecararabrecho.com.br/external/fornecedor/{id_external}/confirmacao-produtos?origin=link`
+   - Aplica template com variáveis: `{id}`, `{link}`, `{fornecedor_name}`, `{qty_total}`, `{valor_pix}`, `{valor_consignacao}`, `{data_limite}`
+   - Envia via Z-API (reutiliza `zapi_config` do tenant)
+   - Registra resultado em `pinoquio_notificacoes`
+5. Registra execução em `pinoquio_execucoes`
+
+## Frontend: 4 abas em nova página `/peca-rara`
+
+### Aba 1 — Dashboard
+- Tabela com cadastramentos pendentes da API Pinóquio (fetch ao vivo)
+- Colunas: Lote (R-{id}), Fornecedor, Telefone, Peças, Valor Pix, Valor Consignação, Data Limite, Status Notificação
+- Botão "Notificar" individual + "Notificar Todos Pendentes"
+- Filtros por data e status
+
+### Aba 2 — Histórico
+- Lista de `pinoquio_notificacoes` com data/hora, lote, fornecedor, telefone, status, erro
+- Botão reenviar para mensagens com erro
+
+### Aba 3 — Template
+- Editor de texto com variáveis disponíveis
+- Preview ao vivo com dados de exemplo
+
+### Aba 4 — Configuração
+- JWT do Pinóquio, URL base da API
+- Intervalo de polling (5/10/15 min), toggle ativo/desativo
+- Botão "Testar Conexão" (GET na API Pinóquio)
+
+### Sidebar
+- Novo item "Peça Rara" (ou "Notificações") com ícone adequado
+
+## Arquivos a criar/modificar
+
+| Arquivo | Ação |
+|---------|------|
+| Migration SQL | 3 tabelas + RLS + cron job |
+| `supabase/functions/pinoquio-sync/index.ts` | Edge function principal |
+| `src/pages/PecaRara.tsx` | Página com 4 abas |
+| `src/components/AppSidebar.tsx` | Adicionar item "Peça Rara" |
+| `src/App.tsx` | Adicionar rota `/peca-rara` |
+
+## Regras de Negócio (resumo)
+- Cada cadastramento recebe apenas 1 notificação automática; reenvio só manual
+- Não notificar se já aprovado ou já escolheu pagamento
+- Não notificar sem telefone (registrar como "sem_telefone")
+- Prefixo `55` no telefone se necessário
+- Template editável por tenant
 

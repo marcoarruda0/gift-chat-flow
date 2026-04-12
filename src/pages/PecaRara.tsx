@@ -123,7 +123,15 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
     }
   }, [tenantId, configReady]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { if (configReady) fetchData(); }, [fetchData, configReady]);
+
+  if (configReady === null) return <Card><CardContent className="py-8 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></CardContent></Card>;
+  if (configReady === false) return (
+    <Card><CardContent className="py-8 text-center space-y-2">
+      <p className="text-muted-foreground">Configuração do Pinóquio não encontrada.</p>
+      <p className="text-sm text-muted-foreground">Acesse a aba <strong>Configuração</strong> para inserir o JWT e a URL da API.</p>
+    </CardContent></Card>
+  );
 
   const sendNotification = async (ids: number[]) => {
     setSending(ids.length === 1 ? ids[0] : "all");

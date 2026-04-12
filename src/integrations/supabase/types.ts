@@ -799,6 +799,144 @@ export type Database = {
           },
         ]
       }
+      pinoquio_config: {
+        Row: {
+          api_base_url: string
+          created_at: string
+          id: string
+          intervalo_polling_min: number
+          jwt_token: string
+          polling_ativo: boolean
+          template_mensagem: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_base_url?: string
+          created_at?: string
+          id?: string
+          intervalo_polling_min?: number
+          jwt_token?: string
+          polling_ativo?: boolean
+          template_mensagem?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_base_url?: string
+          created_at?: string
+          id?: string
+          intervalo_polling_min?: number
+          jwt_token?: string
+          polling_ativo?: boolean
+          template_mensagem?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pinoquio_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pinoquio_execucoes: {
+        Row: {
+          executado_em: string
+          id: string
+          tenant_id: string
+          total_erros: number
+          total_ignorados: number
+          total_novos_enviados: number
+          total_pendentes: number
+        }
+        Insert: {
+          executado_em?: string
+          id?: string
+          tenant_id: string
+          total_erros?: number
+          total_ignorados?: number
+          total_novos_enviados?: number
+          total_pendentes?: number
+        }
+        Update: {
+          executado_em?: string
+          id?: string
+          tenant_id?: string
+          total_erros?: number
+          total_ignorados?: number
+          total_novos_enviados?: number
+          total_pendentes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pinoquio_execucoes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pinoquio_notificacoes: {
+        Row: {
+          cadastramento_id: number
+          cadastramento_id_external: string | null
+          created_at: string
+          enviado_at: string | null
+          erro_mensagem: string | null
+          fornecedor_nome: string | null
+          fornecedor_telefone: string | null
+          id: string
+          link_aprovacao: string | null
+          lote: string | null
+          mensagem_enviada: string | null
+          status: string
+          tenant_id: string
+        }
+        Insert: {
+          cadastramento_id: number
+          cadastramento_id_external?: string | null
+          created_at?: string
+          enviado_at?: string | null
+          erro_mensagem?: string | null
+          fornecedor_nome?: string | null
+          fornecedor_telefone?: string | null
+          id?: string
+          link_aprovacao?: string | null
+          lote?: string | null
+          mensagem_enviada?: string | null
+          status?: string
+          tenant_id: string
+        }
+        Update: {
+          cadastramento_id?: number
+          cadastramento_id_external?: string | null
+          created_at?: string
+          enviado_at?: string | null
+          erro_mensagem?: string | null
+          fornecedor_nome?: string | null
+          fornecedor_telefone?: string | null
+          id?: string
+          link_aprovacao?: string | null
+          lote?: string | null
+          mensagem_enviada?: string | null
+          status?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pinoquio_notificacoes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           apelido: string | null

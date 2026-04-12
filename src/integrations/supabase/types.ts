@@ -380,6 +380,7 @@ export type Database = {
           created_at: string
           departamento_id: string | null
           id: string
+          marcada_nao_lida: boolean
           nao_lidas: number
           status: string
           tenant_id: string
@@ -393,6 +394,7 @@ export type Database = {
           created_at?: string
           departamento_id?: string | null
           id?: string
+          marcada_nao_lida?: boolean
           nao_lidas?: number
           status?: string
           tenant_id: string
@@ -406,6 +408,7 @@ export type Database = {
           created_at?: string
           departamento_id?: string | null
           id?: string
+          marcada_nao_lida?: boolean
           nao_lidas?: number
           status?: string
           tenant_id?: string

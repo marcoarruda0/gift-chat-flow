@@ -25,6 +25,7 @@ interface ChatPanelProps {
   onSendAttachment?: (file: File) => void;
   onClose: () => void;
   onBack?: () => void;
+  onTransfer?: () => void;
   loading: boolean;
 }
 
@@ -38,7 +39,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, loading }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 

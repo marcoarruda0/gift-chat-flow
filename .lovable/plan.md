@@ -1,39 +1,42 @@
 
 
-# Unificar Conversas por Contato
+# Nó Menu — Modo Lista vs. Botões
 
-## Problema Identificado
+## O que muda
 
-Dois bugs na função `findOrCreateConversa` do webhook:
+Adicionar um seletor dentro do nó "menu" para o usuário escolher entre dois modos de envio:
 
-1. **Conversas duplicadas após fechamento**: A função só busca conversas com `status = "aberta"`. Quando uma conversa é fechada e o contato manda nova mensagem, cria uma nova conversa em vez de reabrir a existente.
-2. **Race condition**: Duas mensagens chegando quase simultaneamente (caso Jeane, 172ms de diferença) criam duas conversas abertas para o mesmo contato.
-
-## Solução
-
-### 1. Corrigir `findOrCreateConversa` no webhook (`zapi-webhook/index.ts`)
-
-Mudar a lógica para:
-- Buscar **qualquer conversa** do contato (não filtrar por status), ordenar por `created_at DESC`
-- Se encontrar uma conversa **fechada**, reabrir ela (update status para "aberta", zerar `nao_lidas`)
-- Se não encontrar nenhuma, criar nova
-- Isso garante 1 conversa por contato (ou ao menos reutiliza a existente)
-
-### 2. Limpar dados duplicados (migration SQL)
-
-- Mesclar as conversas duplicadas de Jeane: mover mensagens para a conversa mais antiga, deletar a duplicada
-- Mesclar as conversas de Marco Arruda: mover todas as mensagens para uma única conversa, deletar as extras
-- Script genérico: para cada contato com múltiplas conversas, consolidar em uma só
-
-### 3. Adicionar constraint único (migration SQL)
-
-- Criar uma função de consolidação que roda uma vez
-- Não adicionar UNIQUE constraint porque pode haver cenários legítimos de múltiplas conversas no futuro — mas a lógica do webhook vai sempre reutilizar
+- **Lista** (atual): envia texto numerado (1. Opção A, 2. Opção B...) — o cliente responde digitando o número
+- **Botões**: envia como botões interativos do WhatsApp (máximo 3 botões) — o cliente toca no botão
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `zapi-webhook/index.ts` | Alterar `findOrCreateConversa` para buscar qualquer conversa do contato e reabrir se fechada |
-| Migration SQL | Consolidar conversas duplicadas existentes |
+| `NodeConfigPanel.tsx` | Adicionar Select "Tipo de menu" (`lista` / `botoes`) acima das opções. Se `botoes`, limitar a 3 opções |
+| `FlowNode.tsx` | Mostrar badge "Lista" ou "Botões" no preview do nó |
+| `zapi-webhook/index.ts` | No handler do nó menu, se `tipo_menu === "botoes"`, enviar via endpoint de botões da Z-API em vez de texto numerado |
+
+## Detalhes técnicos
+
+### Config armazenada
+```typescript
+{
+  tipo_menu: "lista" | "botoes",  // default "lista"
+  pergunta: string,
+  opcoes: string[],
+  fallback: string
+}
+```
+
+### NodeConfigPanel
+- Novo `Select` com label "Tipo de menu" logo após o campo de pergunta
+- Se `botoes` selecionado, limitar máximo de opções a 3 (limite do WhatsApp) e mostrar aviso se houver mais
+
+### FlowNode preview
+- Exibir um badge pequeno ("📋 Lista" ou "🔘 Botões") abaixo do header
+
+### Webhook (zapi-webhook)
+- Se `tipo_menu === "botoes"`: usar endpoint Z-API `/send-button-list` com payload de botões interativos
+- Se `lista` (default): manter comportamento atual de texto numerado
 

@@ -1,71 +1,29 @@
 
 
-# Upload em Massa de Conversas Antigas (formato Wondershare .txt)
+# Proteção contra Duplicatas na Importação de Conversas
 
-## Visão geral
+## Problema
+Se o usuário importar o mesmo arquivo `.txt` duas vezes, todas as mensagens são inseridas novamente, gerando duplicatas.
 
-Criar uma funcionalidade para importar arquivos .txt exportados pelo Wondershare, parseando o formato específico e inserindo as mensagens no banco como histórico da conversa. O arquivo é nomeado com o telefone do contato, o que permite vincular automaticamente ao contato existente (ou criar um novo).
+## Solução
+Antes de inserir cada chunk de mensagens, buscar mensagens já existentes na conversa com `metadata->importado = true` e comparar por `created_at` + `conteudo`. Filtrar as duplicatas antes do insert.
 
-## Formato do arquivo
+## Mudança
 
-```text
-iPhone(+55 11 99493-5647)           ← linha 1: telefone do contato
-------------------------------------← linha 2: separador
-2024/11/27 23:33                    ← timestamp
-Peça Rara Tatuapé:                  ← remetente = empresa (mensagem enviada)
-Oiiii Alessandra, tudo bem???       ← conteúdo (pode ser multi-linha)
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/importar-conversas/index.ts` | Buscar mensagens existentes da conversa, filtrar duplicatas antes do batch insert, retornar contagem de ignoradas |
 
-2024/12/03 15:49                    ← timestamp
-+5511994935647:                     ← remetente = contato (mensagem recebida)
-Oi                                  ← conteúdo
+### Lógica
 
-2025/05/20 12:16                    ← timestamp
-Peça Rara Tatuapé:                  ← empresa
-*Mariane Souto:*                    ← nome do atendente (opcional)
-Boa tarde, Alessandra...            ← conteúdo
-```
+1. Após encontrar/criar a conversa, buscar todas as mensagens existentes dessa conversa que tenham `metadata->importado = true`
+2. Criar um Set de chaves `timestamp|conteudo` das mensagens existentes
+3. Para cada chunk, filtrar apenas mensagens cujo `timestamp|conteudo` não exista no Set
+4. Inserir somente as novas
+5. Retornar `total_mensagens` (inseridas) e `total_duplicadas` (ignoradas) no response
 
-Regras de parse:
-- Linha com `+55...` ou `+número:` = mensagem **recebida** (remetente = `contato`)
-- Linha com nome da empresa (ex: "Peça Rara Tatuapé:") = mensagem **enviada** (remetente = `atendente`)
-- Linha com `*NomeAtendente:*` logo após a empresa = metadata do atendente
-- Conteúdos como "Áudio", "Vídeo", "Fotos", "Arquivos", "Chamada de Voz" = tipo especial (registrar como texto informativo)
-
-## Mudanças
-
-### 1. Edge Function `importar-conversas` (novo)
-- Recebe o conteúdo do arquivo .txt + tenant_id
-- Parseia o formato Wondershare
-- Extrai telefone da primeira linha
-- Busca ou cria o contato pelo telefone
-- Busca ou cria a conversa para esse contato
-- Insere todas as mensagens em batch com os timestamps originais
-- Retorna resumo: total de mensagens importadas, contato vinculado
-
-### 2. Componente `ImportarConversasDialog` (novo)
-- Dialog com área de upload (aceita .txt)
-- Suporte a múltiplos arquivos (um por contato)
-- Mostra preview: telefone detectado, total de mensagens, período
-- Botão "Importar" que chama a edge function
-- Progress bar durante importação
-
-### 3. Integração na página Conversas
-- Botão "Importar histórico" na barra superior da lista de conversas (ao lado do botão "Nova conversa")
-- Ícone `Upload` do lucide
-
-### Arquivos afetados
-
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| `supabase/functions/importar-conversas/index.ts` | Novo | Parser + inserção em batch |
-| `src/components/conversas/ImportarConversasDialog.tsx` | Novo | UI de upload e preview |
-| `src/pages/Conversas.tsx` | Editar | Adicionar botão e dialog de importação |
-
-### Detalhes técnicos
-
-- O parser no edge function usa regex para identificar blocos: `^(\d{4}/\d{2}/\d{2} \d{2}:\d{2})$` para timestamps
-- Mensagens são inseridas com `created_at` igual ao timestamp original do arquivo
-- Usa service role para inserir com timestamps customizados
-- Limita a 5000 mensagens por arquivo para evitar timeout
-- Telefone normalizado para formato `55XXXXXXXXXXX` antes de buscar contato
+### Detalhes
+- A query de mensagens existentes usa `conversa_id` e filtra por `metadata->importado`
+- Como pode haver mais de 1000 mensagens existentes, paginar a busca com `range()`
+- O Set de dedup usa `created_at + conteudo` como chave composta
 

@@ -1,44 +1,39 @@
 
 
-# Nó "Transferir" — Vincular com Departamentos e Membros da Equipe
+# Unificar Conversas por Contato
 
-## Problema
-O nó "Transferir" no editor de fluxos usa um campo de texto livre para departamento. Deveria mostrar selects com os departamentos e membros cadastrados no sistema.
+## Problema Identificado
+
+Dois bugs na função `findOrCreateConversa` do webhook:
+
+1. **Conversas duplicadas após fechamento**: A função só busca conversas com `status = "aberta"`. Quando uma conversa é fechada e o contato manda nova mensagem, cria uma nova conversa em vez de reabrir a existente.
+2. **Race condition**: Duas mensagens chegando quase simultaneamente (caso Jeane, 172ms de diferença) criam duas conversas abertas para o mesmo contato.
 
 ## Solução
 
-### Arquivo: `src/components/fluxos/NodeConfigPanel.tsx`
+### 1. Corrigir `findOrCreateConversa` no webhook (`zapi-webhook/index.ts`)
 
-1. **Adicionar state + fetch** para carregar departamentos e membros do tenant via Supabase ao montar o componente
-2. **Substituir o bloco `transferir`** (linhas 209-220) por:
-   - Select "Tipo de transferência": `departamento` ou `membro`
-   - Se `departamento`: Select populado com departamentos do banco (`departamentos` table)
-   - Se `membro`: Select populado com profiles do tenant (`profiles` table)
-   - Textarea para mensagem de transferência (já existe)
+Mudar a lógica para:
+- Buscar **qualquer conversa** do contato (não filtrar por status), ordenar por `created_at DESC`
+- Se encontrar uma conversa **fechada**, reabrir ela (update status para "aberta", zerar `nao_lidas`)
+- Se não encontrar nenhuma, criar nova
+- Isso garante 1 conversa por contato (ou ao menos reutiliza a existente)
 
-3. **Imports necessários**: adicionar `useEffect, useState` do React e `supabase` client. Também precisar extrair `tenant_id` do `AuthContext`.
+### 2. Limpar dados duplicados (migration SQL)
 
-### Config armazenada
-```typescript
-{
-  tipo_transferencia: "departamento" | "membro",
-  departamento_id: uuid | null,
-  membro_id: uuid | null,
-  mensagem: string
-}
-```
+- Mesclar as conversas duplicadas de Jeane: mover mensagens para a conversa mais antiga, deletar a duplicada
+- Mesclar as conversas de Marco Arruda: mover todas as mensagens para uma única conversa, deletar as extras
+- Script genérico: para cada contato com múltiplas conversas, consolidar em uma só
 
-### Visualização no painel
-```text
-Tipo de transferência: [Departamento ▼]
-Departamento:          [Vendas ▼]
-Mensagem:              [textarea]
-```
+### 3. Adicionar constraint único (migration SQL)
 
-### Arquivos afetados
+- Criar uma função de consolidação que roda uma vez
+- Não adicionar UNIQUE constraint porque pode haver cenários legítimos de múltiplas conversas no futuro — mas a lógica do webhook vai sempre reutilizar
+
+## Arquivos afetados
+
 | Arquivo | Mudança |
 |---------|---------|
-| `NodeConfigPanel.tsx` | Adicionar fetch de departamentos/membros + substituir inputs por selects |
-
-Nenhuma mudança de banco necessária — os dados já existem nas tabelas `departamentos` e `profiles`.
+| `zapi-webhook/index.ts` | Alterar `findOrCreateConversa` para buscar qualquer conversa do contato e reabrir se fechada |
+| Migration SQL | Consolidar conversas duplicadas existentes |
 

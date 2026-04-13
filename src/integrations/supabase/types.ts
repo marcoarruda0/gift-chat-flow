@@ -564,6 +564,51 @@ export type Database = {
           },
         ]
       }
+      fluxo_config: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          fluxo_id: string | null
+          id: string
+          tenant_id: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          fluxo_id?: string | null
+          id?: string
+          tenant_id: string
+          tipo: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          fluxo_id?: string | null
+          id?: string
+          tenant_id?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fluxo_config_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "fluxos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fluxo_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fluxos: {
         Row: {
           created_at: string

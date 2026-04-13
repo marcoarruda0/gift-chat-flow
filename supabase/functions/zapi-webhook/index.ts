@@ -710,13 +710,29 @@ async function findOrCreateContact(supabase: any, tenantId: string, phone: strin
 }
 
 async function findOrCreateConversa(supabase: any, tenantId: string, contatoId: string) {
+  // Search for ANY conversation for this contact (not just open ones)
   let { data: conversa } = await supabase
     .from("conversas")
-    .select("id")
+    .select("id, status")
     .eq("tenant_id", tenantId)
     .eq("contato_id", contatoId)
-    .eq("status", "aberta")
-    .single();
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // If found a closed conversation, reopen it
+  if (conversa && conversa.status !== "aberta") {
+    await supabase
+      .from("conversas")
+      .update({ status: "aberta", nao_lidas: 0 })
+      .eq("id", conversa.id);
+    console.log("Reopened existing conversation:", conversa.id);
+    return conversa;
+  }
+
+  if (conversa) {
+    return conversa;
+  }
 
   if (!conversa) {
     const { data: defaultDepto } = await supabase

@@ -387,12 +387,22 @@ async function executeFlowFrom(
       case "menu": {
         const pergunta = config.pergunta || "";
         const opcoes: string[] = config.opcoes || [];
-        let menuText = replaceVariables(pergunta, contato);
-        if (opcoes.length > 0) {
-          menuText += "\n\n" + opcoes.map((op: string, i: number) => `${i + 1}. ${op}`).join("\n");
+        const tipoMenu = config.tipo_menu || "lista";
+
+        if (tipoMenu === "botoes" && opcoes.length > 0 && opcoes.length <= 3) {
+          // Send as interactive WhatsApp buttons
+          const buttonMessage = replaceVariables(pergunta, contato);
+          await sendZapiButtons(zapiConfig, phone, buttonMessage, opcoes);
+          await saveBotMessage(supabase, conversaId, tenantId, buttonMessage + "\n\n" + opcoes.map((op: string, i: number) => `[${op}]`).join(" "));
+        } else {
+          // Send as numbered list (default)
+          let menuText = replaceVariables(pergunta, contato);
+          if (opcoes.length > 0) {
+            menuText += "\n\n" + opcoes.map((op: string, i: number) => `${i + 1}. ${op}`).join("\n");
+          }
+          await sendZapiText(zapiConfig, phone, menuText);
+          await saveBotMessage(supabase, conversaId, tenantId, menuText);
         }
-        await sendZapiText(zapiConfig, phone, menuText);
-        await saveBotMessage(supabase, conversaId, tenantId, menuText);
 
         // Pause — wait for user response
         if (sessaoId) {
@@ -401,7 +411,7 @@ async function executeFlowFrom(
             .update({ node_atual: node.id, aguardando_resposta: true, updated_at: new Date().toISOString() })
             .eq("id", sessaoId);
         }
-        console.log("Menu sent, waiting for response");
+        console.log(`Menu (${tipoMenu}) sent, waiting for response`);
         return; // STOP execution, wait for next message
       }
 

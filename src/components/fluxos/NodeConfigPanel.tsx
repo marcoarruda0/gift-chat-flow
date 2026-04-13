@@ -315,6 +315,25 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
         {nodeType === "menu" && (
           <>
             <div className="space-y-1.5">
+              <Label className="text-xs">Tipo de menu</Label>
+              <Select value={config.tipo_menu || "lista"} onValueChange={(v) => {
+                updateConfig("tipo_menu", v);
+                // If switching to buttons and more than 3 options, trim
+                if (v === "botoes" && (config.opcoes || []).length > 3) {
+                  updateConfig("opcoes", (config.opcoes || []).slice(0, 3));
+                }
+              }}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lista">📋 Lista numerada</SelectItem>
+                  <SelectItem value="botoes">🔘 Botões interativos</SelectItem>
+                </SelectContent>
+              </Select>
+              {(config.tipo_menu === "botoes") && (
+                <p className="text-[10px] text-muted-foreground">Máximo 3 opções (limite do WhatsApp)</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs">Texto da pergunta</Label>
               <Textarea
                 value={config.pergunta || ""}
@@ -352,7 +371,7 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                     </Button>
                   </div>
                 ))}
-                {(config.opcoes || []).length < 10 && (
+                {(config.opcoes || []).length < (config.tipo_menu === "botoes" ? 3 : 10) && (
                   <Button
                     variant="outline"
                     size="sm"

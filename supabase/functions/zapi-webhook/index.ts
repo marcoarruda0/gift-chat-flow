@@ -749,7 +749,8 @@ async function sendZapiButtons(zapiConfig: any, phone: string, message: string, 
       },
       body: JSON.stringify({ phone, message, buttonList: { buttons } }),
     });
-    console.log("Z-API send-button-list:", resp.status);
+    const respBody = await resp.text();
+    console.log("Z-API send-button-list:", resp.status, respBody);
   } catch (err) {
     console.error("Z-API button send error:", err);
   }
@@ -798,6 +799,14 @@ function parseMessageContent(payload: any) {
     messageType = "imagem";
     messageContent = payload.sticker.stickerUrl || "";
     messageText = "Sticker";
+  } else if (payload.buttonsResponseMessage) {
+    messageText = payload.buttonsResponseMessage.selectedButtonId || payload.buttonsResponseMessage.selectedDisplayText || "";
+    messageType = "texto";
+    messageContent = messageText;
+  } else if (payload.listResponseMessage) {
+    messageText = payload.listResponseMessage.title || payload.listResponseMessage.singleSelectReply?.selectedRowId || "";
+    messageType = "texto";
+    messageContent = messageText;
   }
 
   return { messageType, messageContent, messageText };

@@ -12,7 +12,7 @@ interface FilePreview {
   totalMensagens: number;
   status: "pending" | "importing" | "done" | "error";
   error?: string;
-  result?: { contato_nome: string; total_mensagens: number };
+  result?: { contato_nome: string; total_mensagens: number; total_duplicadas?: number };
 }
 
 function extractPreviewInfo(content: string): { telefone: string | null; totalMensagens: number } {
@@ -90,7 +90,7 @@ export function ImportarConversasDialog({ open, onOpenChange, onComplete }: Impo
           setFiles(prev => prev.map((ff, idx) => idx === i ? {
             ...ff,
             status: "done",
-            result: { contato_nome: data.contato_nome, total_mensagens: data.total_mensagens },
+            result: { contato_nome: data.contato_nome, total_mensagens: data.total_mensagens, total_duplicadas: data.total_duplicadas || 0 },
           } : ff));
         }
       } catch (e) {
@@ -161,7 +161,8 @@ export function ImportarConversasDialog({ open, onOpenChange, onComplete }: Impo
                     <p className="truncate font-medium">{f.file.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {f.telefone ? `Tel: ${f.telefone}` : "Telefone não detectado"} · {f.totalMensagens} msgs
-                      {f.result && ` · ${f.result.contato_nome}`}
+                      {f.result && ` · ${f.result.contato_nome} · ${f.result.total_mensagens} inseridas`}
+                      {f.result && f.result.total_duplicadas ? ` · ${f.result.total_duplicadas} duplicadas ignoradas` : ""}
                       {f.error && <span className="text-destructive"> · {f.error}</span>}
                     </p>
                   </div>

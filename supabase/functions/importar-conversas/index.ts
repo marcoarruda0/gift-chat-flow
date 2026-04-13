@@ -218,19 +218,52 @@ Deno.serve(async (req) => {
       conversa = newConversa;
     }
 
-    // Batch insert messages (in chunks of 500)
+    // Build dedup set from existing imported messages
+    const existingKeys = new Set<string>();
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: existing } = await adminClient
+        .from("mensagens")
+        .select("created_at, conteudo")
+        .eq("conversa_id", conversa!.id)
+        .eq("tenant_id", tenantId)
+        .contains("metadata", { importado: true })
+        .range(from, from + pageSize - 1);
+      if (!existing || existing.length === 0) break;
+      for (const m of existing) {
+        existingKeys.add(`${m.created_at}|${m.conteudo}`);
+      }
+      if (existing.length < pageSize) break;
+      from += pageSize;
+    }
+
+    // Batch insert messages (in chunks of 500), skipping duplicates
     let totalInserted = 0;
+    let totalDuplicadas = 0;
     const chunkSize = 500;
     for (let i = 0; i < mensagens.length; i += chunkSize) {
-      const chunk = mensagens.slice(i, i + chunkSize).map((m) => ({
-        conversa_id: conversa!.id,
-        tenant_id: tenantId,
-        conteudo: m.conteudo,
-        remetente: m.remetente,
-        tipo: "texto" as const,
-        created_at: m.timestamp,
-        metadata: m.atendente_nome ? { senderName: m.atendente_nome, importado: true } : { importado: true },
-      }));
+      const chunk = mensagens.slice(i, i + chunkSize)
+        .map((m) => ({
+          conversa_id: conversa!.id,
+          tenant_id: tenantId,
+          conteudo: m.conteudo,
+          remetente: m.remetente,
+          tipo: "texto" as const,
+          created_at: m.timestamp,
+          metadata: m.atendente_nome ? { senderName: m.atendente_nome, importado: true } : { importado: true },
+        }))
+        .filter((row) => {
+          const key = `${row.created_at}|${row.conteudo}`;
+          if (existingKeys.has(key)) {
+            totalDuplicadas++;
+            return false;
+          }
+          existingKeys.add(key);
+          return true;
+        });
+
+      if (chunk.length === 0) continue;
 
       const { error: insertErr } = await adminClient.from("mensagens").insert(chunk);
       if (insertErr) {
@@ -250,15 +283,16 @@ Deno.serve(async (req) => {
       await adminClient.from("conversas").update({
         ultimo_texto: last.conteudo.slice(0, 90),
         ultima_msg_at: last.timestamp,
-      }).eq("id", conversa.id);
+      }).eq("id", conversa!.id);
     }
 
     return new Response(JSON.stringify({
       success: true,
       contato_nome: contato.nome,
       contato_id: contato.id,
-      conversa_id: conversa.id,
+      conversa_id: conversa!.id,
       total_mensagens: totalInserted,
+      total_duplicadas: totalDuplicadas,
       telefone,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

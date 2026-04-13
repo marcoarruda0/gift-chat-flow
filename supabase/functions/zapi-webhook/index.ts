@@ -238,14 +238,25 @@ async function handleFluxoEngine(
       if (currentNode?.data?.nodeType === "menu") {
         // Process menu response
         const opcoes: string[] = currentNode.data.config?.opcoes || [];
-        const respNum = parseInt(messageText.trim(), 10);
+        const tipoMenu = currentNode.data.config?.tipo_menu || "lista";
+        const respTrimmed = messageText.trim();
+        const respNum = parseInt(respTrimmed, 10);
         let nextNodeId: string | null = null;
 
+        // Match by number (lista mode) or by button text (botoes mode)
+        let matchedIndex = -1;
         if (!isNaN(respNum) && respNum >= 1 && respNum <= opcoes.length) {
-          const handleId = `opcao_${respNum - 1}`;
+          matchedIndex = respNum - 1;
+        } else if (tipoMenu === "botoes") {
+          // Match by exact button text (case-insensitive)
+          matchedIndex = opcoes.findIndex((op: string) => op.trim().toLowerCase() === respTrimmed.toLowerCase());
+        }
+
+        if (matchedIndex >= 0) {
+          const handleId = `opcao_${matchedIndex}`;
           const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === handleId);
           nextNodeId = edge?.target || null;
-          console.log(`Menu response ${respNum} → handle ${handleId} → node ${nextNodeId}`);
+          console.log(`Menu response "${respTrimmed}" → index ${matchedIndex} → handle ${handleId} → node ${nextNodeId}`);
         } else {
           // Fallback
           const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === "fallback");
@@ -648,6 +659,24 @@ async function sendZapiText(zapiConfig: any, phone: string, message: string) {
     console.log("Z-API send-text:", resp.status);
   } catch (err) {
     console.error("Z-API send error:", err);
+  }
+}
+
+async function sendZapiButtons(zapiConfig: any, phone: string, message: string, opcoes: string[]) {
+  const sendUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/send-button-list`;
+  try {
+    const buttons = opcoes.map((op: string) => ({ id: op, label: op }));
+    const resp = await fetch(sendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Client-Token": zapiConfig.client_token,
+      },
+      body: JSON.stringify({ phone, message, buttonList: { buttons } }),
+    });
+    console.log("Z-API send-button-list:", resp.status);
+  } catch (err) {
+    console.error("Z-API button send error:", err);
   }
 }
 

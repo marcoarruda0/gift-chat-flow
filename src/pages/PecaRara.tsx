@@ -99,6 +99,7 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
   const [sending, setSending] = useState<number | "all" | null>(null);
   const [filterStatus, setFilterStatus] = useState("todos");
   const [configReady, setConfigReady] = useState<boolean | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("pinoquio_config").select("jwt_token").eq("tenant_id", tenantId).single()
@@ -110,14 +111,22 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
   const fetchData = useCallback(async () => {
     if (configReady === false) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const { data: result, error } = await supabase.functions.invoke("pinoquio-sync", {
         body: { tenant_id: tenantId, action: "fetch_pendentes" },
       });
       if (error) throw error;
+      if (result?.ok === false) {
+        setData([]);
+        setFetchError(result.error || "Não foi possível consultar a API Pinóquio.");
+        return;
+      }
       setData(result?.data || []);
     } catch (e: any) {
-      toast.error("Erro ao buscar dados: " + (e.message || "erro desconhecido"));
+      const message = e.message || "erro desconhecido";
+      setFetchError(message);
+      toast.error("Erro ao buscar dados: " + message);
     } finally {
       setLoading(false);
     }
@@ -202,6 +211,13 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
         </div>
       </CardHeader>
       <CardContent>
+        {fetchError && (
+          <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Falha ao consultar o Pinóquio</p>
+            <p>{fetchError}</p>
+            <p className="mt-1">Se o teste de conexão funcionar com um token novo, clique em <strong>Salvar Configuração</strong> para o Dashboard usar esses valores.</p>
+          </div>
+        )}
         <Table>
           <TableHeader>
             <TableRow>
@@ -499,7 +515,7 @@ function ConfigTab({ tenantId }: { tenantId: string }) {
       });
       if (error) throw error;
       if (data?.ok) {
-        toast.success(`Conexão OK! ${data.total} cadastramentos pendentes na API.`);
+        toast.success(`Conexão OK! ${data.total} cadastramentos pendentes na API. Se você alterou token ou Store ID, salve a configuração.`);
       } else {
         toast.error("Falha: " + (data?.error || "erro desconhecido"));
       }

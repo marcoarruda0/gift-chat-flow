@@ -90,7 +90,7 @@ export function ImportarConversasDialog({ open, onOpenChange, onComplete }: Impo
           setFiles(prev => prev.map((ff, idx) => idx === i ? {
             ...ff,
             status: "done",
-            result: { contato_nome: data.contato_nome, total_mensagens: data.total_mensagens },
+            result: { contato_nome: data.contato_nome, total_mensagens: data.total_mensagens, total_duplicadas: data.total_duplicadas || 0 },
           } : ff));
         }
       } catch (e) {

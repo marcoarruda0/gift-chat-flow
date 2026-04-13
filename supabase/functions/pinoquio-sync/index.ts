@@ -302,6 +302,7 @@ async function processTenant(
 
     if (result.ok) {
       stats.total_novos_enviados++;
+      await registerInConversas(serviceClient, tenantId, phone, cad.fornecedor_name, message, cad.id);
     } else {
       stats.total_erros++;
     }

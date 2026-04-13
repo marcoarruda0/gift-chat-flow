@@ -238,14 +238,25 @@ async function handleFluxoEngine(
       if (currentNode?.data?.nodeType === "menu") {
         // Process menu response
         const opcoes: string[] = currentNode.data.config?.opcoes || [];
-        const respNum = parseInt(messageText.trim(), 10);
+        const tipoMenu = currentNode.data.config?.tipo_menu || "lista";
+        const respTrimmed = messageText.trim();
+        const respNum = parseInt(respTrimmed, 10);
         let nextNodeId: string | null = null;
 
+        // Match by number (lista mode) or by button text (botoes mode)
+        let matchedIndex = -1;
         if (!isNaN(respNum) && respNum >= 1 && respNum <= opcoes.length) {
-          const handleId = `opcao_${respNum - 1}`;
+          matchedIndex = respNum - 1;
+        } else if (tipoMenu === "botoes") {
+          // Match by exact button text (case-insensitive)
+          matchedIndex = opcoes.findIndex((op: string) => op.trim().toLowerCase() === respTrimmed.toLowerCase());
+        }
+
+        if (matchedIndex >= 0) {
+          const handleId = `opcao_${matchedIndex}`;
           const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === handleId);
           nextNodeId = edge?.target || null;
-          console.log(`Menu response ${respNum} → handle ${handleId} → node ${nextNodeId}`);
+          console.log(`Menu response "${respTrimmed}" → index ${matchedIndex} → handle ${handleId} → node ${nextNodeId}`);
         } else {
           // Fallback
           const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === "fallback");
@@ -387,12 +398,22 @@ async function executeFlowFrom(
       case "menu": {
         const pergunta = config.pergunta || "";
         const opcoes: string[] = config.opcoes || [];
-        let menuText = replaceVariables(pergunta, contato);
-        if (opcoes.length > 0) {
-          menuText += "\n\n" + opcoes.map((op: string, i: number) => `${i + 1}. ${op}`).join("\n");
+        const tipoMenu = config.tipo_menu || "lista";
+
+        if (tipoMenu === "botoes" && opcoes.length > 0 && opcoes.length <= 3) {
+          // Send as interactive WhatsApp buttons
+          const buttonMessage = replaceVariables(pergunta, contato);
+          await sendZapiButtons(zapiConfig, phone, buttonMessage, opcoes);
+          await saveBotMessage(supabase, conversaId, tenantId, buttonMessage + "\n\n" + opcoes.map((op: string, i: number) => `[${op}]`).join(" "));
+        } else {
+          // Send as numbered list (default)
+          let menuText = replaceVariables(pergunta, contato);
+          if (opcoes.length > 0) {
+            menuText += "\n\n" + opcoes.map((op: string, i: number) => `${i + 1}. ${op}`).join("\n");
+          }
+          await sendZapiText(zapiConfig, phone, menuText);
+          await saveBotMessage(supabase, conversaId, tenantId, menuText);
         }
-        await sendZapiText(zapiConfig, phone, menuText);
-        await saveBotMessage(supabase, conversaId, tenantId, menuText);
 
         // Pause — wait for user response
         if (sessaoId) {
@@ -401,7 +422,7 @@ async function executeFlowFrom(
             .update({ node_atual: node.id, aguardando_resposta: true, updated_at: new Date().toISOString() })
             .eq("id", sessaoId);
         }
-        console.log("Menu sent, waiting for response");
+        console.log(`Menu (${tipoMenu}) sent, waiting for response`);
         return; // STOP execution, wait for next message
       }
 
@@ -638,6 +659,24 @@ async function sendZapiText(zapiConfig: any, phone: string, message: string) {
     console.log("Z-API send-text:", resp.status);
   } catch (err) {
     console.error("Z-API send error:", err);
+  }
+}
+
+async function sendZapiButtons(zapiConfig: any, phone: string, message: string, opcoes: string[]) {
+  const sendUrl = `https://api.z-api.io/instances/${zapiConfig.instance_id}/token/${zapiConfig.token}/send-button-list`;
+  try {
+    const buttons = opcoes.map((op: string) => ({ id: op, label: op }));
+    const resp = await fetch(sendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Client-Token": zapiConfig.client_token,
+      },
+      body: JSON.stringify({ phone, message, buttonList: { buttons } }),
+    });
+    console.log("Z-API send-button-list:", resp.status);
+  } catch (err) {
+    console.error("Z-API button send error:", err);
   }
 }
 

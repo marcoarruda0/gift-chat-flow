@@ -49,6 +49,14 @@ function FlowNode({ data, selected }: NodeProps) {
       </div>
 
       <div className="px-3 py-2">
+        {isMenu && (
+          <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded mb-1" style={{
+            backgroundColor: typeConfig.color + "20",
+            color: typeConfig.color,
+          }}>
+            {nodeData.config?.tipo_menu === "botoes" ? "🔘 Botões" : "📋 Lista"}
+          </span>
+        )}
         <p className="text-[11px] text-muted-foreground truncate">
           {getPreview(nodeData)}
         </p>

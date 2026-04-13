@@ -1,70 +1,57 @@
 
 
-# Configuração de Fluxos: Resposta Padrão e Pós-Atendimento
+# Nó "Menu" no Editor de Fluxos
 
-## O que será feito
+## Conceito (baseado na referência BotConversa)
 
-Criar uma seção na página de Configurações onde o admin pode vincular fluxos existentes a dois propósitos específicos:
+O nó Menu permite criar uma pergunta com múltiplas opções de resposta (botões). Cada opção gera uma saída independente no fluxo, permitindo ramificações dinâmicas. Inclui também uma saída "Se usuário não responder" como fallback.
 
-1. **Fluxo de Resposta Padrão** — executado automaticamente quando uma nova mensagem chega e não há atendente ativo
-2. **Fluxo Pós-Atendimento** — executado quando uma conversa é encerrada/finalizada
+## Arquivos a modificar
 
-Inspirado no BotConversa, com cards visuais para cada tipo de fluxo, mostrando o fluxo selecionado e permitindo trocar.
+### 1. `src/components/fluxos/nodeTypes.ts`
+- Adicionar tipo `menu` com ícone `List`, cor roxa/azul distinguível dos demais
 
-## Mudanças
+### 2. `src/components/fluxos/nodes/FlowNode.tsx`
+- Tratar `nodeType === "menu"` como caso especial (similar ao `condicional`)
+- Renderizar **múltiplos Handles de saída** na parte inferior — um para cada opção configurada + um handle "fallback" (não respondeu)
+- Exibir as opções como mini-botões dentro do corpo do nó para visualização rápida
+- Preview: mostrar texto da pergunta truncado
 
-### 1. Nova tabela `fluxo_config`
+### 3. `src/components/fluxos/NodeConfigPanel.tsx`
+- Adicionar seção de configuração para `nodeType === "menu"`:
+  - **Texto da pergunta** (textarea)
+  - **Lista de opções** (array dinâmico):
+    - Cada opção: campo de texto + botão remover
+    - Botão "Adicionar opção" (máx ~10)
+  - **Texto fallback** — mensagem se usuário não responder
+- Config armazenada como: `{ pergunta: string, opcoes: string[], fallback_texto: string }`
 
-```sql
-CREATE TABLE public.fluxo_config (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id uuid NOT NULL,
-  tipo text NOT NULL,  -- 'resposta_padrao' | 'pos_atendimento'
-  fluxo_id uuid REFERENCES public.fluxos(id) ON DELETE SET NULL,
-  ativo boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, tipo)
-);
+### 4. `src/pages/FluxoEditor.tsx`
+- Nenhuma mudança necessária — o onDrop já cria nós genéricos com `type: "flowNode"` e o nodeType vem do drag data
 
-ALTER TABLE public.fluxo_config ENABLE ROW LEVEL SECURITY;
--- RLS: tenant isolado, admin pode inserir/atualizar/deletar
-```
-
-### 2. Transformar a página Configurações (Placeholder → real)
-
-**Arquivo:** `src/pages/Configuracoes.tsx` (novo)
-
-A página terá:
-- Link para Config Z-API (já existe)
-- Link para Config IA (já existe)
-- **Nova seção: Fluxos Automáticos**
-  - Card "Fluxo de Resposta Padrão" com select do fluxo + toggle ativo/inativo
-  - Card "Fluxo Pós-Atendimento" com select do fluxo + toggle ativo/inativo
-  - Descrição explicativa em cada card
-  - Busca os fluxos existentes do tenant para popular o select
-
-### 3. Atualizar rotas
-
-- `App.tsx`: trocar o Placeholder de `/configuracoes` pela nova página `Configuracoes`
-
-### Fluxo do usuário
+## Visualização do nó no canvas
 
 ```text
-Configurações
-├── Fluxos Automáticos
-│   ├── [Card] Fluxo de Resposta Padrão
-│   │   ├── Toggle: Ativo/Inativo
-│   │   └── Select: escolher entre fluxos existentes
-│   └── [Card] Fluxo Pós-Atendimento
-│       ├── Toggle: Ativo/Inativo
-│       └── Select: escolher entre fluxos existentes
-├── [Link] Configuração Z-API →
-├── [Link] Configuração IA →
+┌──────────────────────┐
+│ 🔹 Menu              │  ← header colorido
+├──────────────────────┤
+│ "Para qual setor..." │  ← preview da pergunta
+│ ┌──────────────────┐ │
+│ │ Resposta 1       │ │  ← mini-botões visuais
+│ │ Resposta 2       │ │
+│ │ Resposta 3       │ │
+│ └──────────────────┘ │
+├──────────────────────┤
+│  ●    ●    ●    ●    │  ← handles de saída (1 por opção + fallback)
+└──────────────────────┘
 ```
 
-## Arquivos afetados
-- **Migration**: criar tabela `fluxo_config` + RLS
-- **Novo**: `src/pages/Configuracoes.tsx`
-- **Editar**: `src/App.tsx` — trocar Placeholder pela nova página
+Cada handle terá um `id` correspondente ao índice da opção (`opcao_0`, `opcao_1`, ..., `fallback`), permitindo conexões independentes para cada caminho.
+
+## Resumo de mudanças
+| Arquivo | Ação |
+|---------|------|
+| `nodeTypes.ts` | Adicionar entrada `menu` |
+| `FlowNode.tsx` | Renderização especial com handles dinâmicos + preview de opções |
+| `NodeConfigPanel.tsx` | Formulário de pergunta + lista editável de opções |
 

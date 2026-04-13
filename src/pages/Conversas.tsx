@@ -46,7 +46,21 @@ export default function Conversas() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
+  const [membros, setMembros] = useState<Record<string, string>>({});
+
   const tenantId = profile?.tenant_id;
+
+  // Fetch departamentos and profiles for lookup
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.from("departamentos").select("id, nome").eq("tenant_id", tenantId).then(({ data }) => {
+      if (data) setDepartamentos(Object.fromEntries(data.map(d => [d.id, d.nome])));
+    });
+    supabase.from("profiles").select("id, nome, apelido, mostrar_apelido").eq("tenant_id", tenantId).then(({ data }) => {
+      if (data) setMembros(Object.fromEntries(data.map(p => [p.id, p.mostrar_apelido && p.apelido ? p.apelido : (p.nome || "Sem nome")])));
+    });
+  }, [tenantId]);
 
   // Fetch conversas with contato name
   const fetchConversas = useCallback(async () => {
@@ -639,6 +653,8 @@ export default function Conversas() {
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
             contatoAvatar={selected.contato_avatar}
+            departamentoNome={selected.departamento_id ? departamentos[selected.departamento_id] || null : null}
+            atendenteNome={selected.atendente_id ? membros[selected.atendente_id] || null : null}
             mensagens={mensagens}
             onSend={handleSend}
             onSendAudio={handleSendAudio}

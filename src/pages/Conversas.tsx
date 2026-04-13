@@ -113,40 +113,64 @@ export default function Conversas() {
     }
   }, [selectedId, fetchMensagens]);
 
-  // Realtime subscriptions
+  // Realtime subscriptions with tenant filter
   useEffect(() => {
     if (!tenantId) return;
 
     const msgChannel = supabase
-      .channel("mensagens-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, (payload) => {
+      .channel(`mensagens-realtime-${tenantId}`)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "mensagens",
+        filter: `tenant_id=eq.${tenantId}`,
+      }, (payload) => {
         const newMsg = payload.new as any;
         if (newMsg.conversa_id === selectedId) {
-          setMensagens(prev => [...prev, {
-            id: newMsg.id,
-            conteudo: newMsg.conteudo,
-            remetente: newMsg.remetente,
-            tipo: newMsg.tipo,
-            created_at: newMsg.created_at,
-            metadata: newMsg.metadata,
-          }]);
+          setMensagens(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, {
+              id: newMsg.id,
+              conteudo: newMsg.conteudo,
+              remetente: newMsg.remetente,
+              tipo: newMsg.tipo,
+              created_at: newMsg.created_at,
+              metadata: newMsg.metadata,
+            }];
+          });
         }
         fetchConversas();
       })
       .subscribe();
 
     const convChannel = supabase
-      .channel("conversas-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversas" }, () => {
+      .channel(`conversas-realtime-${tenantId}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "conversas",
+        filter: `tenant_id=eq.${tenantId}`,
+      }, (payload) => {
         fetchConversas();
+        // If the updated conversa is the selected one, also refresh messages
+        const changed = payload.new as any;
+        if (changed?.id === selectedId) {
+          fetchMensagens(selectedId);
+        }
       })
       .subscribe();
+
+    // Polling fallback every 15s
+    const pollInterval = setInterval(() => {
+      fetchConversas();
+    }, 15000);
 
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(convChannel);
+      clearInterval(pollInterval);
     };
-  }, [tenantId, selectedId, fetchConversas]);
+  }, [tenantId, selectedId, fetchConversas, fetchMensagens]);
 
   // Create or find existing conversation for a contact
   const criarConversa = async (contatoId: string) => {

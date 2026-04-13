@@ -12,6 +12,7 @@ import Conversas from "@/pages/Conversas";
 import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
+import Configuracoes from "@/pages/Configuracoes";
 import Disparos from "@/pages/Disparos";
 import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
@@ -47,7 +48,7 @@ function AppRoutes() {
       <Route path="/giftback" element={<ProtectedRoute><GiftbackConfig /></ProtectedRoute>} />
       <Route path="/giftback/caixa" element={<ProtectedRoute><GiftbackCaixa /></ProtectedRoute>} />
       <Route path="/conhecimento" element={<ProtectedRoute><Conhecimento /></ProtectedRoute>} />
-      <Route path="/configuracoes" element={<ProtectedRoute><Placeholder title="Configurações" /></ProtectedRoute>} />
+      <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
       <Route path="/configuracoes/zapi" element={<ProtectedRoute><ZapiConfig /></ProtectedRoute>} />
       <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />

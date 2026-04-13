@@ -20,6 +20,8 @@ interface ChatPanelProps {
   contatoNome: string;
   contatoTelefone: string | null;
   contatoAvatar?: string | null;
+  departamentoNome?: string | null;
+  atendenteNome?: string | null;
   mensagens: Mensagem[];
   onSend: (text: string) => void;
   onSendAudio?: (blob: Blob) => void;
@@ -41,7 +43,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 

@@ -609,6 +609,64 @@ export type Database = {
           },
         ]
       }
+      fluxo_sessoes: {
+        Row: {
+          aguardando_resposta: boolean | null
+          conversa_id: string
+          created_at: string | null
+          dados: Json | null
+          fluxo_id: string
+          id: string
+          node_atual: string
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          aguardando_resposta?: boolean | null
+          conversa_id: string
+          created_at?: string | null
+          dados?: Json | null
+          fluxo_id: string
+          id?: string
+          node_atual: string
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          aguardando_resposta?: boolean | null
+          conversa_id?: string
+          created_at?: string | null
+          dados?: Json | null
+          fluxo_id?: string
+          id?: string
+          node_atual?: string
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fluxo_sessoes_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: true
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fluxo_sessoes_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "fluxos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fluxo_sessoes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fluxos: {
         Row: {
           created_at: string

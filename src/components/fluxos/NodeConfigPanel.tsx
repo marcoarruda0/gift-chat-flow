@@ -1,5 +1,5 @@
 import { type Node } from "@xyflow/react";
-import { X } from "lucide-react";
+import { X, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -254,6 +254,71 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
             <div className="space-y-1.5">
               <Label className="text-xs">Template da mensagem</Label>
               <Textarea value={config.template || ""} onChange={(e) => updateConfig("template", e.target.value)} placeholder="Seu crédito de R$ {{valor}} expira em {{dias}} dias!" className="text-sm min-h-[80px]" />
+            </div>
+          </>
+        )}
+
+        {nodeType === "menu" && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Texto da pergunta</Label>
+              <Textarea
+                value={config.pergunta || ""}
+                onChange={(e) => updateConfig("pergunta", e.target.value)}
+                placeholder="Ex: Para qual setor você deseja falar?"
+                className="text-sm min-h-[80px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Opções do menu</Label>
+              <div className="space-y-2">
+                {(config.opcoes || []).map((opcao: string, i: number) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                    <Input
+                      value={opcao}
+                      onChange={(e) => {
+                        const novas = [...(config.opcoes || [])];
+                        novas[i] = e.target.value;
+                        updateConfig("opcoes", novas);
+                      }}
+                      placeholder={`Opção ${i + 1}`}
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => {
+                        const novas = (config.opcoes || []).filter((_: any, idx: number) => idx !== i);
+                        updateConfig("opcoes", novas);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+                {(config.opcoes || []).length < 10 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => updateConfig("opcoes", [...(config.opcoes || []), ""])}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Adicionar opção
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Texto fallback (não respondeu)</Label>
+              <Textarea
+                value={config.fallback_texto || ""}
+                onChange={(e) => updateConfig("fallback_texto", e.target.value)}
+                placeholder="Desculpe, não entendi sua resposta..."
+                className="text-sm min-h-[60px]"
+              />
             </div>
           </>
         )}

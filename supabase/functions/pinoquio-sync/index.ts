@@ -101,6 +101,76 @@ async function fetchAllPages(apiBaseUrl: string, rawToken: string, storeId: stri
   return all;
 }
 
+async function registerInConversas(
+  client: ReturnType<typeof createClient>,
+  tenantId: string,
+  phone: string,
+  nome: string,
+  message: string,
+  cadastramentoId: number
+) {
+  try {
+    // 1. Find or create contact
+    let { data: contato } = await client
+      .from("contatos")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("telefone", phone)
+      .limit(1)
+      .single();
+
+    if (!contato) {
+      const { data: novo } = await client
+        .from("contatos")
+        .insert({ tenant_id: tenantId, telefone: phone, nome: nome || "Fornecedor" })
+        .select("id")
+        .single();
+      contato = novo;
+    }
+    if (!contato) return;
+
+    // 2. Find or create conversation
+    let { data: conversa } = await client
+      .from("conversas")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("contato_id", contato.id)
+      .neq("status", "fechada")
+      .limit(1)
+      .single();
+
+    if (!conversa) {
+      const { data: nova } = await client
+        .from("conversas")
+        .insert({ tenant_id: tenantId, contato_id: contato.id, status: "aberta" })
+        .select("id")
+        .single();
+      conversa = nova;
+    }
+    if (!conversa) return;
+
+    const now = new Date().toISOString();
+
+    // 3. Insert message
+    await client.from("mensagens").insert({
+      tenant_id: tenantId,
+      conversa_id: conversa.id,
+      conteudo: message,
+      remetente: "atendente",
+      tipo: "texto",
+      metadata: { origem: "pinoquio", cadastramento_id: cadastramentoId },
+    });
+
+    // 4. Update conversation
+    await client.from("conversas").update({
+      ultimo_texto: message.substring(0, 200),
+      ultima_msg_at: now,
+    }).eq("id", conversa.id);
+  } catch (e) {
+    console.error("registerInConversas error:", e);
+  }
+}
+
 async function sendViaZapi(
   instanceId: string,
   token: string,

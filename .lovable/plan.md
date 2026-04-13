@@ -1,46 +1,26 @@
 
 
-# Corrigir Recebimento de Respostas de Botões WhatsApp
+# Permitir envio de arquivos RAR (e outros compactados) no módulo Conversas
 
 ## Problema
 
-Quando o usuário clica em um botão interativo do WhatsApp, a Z-API envia o payload em um formato diferente do texto normal. O campo `payload.buttonsResponseMessage` (ou similar) contém a resposta, mas a função `parseMessageContent` só reconhece `payload.text.message`, `payload.image`, etc. Resultado: `messageContent` fica `null`, a mensagem é completamente ignorada (nem salva, nem processada pelo motor de fluxos).
+O componente `AttachmentButton` usa uma lista fixa de MIME types no atributo `accept` do input de arquivo. Arquivos `.rar`, `.zip`, `.7z` e outros compactados não estão na lista, então o seletor de arquivos do navegador os bloqueia.
 
 ## Solução
 
-### Arquivo: `supabase/functions/zapi-webhook/index.ts`
+Expandir a constante `ACCEPT` em `AttachmentButton.tsx` para incluir formatos de arquivos compactados e outros tipos comuns:
 
-**1. Atualizar `parseMessageContent`** para reconhecer respostas de botões interativos:
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/conversas/AttachmentButton.tsx` | Adicionar MIME types para RAR, ZIP, 7z e outros formatos comuns à constante `ACCEPT` |
 
-```typescript
-// Adicionar antes do return:
-} else if (payload.buttonsResponseMessage) {
-  messageText = payload.buttonsResponseMessage.selectedButtonId || payload.buttonsResponseMessage.selectedDisplayText || "";
-  messageType = "texto";
-  messageContent = messageText;
-} else if (payload.listResponseMessage) {
-  messageText = payload.listResponseMessage.title || payload.listResponseMessage.singleSelectReply?.selectedRowId || "";
-  messageType = "texto";
-  messageContent = messageText;
-}
-```
+### MIME types a adicionar
 
-A Z-API pode enviar respostas de botões em diferentes campos dependendo da versão. Os campos comuns são:
-- `buttonsResponseMessage.selectedButtonId` — ID do botão clicado
-- `buttonsResponseMessage.selectedDisplayText` — texto visível do botão
-- `listResponseMessage.title` — título da opção selecionada em lista interativa
+- `application/x-rar-compressed` e `application/vnd.rar` — RAR
+- `application/zip` e `application/x-zip-compressed` — ZIP
+- `application/x-7z-compressed` — 7z
+- `application/gzip` — GZ
+- `audio/*` e `video/*` — para flexibilidade com mídias
 
-**2. Adicionar log do response body** na função `sendZapiButtons` (melhoria de debug pendente):
-
-```typescript
-const respBody = await resp.text();
-console.log("Z-API send-button-list:", resp.status, respBody);
-```
-
-## Resultado esperado
-
-Após a correção, quando Marco clicar em "OPÇÃO-2" no menu de botões:
-1. A mensagem será parseada corretamente como texto
-2. Será salva na conversa (aparecerá no chat)
-3. O motor de fluxos processará a resposta e executará o próximo nó
+Mudança de uma única linha na constante `ACCEPT`.
 

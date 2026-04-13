@@ -1,36 +1,30 @@
 
 
-# Diagnóstico: Mensagens em tempo real no módulo Conversas
+# Formatar valores monetários no Dashboard Peça Rara
 
-## Situação atual
-
-O código **já tem** realtime configurado corretamente:
-- Tabelas `mensagens` e `conversas` estão na publicação `supabase_realtime` ✓
-- `Conversas.tsx` assina canais de `postgres_changes` para INSERT em `mensagens` e `*` em `conversas` ✓
-- Quando uma nova mensagem chega no canal, ela é adicionada ao state e `fetchConversas()` é chamado ✓
-
-## Problema provável
-
-O Supabase Realtime com RLS tem uma limitação conhecida: as subscriptions que usam RLS dependem do token JWT do usuário para filtrar eventos. Em alguns cenários (token expirado, conexão WebSocket instável, ou filtro genérico sem `filter`), os eventos podem não chegar ao cliente.
-
-A subscription atual não usa nenhum **filter** na subscrição — ela escuta TODAS as mudanças na tabela e depende do RLS para filtrar. Isso pode ser instável.
+## Problema
+Os valores de PIX e Consignação na tabela do Dashboard estão exibidos sem formatação monetária (ex: `R$ 83` em vez de `R$ 83,00` ou `R$ 1.234,56`).
 
 ## Solução
+Criar uma função helper `formatCurrency` e aplicar nas duas colunas da tabela.
 
-Adicionar **filtros explícitos** nas subscriptions do Realtime e implementar um **polling de fallback** como segurança adicional:
+### Arquivo: `src/pages/PecaRara.tsx`
 
-### 1. Filtrar subscription de `mensagens` pelo `tenant_id`
-No canal `mensagens-realtime`, adicionar `filter: "tenant_id=eq.{tenantId}"` para garantir que o Supabase envie apenas eventos relevantes.
+1. **Adicionar helper** (após as funções existentes no topo):
+```typescript
+function formatCurrency(value: number | null | undefined): string {
+  if (value == null) return "R$ 0,00";
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+```
 
-### 2. Filtrar subscription de `conversas` pelo `tenant_id`
-Mesmo princípio para o canal `conversas-realtime`.
+2. **Substituir linha 256**:
+`R$ {c.vl_total_fornecedor_pix}` → `{formatCurrency(c.vl_total_fornecedor_pix)}`
 
-### 3. Polling de fallback (segurança)
-Adicionar um `setInterval` de 15 segundos que faz `fetchConversas()` como fallback caso o WebSocket falhe silenciosamente. Isso garante que mesmo se o realtime falhar, a lista atualiza em poucos segundos.
+3. **Substituir linha 257**:
+`R$ {c.vl_total_fornecedor_consignacao}` → `{formatCurrency(c.vl_total_fornecedor_consignacao)}`
 
-### 4. Atualizar mensagens da conversa ativa
-Quando chegar um evento realtime de `conversas` indicando mudança na conversa selecionada, também re-buscar as mensagens.
-
-## Arquivo afetado
-- `src/pages/Conversas.tsx` — ajustar os dois canais de realtime + adicionar polling de fallback
+4. **Template preview** (linhas 41-42) — formatar também os valores de exemplo:
+`String(EXAMPLE_DATA.valor_pix)` → `formatCurrency(EXAMPLE_DATA.valor_pix)`
+`String(EXAMPLE_DATA.valor_consignacao)` → `formatCurrency(EXAMPLE_DATA.valor_consignacao)`
 

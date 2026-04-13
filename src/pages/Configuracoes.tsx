@@ -37,7 +37,8 @@ const FLOW_TYPES = [
 ];
 
 export default function Configuracoes() {
-  const { tenantId } = useAuth();
+  const { profile } = useAuth();
+  const tenantId = profile?.tenant_id;
   const navigate = useNavigate();
   const [fluxos, setFluxos] = useState<Fluxo[]>([]);
   const [configs, setConfigs] = useState<Record<string, FluxoConfig>>({});

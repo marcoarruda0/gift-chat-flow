@@ -194,6 +194,9 @@ export default function Conversas() {
     return supabase.storage.from("chat-media").getPublicUrl(data.path).data.publicUrl;
   };
 
+  // Format phone: preserve group IDs (@g.us), clean individual numbers
+  const formatPhone = (p: string) => p.includes("@g.us") ? p : p.replace(/\D/g, "");
+
   // Helper: call Z-API proxy
   const callZapi = async (endpoint: string, method: string, data?: any) => {
     const { data: session } = await supabase.auth.getSession();
@@ -237,8 +240,6 @@ export default function Conversas() {
       ultima_msg_at: new Date().toISOString(),
     }).eq("id", selectedId);
 
-  // Format phone: preserve group IDs (@g.us), clean individual numbers
-  const formatPhone = (p: string) => p.includes("@g.us") ? p : p.replace(/\D/g, "");
 
   // Send via Z-API if contact has phone
     if (selected?.contato_telefone) {

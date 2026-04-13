@@ -32,14 +32,19 @@ const EXAMPLE_DATA = {
   data_limite: "29/04/2026",
 };
 
+function formatCurrency(value: number | null | undefined): string {
+  if (value == null) return "R$ 0,00";
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function applyTemplatePreview(template: string): string {
   return template
     .replace(/\{id\}/g, String(EXAMPLE_DATA.id))
     .replace(/\{link\}/g, EXAMPLE_DATA.link)
     .replace(/\{fornecedor_name\}/g, EXAMPLE_DATA.fornecedor_name)
     .replace(/\{qty_total\}/g, String(EXAMPLE_DATA.qty_total))
-    .replace(/\{valor_pix\}/g, String(EXAMPLE_DATA.valor_pix))
-    .replace(/\{valor_consignacao\}/g, String(EXAMPLE_DATA.valor_consignacao))
+    .replace(/\{valor_pix\}/g, formatCurrency(EXAMPLE_DATA.valor_pix))
+    .replace(/\{valor_consignacao\}/g, formatCurrency(EXAMPLE_DATA.valor_consignacao))
     .replace(/\{data_limite\}/g, EXAMPLE_DATA.data_limite);
 }
 
@@ -253,8 +258,8 @@ function DashboardTab({ tenantId }: { tenantId: string }) {
                   <TableCell className="max-w-[200px] truncate">{c.fornecedor_name}</TableCell>
                   <TableCell>{c.fornecedor_telefone || "—"}</TableCell>
                   <TableCell className="text-center">{c.qty_total}</TableCell>
-                  <TableCell className="text-right">R$ {c.vl_total_fornecedor_pix}</TableCell>
-                  <TableCell className="text-right">R$ {c.vl_total_fornecedor_consignacao}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(c.vl_total_fornecedor_pix)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(c.vl_total_fornecedor_consignacao)}</TableCell>
                   <TableCell>
                     {c.limit_date ? format(new Date(c.limit_date), "dd/MM/yyyy") : "—"}
                   </TableCell>

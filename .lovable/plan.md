@@ -1,51 +1,26 @@
 
 
-# Funcionalidade: Reconectar Instância Z-API
+# Limpar todos os dados de teste
 
-## Situação atual
-A página `ZapiConfig.tsx` já permite salvar/atualizar credenciais e testar conexão. Mas falta:
-- Botão explícito de **Reconectar** (gerar novo QR Code via Z-API)
-- Botão de **Desconectar** (desligar a instância)
-- Exibição do **QR Code** para escanear quando desconectado
-- Feedback claro do status em tempo real
+## O que será feito
+Deletar todos os registros das seguintes tabelas, nesta ordem (respeitando dependências):
 
-## Dados de mensagens
-Não há impacto nos dados. Todas as tabelas usam `tenant_id` para isolamento. Reconectar a instância não altera nem apaga nenhum registro existente em `conversas`, `mensagens` ou `contatos`.
+1. `mensagens` — todas as mensagens
+2. `conversa_transferencias` — transferências de conversas
+3. `conversas` — todas as conversas
+4. `campanha_destinatarios` — destinatários de campanhas
+5. `giftback_movimentos` — movimentos de giftback
+6. `compras` — compras vinculadas a contatos
+7. `pinoquio_notificacoes` — notificações do Peça Rara
+8. `pinoquio_execucoes` — registros de execuções do sync
+9. `contatos` — todos os contatos
 
-## Alterações
+## Como
+Usarei a ferramenta de inserção/deleção do banco para executar `DELETE FROM` em cada tabela na ordem acima. As tabelas de configuração (zapi_config, pinoquio_config, ia_config, giftback_config, etc.) **não serão tocadas** — apenas dados operacionais.
 
-### 1. `src/pages/ZapiConfig.tsx`
-
-Adicionar ao card de credenciais:
-
-- **Botão "Desconectar"**: chama `zapi-proxy` com endpoint `disconnect` (POST). Atualiza status para `desconectado`.
-- **Botão "Reconectar"**: chama `zapi-proxy` com endpoint `restart` (POST). Força a instância a reiniciar e gerar novo QR Code.
-- **Exibição do QR Code**: quando status é `desconectado`, chamar endpoint `qr-code/image` via `zapi-proxy` e renderizar a imagem do QR Code para o usuário escanear.
-- **Polling de status**: após exibir o QR Code, fazer polling a cada 5 segundos no endpoint `status` para detectar quando a conexão for restabelecida e atualizar o badge automaticamente.
-
-### 2. Nenhuma migration necessária
-Tabela `zapi_config` já tem a coluna `status`. Nenhuma tabela nova é necessária.
-
-### 3. Nenhuma edge function nova
-O `zapi-proxy` existente já suporta qualquer endpoint da Z-API — basta passar o endpoint desejado (`disconnect`, `restart`, `qr-code/image`).
-
-## Fluxo do usuário
-
-```text
-Status: Desconectado
-  → Clica "Reconectar"
-  → Sistema chama restart + exibe QR Code
-  → Usuário escaneia com WhatsApp
-  → Polling detecta conexão
-  → Badge muda para "Conectado" ✅
-
-Status: Conectado
-  → Clica "Desconectar"  
-  → Confirma no dialog
-  → Sistema chama disconnect
-  → Badge muda para "Desconectado"
-```
-
-## Arquivo afetado
-- `src/pages/ZapiConfig.tsx`
+## Impacto
+- Todas as conversas, mensagens e contatos serão removidos permanentemente
+- Histórico de compras e giftback zerado
+- Configurações do sistema permanecem intactas
+- Após a limpeza, o sistema estará pronto para o número real
 

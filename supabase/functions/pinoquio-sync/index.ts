@@ -65,6 +65,10 @@ function buildPinoquioHeaders(token: string, storeId: string): Record<string, st
   };
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Erro interno";
+}
+
 async function fetchAllPages(apiBaseUrl: string, rawToken: string, storeId: string): Promise<PinoquioCadastramento[]> {
   const token = sanitizeToken(rawToken);
   if (!token) throw new Error("Token vazio");
@@ -344,23 +348,30 @@ Deno.serve(async (req) => {
         );
       }
 
-      const cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token, config.store_id || "32");
+      try {
+        const cadastramentos = await fetchAllPages(config.api_base_url, config.jwt_token, config.store_id || "32");
 
-      const { data: notifs } = await serviceClient
-        .from("pinoquio_notificacoes")
-        .select("cadastramento_id, status, enviado_at")
-        .eq("tenant_id", tenant_id);
+        const { data: notifs } = await serviceClient
+          .from("pinoquio_notificacoes")
+          .select("cadastramento_id, status, enviado_at")
+          .eq("tenant_id", tenant_id);
 
-      const notifMap = new Map((notifs || []).map((n: any) => [n.cadastramento_id, n]));
+        const notifMap = new Map((notifs || []).map((n: any) => [n.cadastramento_id, n]));
 
-      const enriched = cadastramentos.map((c) => ({
-        ...c,
-        notificacao: notifMap.get(c.id) || null,
-      }));
+        const enriched = cadastramentos.map((c) => ({
+          ...c,
+          notificacao: notifMap.get(c.id) || null,
+        }));
 
-      return new Response(JSON.stringify({ data: enriched }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        return new Response(JSON.stringify({ ok: true, data: enriched }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(
+          JSON.stringify({ ok: false, error: getErrorMessage(error) }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Process specific tenant

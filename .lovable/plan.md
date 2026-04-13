@@ -1,44 +1,52 @@
 
 
-# Correção: Autenticação Pinóquio (sem Bearer, com store-id)
+# Integrar notificações do Peça Rara no módulo Conversas
 
 ## Problema
-A API do Pinóquio não usa `Bearer` token. Os headers corretos são:
-- `authorization: <TOKEN_BASE64>` (sem prefixo Bearer)
-- `store-id: 32` (obrigatório, varia por loja)
-- `accept: application/json`
+Quando o módulo Peça Rara envia uma mensagem via Z-API, ele só registra em `pinoquio_notificacoes`. Não cria nenhum registro nas tabelas `conversas` nem `mensagens`, que são as tabelas que o módulo Conversas lê. Por isso as mensagens enviadas não aparecem lá.
+
+## Solução
+Após cada envio bem-sucedido via Z-API no `processTenant`, criar/atualizar registros em `conversas` e `mensagens`.
 
 ## Alterações
 
-### 1. Migration — adicionar coluna `store_id` em `pinoquio_config`
-```sql
-ALTER TABLE pinoquio_config ADD COLUMN store_id text NOT NULL DEFAULT '32';
+### 1. Edge Function `pinoquio-sync/index.ts`
+
+Adicionar uma função auxiliar `registerInConversas` que, após envio com sucesso:
+
+1. **Busca ou cria o contato** na tabela `contatos` usando o telefone do fornecedor (e nome)
+2. **Busca ou cria a conversa** na tabela `conversas` vinculada ao contato
+3. **Insere a mensagem** na tabela `mensagens` com:
+   - `remetente: 'atendente'` (é uma mensagem enviada pelo sistema)
+   - `tipo: 'texto'`
+   - `conteudo`: o texto da mensagem enviada
+   - `metadata`: `{ origem: 'pinoquio', cadastramento_id: cad.id }`
+4. **Atualiza a conversa** com `ultimo_texto` e `ultima_msg_at`
+
+Lógica de busca do contato:
 ```
+SELECT id FROM contatos 
+WHERE tenant_id = ? AND telefone = ?
+LIMIT 1
+```
+Se não existir, cria com nome do fornecedor e telefone.
 
-### 2. Edge Function `pinoquio-sync/index.ts`
-- Remover toda a lógica de `cleanJwt` e `validateJwtFormat` (não é JWT, é token base64 simples)
-- Alterar headers de fetch para:
-  ```ts
-  headers: {
-    "accept": "application/json",
-    "authorization": token,
-    "content-type": "application/json",
-    "store-id": storeId
-  }
-  ```
-- Passar `store_id` junto com `jwt_token` em todas as chamadas (`fetchAllPages`, `test_connection`)
-- Aceitar `store_id` inline no body do `test_connection`
+Lógica de busca da conversa:
+```
+SELECT id FROM conversas
+WHERE tenant_id = ? AND contato_id = ?
+AND status != 'fechada'
+LIMIT 1
+```
+Se não existir, cria nova conversa aberta.
 
-### 3. Frontend `src/pages/PecaRara.tsx`
-- Adicionar campo `store_id` no state do `ConfigTab` (default `"32"`)
-- Adicionar input "Store ID" na tela de configuração com descrição explicativa
-- Enviar `store_id` no `testConnection`
+### 2. Chamada no fluxo existente
 
-## Arquivos
+No loop de `processTenant`, após `sendViaZapi` retornar `ok: true`, chamar `registerInConversas(serviceClient, tenantId, phone, cad.fornecedor_name, message, cad.id)`.
 
-| Arquivo | Alteração |
-|---------|-----------|
-| Migration SQL | Adicionar coluna `store_id` |
-| `supabase/functions/pinoquio-sync/index.ts` | Corrigir headers, remover lógica Bearer/JWT |
-| `src/pages/PecaRara.tsx` | Adicionar campo Store ID na configuração |
+## Arquivo afetado
+- `supabase/functions/pinoquio-sync/index.ts`
+
+## Sem migration necessária
+Todas as tabelas já existem com as colunas necessárias. O service client bypassa RLS.
 

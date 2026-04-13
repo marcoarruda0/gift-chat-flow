@@ -6,6 +6,7 @@ import { ConversasList } from "@/components/conversas/ConversasList";
 import { ChatPanel, ChatPanelEmpty } from "@/components/conversas/ChatPanel";
 import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
 import { TransferirDialog } from "@/components/conversas/TransferirDialog";
+import { ImportarConversasDialog } from "@/components/conversas/ImportarConversasDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 
@@ -44,6 +45,7 @@ export default function Conversas() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
@@ -640,6 +642,7 @@ export default function Conversas() {
             onSelect={setSelectedId}
             onNewConversa={() => setNovaConversaOpen(true)}
             onSync={handleSync}
+            onImport={() => setImportDialogOpen(true)}
             syncing={syncing}
             loading={loadingConversas}
             currentUserId={user?.id || null}
@@ -679,6 +682,11 @@ export default function Conversas() {
         onOpenChange={setTransferDialogOpen}
         onConfirm={handleTransfer}
         onConfirmDepartamento={handleTransferDepartamento}
+      />
+      <ImportarConversasDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onComplete={fetchConversas}
       />
     </div>
   );

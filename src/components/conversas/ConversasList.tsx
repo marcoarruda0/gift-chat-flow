@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConversaItem } from "./ConversaItem";
-import { Search, MessageSquarePlus, RefreshCw } from "lucide-react";
+import { Search, MessageSquarePlus, RefreshCw, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Conversa {
@@ -25,6 +25,7 @@ interface ConversasListProps {
   onSelect: (id: string) => void;
   onNewConversa?: () => void;
   onSync?: () => void;
+  onImport?: () => void;
   syncing?: boolean;
   loading: boolean;
   currentUserId?: string | null;
@@ -33,7 +34,7 @@ interface ConversasListProps {
 
 const FILTROS = ["Todas", "Abertas", "Minhas", "Meu Depto", "Fechadas"] as const;
 
-export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, syncing, loading, currentUserId, userDepartamentoId }: ConversasListProps) {
+export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<typeof FILTROS[number]>("Todas");
 
@@ -54,6 +55,9 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
           <div className="flex gap-1">
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onSync} disabled={syncing}>
               <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onImport} title="Importar histórico">
+              <Upload className="h-4 w-4" />
             </Button>
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onNewConversa}>
               <MessageSquarePlus className="h-4 w-4" />

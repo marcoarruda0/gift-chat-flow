@@ -152,6 +152,7 @@ function getPreview(data: FlowNodeData): string {
       return cfg.pergunta ? cfg.pergunta.substring(0, 40) : "Pergunta do menu...";
     default:
       return "Configurar...";
+  }
 }
 
 export default memo(FlowNode);

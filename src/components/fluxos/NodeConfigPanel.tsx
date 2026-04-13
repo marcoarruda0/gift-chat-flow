@@ -1,4 +1,5 @@
 import { type Node } from "@xyflow/react";
+import { useEffect, useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { NODE_TYPE_CONFIG, type FlowNodeType } from "./nodeTypes";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NodeConfigPanelProps {
   node: Node;
@@ -18,6 +21,26 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
   const config = (node.data as any).config || {};
   const typeConfig = NODE_TYPE_CONFIG[nodeType];
   const Icon = typeConfig.icon;
+  const { profile } = useAuth();
+
+  const [departamentos, setDepartamentos] = useState<{ id: string; nome: string }[]>([]);
+  const [membros, setMembros] = useState<{ id: string; nome: string }[]>([]);
+
+  useEffect(() => {
+    if (nodeType === "transferir" && profile?.tenant_id) {
+      supabase
+        .from("departamentos")
+        .select("id, nome")
+        .eq("tenant_id", profile.tenant_id)
+        .eq("ativo", true)
+        .then(({ data }) => setDepartamentos(data || []));
+      supabase
+        .from("profiles")
+        .select("id, nome")
+        .eq("tenant_id", profile.tenant_id)
+        .then(({ data }) => setMembros(data || []));
+    }
+  }, [nodeType, profile?.tenant_id]);
 
   const updateConfig = (key: string, value: any) => {
     onUpdate(node.id, {
@@ -209,9 +232,40 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
         {nodeType === "transferir" && (
           <>
             <div className="space-y-1.5">
-              <Label className="text-xs">Departamento</Label>
-              <Input value={config.departamento || ""} onChange={(e) => updateConfig("departamento", e.target.value)} placeholder="Vendas, Suporte..." className="h-8 text-sm" />
+              <Label className="text-xs">Tipo de transferência</Label>
+              <Select value={config.tipo_transferencia || "departamento"} onValueChange={(v) => updateConfig("tipo_transferencia", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="departamento">Departamento</SelectItem>
+                  <SelectItem value="membro">Membro da equipe</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            {(config.tipo_transferencia || "departamento") === "departamento" ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Departamento</Label>
+                <Select value={config.departamento_id || ""} onValueChange={(v) => updateConfig("departamento_id", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    {departamentos.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>{d.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Membro</Label>
+                <Select value={config.membro_id || ""} onValueChange={(v) => updateConfig("membro_id", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    {membros.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.nome || "Sem nome"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Mensagem</Label>
               <Textarea value={config.mensagem || ""} onChange={(e) => updateConfig("mensagem", e.target.value)} placeholder="Transferindo para um atendente..." className="text-sm min-h-[60px]" />

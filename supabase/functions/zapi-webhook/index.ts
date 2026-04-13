@@ -343,6 +343,81 @@ async function handleFluxoEngine(
       }
     }
 
+    // 3. No trigger matched — check for "Fluxo de Resposta Padrão"
+    // Only activate if the conversation has no human agent assigned
+    const { data: conversa } = await supabase
+      .from("conversas")
+      .select("atendente_id")
+      .eq("id", conversaId)
+      .single();
+
+    if (conversa?.atendente_id) {
+      console.log("Conversation has active agent, skipping default flow");
+      return false;
+    }
+
+    const { data: defaultFlowConfig } = await supabase
+      .from("fluxo_config")
+      .select("fluxo_id")
+      .eq("tenant_id", tenantId)
+      .eq("tipo", "resposta_padrao")
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (defaultFlowConfig?.fluxo_id) {
+      console.log("Default flow configured:", defaultFlowConfig.fluxo_id);
+
+      // Load the default flow
+      const { data: defaultFluxo } = await supabase
+        .from("fluxos")
+        .select("id, nodes_json, edges_json")
+        .eq("id", defaultFlowConfig.fluxo_id)
+        .eq("tenant_id", tenantId)
+        .single();
+
+      if (defaultFluxo) {
+        const nodes: FlowNode[] = defaultFluxo.nodes_json || [];
+        const edges: FlowEdge[] = defaultFluxo.edges_json || [];
+
+        // Find the first executable node: skip gatilho, go to its target
+        const gatilhoNode = nodes.find(n => n.data?.nodeType === "gatilho");
+        let firstNodeId: string | null = null;
+
+        if (gatilhoNode) {
+          const edge = edges.find(e => e.source === gatilhoNode.id);
+          firstNodeId = edge?.target || null;
+        } else {
+          // No gatilho node — find a node that isn't targeted by any edge (root node)
+          const targetIds = new Set(edges.map(e => e.target));
+          const rootNode = nodes.find(n => !targetIds.has(n.id) && n.data?.nodeType !== "gatilho");
+          firstNodeId = rootNode?.id || nodes[0]?.id || null;
+        }
+
+        if (firstNodeId) {
+          console.log(`Activating default flow ${defaultFluxo.id} from node ${firstNodeId}`);
+
+          // Create session
+          const { data: newSessao } = await supabase
+            .from("fluxo_sessoes")
+            .upsert({
+              conversa_id: conversaId,
+              fluxo_id: defaultFluxo.id,
+              tenant_id: tenantId,
+              node_atual: firstNodeId,
+              aguardando_resposta: false,
+              dados: {},
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "conversa_id" })
+            .select("id")
+            .single();
+
+          const contato = await getContato(supabase, contatoId);
+          await executeFlowFrom(supabase, tenantId, phone, conversaId, contatoId, contato, zapiConfig, nodes, edges, firstNodeId, newSessao?.id, defaultFluxo.id);
+          return true;
+        }
+      }
+    }
+
     return false;
   } catch (err) {
     console.error("Flow engine error:", err);

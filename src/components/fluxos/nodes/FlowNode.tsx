@@ -17,6 +17,8 @@ function FlowNode({ data, selected }: NodeProps) {
   const Icon = typeConfig.icon;
   const isCondicional = nodeData.nodeType === "condicional";
   const isGatilho = nodeData.nodeType === "gatilho";
+  const isMenu = nodeData.nodeType === "menu";
+  const opcoes: string[] = (nodeData.config?.opcoes as string[]) || [];
 
   return (
     <div
@@ -52,7 +54,47 @@ function FlowNode({ data, selected }: NodeProps) {
         </p>
       </div>
 
-      {isCondicional ? (
+      {isMenu && opcoes.length > 0 && (
+        <div className="px-3 pb-2 space-y-1">
+          {opcoes.map((op, i) => (
+            <div
+              key={i}
+              className="text-[10px] px-2 py-0.5 rounded border truncate"
+              style={{ borderColor: typeConfig.color + "60", color: typeConfig.color }}
+            >
+              {i + 1}. {op}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isMenu ? (
+        <>
+          {opcoes.map((_, i) => (
+            <Handle
+              key={`opcao_${i}`}
+              type="source"
+              position={Position.Bottom}
+              id={`opcao_${i}`}
+              className="!w-3 !h-3 !border-2 !bg-background"
+              style={{
+                borderColor: typeConfig.color,
+                left: `${((i + 1) / (opcoes.length + 2)) * 100}%`,
+              }}
+            />
+          ))}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="fallback"
+            className="!w-3 !h-3 !border-2 !bg-background"
+            style={{
+              borderColor: "hsl(0, 84%, 60%)",
+              left: `${((opcoes.length + 1) / (opcoes.length + 2)) * 100}%`,
+            }}
+          />
+        </>
+      ) : isCondicional ? (
         <>
           <Handle
             type="source"
@@ -106,6 +148,8 @@ function getPreview(data: FlowNodeData): string {
       return cfg.template ? cfg.template.substring(0, 40) : "Template crédito...";
     case "lembrete_validade":
       return cfg.dias_antes ? `${cfg.dias_antes} dias antes` : "Dias antes...";
+    case "menu":
+      return cfg.pergunta ? cfg.pergunta.substring(0, 40) : "Pergunta do menu...";
     default:
       return "Configurar...";
   }

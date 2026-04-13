@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
     const { data: profile } = await adminClient
       .from("profiles")
       .select("tenant_id")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
     if (!profile?.tenant_id) {
       return new Response(JSON.stringify({ error: "Tenant não encontrado" }), { status: 400, headers: corsHeaders });

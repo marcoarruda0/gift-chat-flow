@@ -161,7 +161,8 @@ export function ImportarConversasDialog({ open, onOpenChange, onComplete }: Impo
                     <p className="truncate font-medium">{f.file.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {f.telefone ? `Tel: ${f.telefone}` : "Telefone não detectado"} · {f.totalMensagens} msgs
-                      {f.result && ` · ${f.result.contato_nome}`}
+                      {f.result && ` · ${f.result.contato_nome} · ${f.result.total_mensagens} inseridas`}
+                      {f.result && f.result.total_duplicadas ? ` · ${f.result.total_duplicadas} duplicadas ignoradas` : ""}
                       {f.error && <span className="text-destructive"> · {f.error}</span>}
                     </p>
                   </div>

@@ -1,31 +1,51 @@
 
 
-# Correção: Envio de mensagens para grupos no WhatsApp
+# Funcionalidade: Reconectar Instância Z-API
 
-## Problema
-Quando o contato é um grupo do WhatsApp, o telefone armazenado contém o identificador de grupo (ex: `5511999999999-1234567890@g.us`). O código atual faz `.replace(/\D/g, "")` em todos os telefones antes de enviar via Z-API, removendo o `@g.us` e o hífen, tornando o ID inválido para grupos.
+## Situação atual
+A página `ZapiConfig.tsx` já permite salvar/atualizar credenciais e testar conexão. Mas falta:
+- Botão explícito de **Reconectar** (gerar novo QR Code via Z-API)
+- Botão de **Desconectar** (desligar a instância)
+- Exibição do **QR Code** para escanear quando desconectado
+- Feedback claro do status em tempo real
 
-## Solução
-Criar uma função auxiliar que detecta se o telefone é de grupo (`@g.us`) e, nesse caso, preserva o ID completo. Para telefones individuais, continua limpando normalmente.
+## Dados de mensagens
+Não há impacto nos dados. Todas as tabelas usam `tenant_id` para isolamento. Reconectar a instância não altera nem apaga nenhum registro existente em `conversas`, `mensagens` ou `contatos`.
 
 ## Alterações
 
-### `src/pages/Conversas.tsx`
+### 1. `src/pages/ZapiConfig.tsx`
 
-1. Adicionar helper no topo do componente:
-```typescript
-const formatPhone = (phone: string) => {
-  // Group IDs must be sent as-is (contain @g.us)
-  if (phone.includes("@g.us")) return phone;
-  return phone.replace(/\D/g, "");
-};
+Adicionar ao card de credenciais:
+
+- **Botão "Desconectar"**: chama `zapi-proxy` com endpoint `disconnect` (POST). Atualiza status para `desconectado`.
+- **Botão "Reconectar"**: chama `zapi-proxy` com endpoint `restart` (POST). Força a instância a reiniciar e gerar novo QR Code.
+- **Exibição do QR Code**: quando status é `desconectado`, chamar endpoint `qr-code/image` via `zapi-proxy` e renderizar a imagem do QR Code para o usuário escanear.
+- **Polling de status**: após exibir o QR Code, fazer polling a cada 5 segundos no endpoint `status` para detectar quando a conexão for restabelecida e atualizar o badge automaticamente.
+
+### 2. Nenhuma migration necessária
+Tabela `zapi_config` já tem a coluna `status`. Nenhuma tabela nova é necessária.
+
+### 3. Nenhuma edge function nova
+O `zapi-proxy` existente já suporta qualquer endpoint da Z-API — basta passar o endpoint desejado (`disconnect`, `restart`, `qr-code/image`).
+
+## Fluxo do usuário
+
+```text
+Status: Desconectado
+  → Clica "Reconectar"
+  → Sistema chama restart + exibe QR Code
+  → Usuário escaneia com WhatsApp
+  → Polling detecta conexão
+  → Badge muda para "Conectado" ✅
+
+Status: Conectado
+  → Clica "Desconectar"  
+  → Confirma no dialog
+  → Sistema chama disconnect
+  → Badge muda para "Desconectado"
 ```
 
-2. Substituir todas as 3 ocorrências de `.replace(/\D/g, "")` por `formatPhone(...)`:
-   - Linha 246 (`handleSend`): `phone: formatPhone(selected.contato_telefone)`
-   - Linha 274 (`handleSendAudio`): `phone: formatPhone(selected.contato_telefone)`
-   - Linha 304 (`handleSendAttachment`): `const phone = formatPhone(selected.contato_telefone)`
-
 ## Arquivo afetado
-- `src/pages/Conversas.tsx` — 4 linhas alteradas (1 helper + 3 substituições)
+- `src/pages/ZapiConfig.tsx`
 

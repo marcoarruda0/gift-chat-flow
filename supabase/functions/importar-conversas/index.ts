@@ -232,7 +232,7 @@ Deno.serve(async (req) => {
         .range(from, from + pageSize - 1);
       if (!existing || existing.length === 0) break;
       for (const m of existing) {
-        existingKeys.add(`${m.created_at}|${m.conteudo}`);
+        existingKeys.add(`${new Date(m.created_at).toISOString()}|${m.conteudo}`);
       }
       if (existing.length < pageSize) break;
       from += pageSize;
@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
           metadata: m.atendente_nome ? { senderName: m.atendente_nome, importado: true } : { importado: true },
         }))
         .filter((row) => {
-          const key = `${row.created_at}|${row.conteudo}`;
+          const key = `${new Date(row.created_at).toISOString()}|${row.conteudo}`;
           if (existingKeys.has(key)) {
             totalDuplicadas++;
             return false;

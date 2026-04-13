@@ -683,6 +683,11 @@ export default function Conversas() {
         onConfirm={handleTransfer}
         onConfirmDepartamento={handleTransferDepartamento}
       />
+      <ImportarConversasDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onComplete={fetchConversas}
+      />
     </div>
   );
 }

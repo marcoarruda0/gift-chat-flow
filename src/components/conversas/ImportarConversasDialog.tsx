@@ -12,7 +12,7 @@ interface FilePreview {
   totalMensagens: number;
   status: "pending" | "importing" | "done" | "error";
   error?: string;
-  result?: { contato_nome: string; total_mensagens: number };
+  result?: { contato_nome: string; total_mensagens: number; total_duplicadas?: number };
 }
 
 function extractPreviewInfo(content: string): { telefone: string | null; totalMensagens: number } {

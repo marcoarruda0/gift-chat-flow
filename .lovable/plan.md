@@ -1,30 +1,70 @@
 
 
-# Formatar valores monetários no Dashboard Peça Rara
+# Configuração de Fluxos: Resposta Padrão e Pós-Atendimento
 
-## Problema
-Os valores de PIX e Consignação na tabela do Dashboard estão exibidos sem formatação monetária (ex: `R$ 83` em vez de `R$ 83,00` ou `R$ 1.234,56`).
+## O que será feito
 
-## Solução
-Criar uma função helper `formatCurrency` e aplicar nas duas colunas da tabela.
+Criar uma seção na página de Configurações onde o admin pode vincular fluxos existentes a dois propósitos específicos:
 
-### Arquivo: `src/pages/PecaRara.tsx`
+1. **Fluxo de Resposta Padrão** — executado automaticamente quando uma nova mensagem chega e não há atendente ativo
+2. **Fluxo Pós-Atendimento** — executado quando uma conversa é encerrada/finalizada
 
-1. **Adicionar helper** (após as funções existentes no topo):
-```typescript
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "R$ 0,00";
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+Inspirado no BotConversa, com cards visuais para cada tipo de fluxo, mostrando o fluxo selecionado e permitindo trocar.
+
+## Mudanças
+
+### 1. Nova tabela `fluxo_config`
+
+```sql
+CREATE TABLE public.fluxo_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  tipo text NOT NULL,  -- 'resposta_padrao' | 'pos_atendimento'
+  fluxo_id uuid REFERENCES public.fluxos(id) ON DELETE SET NULL,
+  ativo boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, tipo)
+);
+
+ALTER TABLE public.fluxo_config ENABLE ROW LEVEL SECURITY;
+-- RLS: tenant isolado, admin pode inserir/atualizar/deletar
 ```
 
-2. **Substituir linha 256**:
-`R$ {c.vl_total_fornecedor_pix}` → `{formatCurrency(c.vl_total_fornecedor_pix)}`
+### 2. Transformar a página Configurações (Placeholder → real)
 
-3. **Substituir linha 257**:
-`R$ {c.vl_total_fornecedor_consignacao}` → `{formatCurrency(c.vl_total_fornecedor_consignacao)}`
+**Arquivo:** `src/pages/Configuracoes.tsx` (novo)
 
-4. **Template preview** (linhas 41-42) — formatar também os valores de exemplo:
-`String(EXAMPLE_DATA.valor_pix)` → `formatCurrency(EXAMPLE_DATA.valor_pix)`
-`String(EXAMPLE_DATA.valor_consignacao)` → `formatCurrency(EXAMPLE_DATA.valor_consignacao)`
+A página terá:
+- Link para Config Z-API (já existe)
+- Link para Config IA (já existe)
+- **Nova seção: Fluxos Automáticos**
+  - Card "Fluxo de Resposta Padrão" com select do fluxo + toggle ativo/inativo
+  - Card "Fluxo Pós-Atendimento" com select do fluxo + toggle ativo/inativo
+  - Descrição explicativa em cada card
+  - Busca os fluxos existentes do tenant para popular o select
+
+### 3. Atualizar rotas
+
+- `App.tsx`: trocar o Placeholder de `/configuracoes` pela nova página `Configuracoes`
+
+### Fluxo do usuário
+
+```text
+Configurações
+├── Fluxos Automáticos
+│   ├── [Card] Fluxo de Resposta Padrão
+│   │   ├── Toggle: Ativo/Inativo
+│   │   └── Select: escolher entre fluxos existentes
+│   └── [Card] Fluxo Pós-Atendimento
+│       ├── Toggle: Ativo/Inativo
+│       └── Select: escolher entre fluxos existentes
+├── [Link] Configuração Z-API →
+├── [Link] Configuração IA →
+```
+
+## Arquivos afetados
+- **Migration**: criar tabela `fluxo_config` + RLS
+- **Novo**: `src/pages/Configuracoes.tsx`
+- **Editar**: `src/App.tsx` — trocar Placeholder pela nova página
 

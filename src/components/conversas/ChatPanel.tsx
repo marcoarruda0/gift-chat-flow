@@ -67,6 +67,20 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
           <p className="text-sm font-medium text-foreground truncate">{contatoNome}</p>
           {contatoTelefone && <p className="text-xs text-muted-foreground">{contatoTelefone}</p>}
         </div>
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+          {departamentoNome && (
+            <Badge variant="secondary" className="text-xs gap-1 font-normal">
+              <Building2 className="h-3 w-3" />
+              {departamentoNome}
+            </Badge>
+          )}
+          {atendenteNome && (
+            <Badge variant="outline" className="text-xs gap-1 font-normal">
+              <User className="h-3 w-3" />
+              {atendenteNome}
+            </Badge>
+          )}
+        </div>
         {onTransfer && (
           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onTransfer} title="Transferir conversa">
             <ArrowRightLeft className="h-4 w-4" />
@@ -77,8 +91,8 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
             <MailOpen className="h-4 w-4" />
           </Button>
         )}
-        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onClose}>
-          <X className="h-4 w-4" />
+        <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700" onClick={onClose} title="Encerrar conversa">
+          <CheckCircle2 className="h-4 w-4" />
         </Button>
       </div>
 

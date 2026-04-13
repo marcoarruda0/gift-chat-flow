@@ -653,6 +653,8 @@ export default function Conversas() {
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
             contatoAvatar={selected.contato_avatar}
+            departamentoNome={selected.departamento_id ? departamentos[selected.departamento_id] || null : null}
+            atendenteNome={selected.atendente_id ? membros[selected.atendente_id] || null : null}
             mensagens={mensagens}
             onSend={handleSend}
             onSendAudio={handleSendAudio}

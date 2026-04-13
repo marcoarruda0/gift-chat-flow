@@ -1,42 +1,45 @@
 
 
-# Nó Menu — Modo Lista vs. Botões
+# Conectar "Fluxo de Resposta Padrão" ao Motor de Execução
 
-## O que muda
+## Problema
 
-Adicionar um seletor dentro do nó "menu" para o usuário escolher entre dois modos de envio:
+O motor de fluxos no webhook só ativa fluxos quando encontra um nó `gatilho` com texto que corresponde exatamente à mensagem do usuário. O "Fluxo de Resposta Padrão" configurado em `fluxo_config` nunca é consultado — ou seja, essa configuração não tem efeito nenhum.
 
-- **Lista** (atual): envia texto numerado (1. Opção A, 2. Opção B...) — o cliente responde digitando o número
-- **Botões**: envia como botões interativos do WhatsApp (máximo 3 botões) — o cliente toca no botão
+## Como vai funcionar
 
-## Arquivos afetados
+Quando uma mensagem chega e:
+1. Não há sessão de fluxo ativa
+2. Nenhum gatilho de nenhum fluxo foi acionado
+3. A conversa não tem atendente ativo (ou a conversa acabou de ser criada)
+
+→ O webhook consulta a tabela `fluxo_config` para ver se existe um fluxo de `resposta_padrao` ativo para o tenant. Se existir, executa esse fluxo a partir do **primeiro nó após o gatilho** (ou do primeiro nó conectado se não houver gatilho).
+
+## Mudança
+
+### Arquivo: `supabase/functions/zapi-webhook/index.ts`
+
+Na função `handleFluxoEngine`, após o loop de busca por gatilhos (linha ~344), antes do `return false`:
+
+1. Consultar `fluxo_config` onde `tipo = 'resposta_padrao'` e `ativo = true` e `tenant_id = tenantId`
+2. Se encontrar, carregar o fluxo referenciado (`fluxo_id`)
+3. Verificar se a conversa tem `atendente_id` — se tiver atendente atribuído, não ativar (significa que um humano está cuidando)
+4. Encontrar o primeiro nó executável (pular o gatilho, ir direto para o nó seguinte)
+5. Criar sessão e executar o fluxo normalmente
+
+```text
+Mensagem chega
+  → Sessão ativa? → processa resposta do menu
+  → Gatilho match? → executa fluxo do gatilho
+  → Fluxo Resposta Padrão configurado + sem atendente? → executa fluxo padrão  ← NOVO
+  → Nada? → AI auto-responder
+```
+
+### Arquivo afetado
 
 | Arquivo | Mudança |
 |---------|---------|
-| `NodeConfigPanel.tsx` | Adicionar Select "Tipo de menu" (`lista` / `botoes`) acima das opções. Se `botoes`, limitar a 3 opções |
-| `FlowNode.tsx` | Mostrar badge "Lista" ou "Botões" no preview do nó |
-| `zapi-webhook/index.ts` | No handler do nó menu, se `tipo_menu === "botoes"`, enviar via endpoint de botões da Z-API em vez de texto numerado |
+| `zapi-webhook/index.ts` | Adicionar consulta a `fluxo_config` tipo `resposta_padrao` após loop de gatilhos, executar fluxo padrão se nenhum gatilho casou |
 
-## Detalhes técnicos
-
-### Config armazenada
-```typescript
-{
-  tipo_menu: "lista" | "botoes",  // default "lista"
-  pergunta: string,
-  opcoes: string[],
-  fallback: string
-}
-```
-
-### NodeConfigPanel
-- Novo `Select` com label "Tipo de menu" logo após o campo de pergunta
-- Se `botoes` selecionado, limitar máximo de opções a 3 (limite do WhatsApp) e mostrar aviso se houver mais
-
-### FlowNode preview
-- Exibir um badge pequeno ("📋 Lista" ou "🔘 Botões") abaixo do header
-
-### Webhook (zapi-webhook)
-- Se `tipo_menu === "botoes"`: usar endpoint Z-API `/send-button-list` com payload de botões interativos
-- Se `lista` (default): manter comportamento atual de texto numerado
+Nenhuma mudança de banco necessária — a tabela `fluxo_config` já existe com os campos necessários.
 

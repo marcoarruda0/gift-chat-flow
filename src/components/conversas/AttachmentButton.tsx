@@ -7,7 +7,7 @@ interface AttachmentButtonProps {
   disabled?: boolean;
 }
 
-const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/x-rar-compressed,application/vnd.rar,application/zip,application/x-zip-compressed,application/x-7z-compressed,application/gzip,audio/*,video/*";
 
 export function AttachmentButton({ onSelect, disabled }: AttachmentButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);

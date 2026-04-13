@@ -194,6 +194,9 @@ export default function Conversas() {
     return supabase.storage.from("chat-media").getPublicUrl(data.path).data.publicUrl;
   };
 
+  // Format phone: preserve group IDs (@g.us), clean individual numbers
+  const formatPhone = (p: string) => p.includes("@g.us") ? p : p.replace(/\D/g, "");
+
   // Helper: call Z-API proxy
   const callZapi = async (endpoint: string, method: string, data?: any) => {
     const { data: session } = await supabase.auth.getSession();
@@ -237,13 +240,14 @@ export default function Conversas() {
       ultima_msg_at: new Date().toISOString(),
     }).eq("id", selectedId);
 
-    // Send via Z-API if contact has phone
+
+  // Send via Z-API if contact has phone
     if (selected?.contato_telefone) {
       try {
         // Prefix message with bold nickname for WhatsApp
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
         await callZapi("send-text", "POST", {
-          phone: selected.contato_telefone.replace(/\D/g, ""),
+          phone: formatPhone(selected.contato_telefone),
           message: zapiMessage,
         });
       } catch (e) {
@@ -271,7 +275,7 @@ export default function Conversas() {
 
       if (selected?.contato_telefone) {
         await callZapi("send-audio", "POST", {
-          phone: selected.contato_telefone.replace(/\D/g, ""),
+          phone: formatPhone(selected.contato_telefone),
           audio: url,
         }).catch(() => {});
       }
@@ -301,7 +305,7 @@ export default function Conversas() {
       }).eq("id", selectedId);
 
       if (selected?.contato_telefone) {
-        const phone = selected.contato_telefone.replace(/\D/g, "");
+        const phone = formatPhone(selected.contato_telefone);
         const endpoint = isImage ? "send-image" : "send-document";
         const data = isImage
           ? { phone, image: url, caption: "" }

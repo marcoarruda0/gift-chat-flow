@@ -63,6 +63,8 @@ export default function Empresa() {
   const [newTenantName, setNewTenantName] = useState("");
   const [creatingTenant, setCreatingTenant] = useState(false);
 
+  const tenantId = profile?.tenant_id;
+
   useEffect(() => {
     if (!tenantId) return;
     loadTenantData();

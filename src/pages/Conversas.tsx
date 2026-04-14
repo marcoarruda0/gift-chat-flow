@@ -522,6 +522,11 @@ export default function Conversas() {
         onOpenChange={setImportDialogOpen}
         onComplete={fetchConversas}
       />
+      <SincronizarWhatsappDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        onComplete={fetchConversas}
+      />
     </div>
   );
 }

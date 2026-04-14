@@ -135,7 +135,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
               }}
             />
           </>
-        ) : isCondicional ? (
+        ) : isCondicional || isAssistenteIA ? (
           <>
             <Handle
               type="source"
@@ -147,7 +147,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
             <Handle
               type="source"
               position={Position.Right}
-              id="nao"
+              id={isAssistenteIA ? "interrupcao" : "nao"}
               className="!w-3 !h-3 !border-2 !bg-background"
               style={{ borderColor: "hsl(0, 84%, 60%)", top: "65%" }}
             />
@@ -176,8 +176,14 @@ function getPreview(data: FlowNodeData): string {
       return cfg.campo ? `${cfg.campo} ${cfg.operador} ${cfg.valor}` : "Sim / Não";
     case "atraso":
       return cfg.duracao ? `${cfg.duracao} ${cfg.unidade || "min"}` : "Aguardar...";
-    case "assistente_ia":
-      return cfg.prompt ? cfg.prompt.substring(0, 40) : "Prompt IA...";
+    case "assistente_ia": {
+      const modelo = cfg.modelo ? cfg.modelo.split("/").pop() : "";
+      const instrucoes = cfg.instrucoes ? cfg.instrucoes.substring(0, 30) : "";
+      if (modelo && instrucoes) return `${modelo} · ${instrucoes}`;
+      if (modelo) return modelo;
+      if (instrucoes) return instrucoes;
+      return cfg.prompt ? cfg.prompt.substring(0, 40) : "Configurar IA...";
+    }
     case "tag":
       return cfg.tag ? `${cfg.acao || "Adicionar"}: ${cfg.tag}` : "Tag...";
     case "webhook":

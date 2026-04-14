@@ -1,4 +1,4 @@
-import { Zap, MessageSquare, GitBranch, Clock, Bot, Tag, Webhook, UserCheck, Wallet, Gift, CalendarClock, List, TimerOff, Route } from "lucide-react";
+import { Zap, MessageSquare, GitBranch, Clock, Bot, Tag, Webhook, UserCheck, Wallet, Gift, CalendarClock, List, TimerOff, Route, MessageSquareOff } from "lucide-react";
 
 export const NODE_TYPE_CONFIG = {
   gatilho: {
@@ -98,6 +98,13 @@ export const NODE_TYPE_CONFIG = {
     color: "hsl(186, 72%, 38%)",
     bgColor: "hsl(186, 72%, 95%)",
     borderColor: "hsl(186, 72%, 38%)",
+  },
+  gerenciar_conversa: {
+    label: "Gerenciar Conversa",
+    icon: MessageSquareOff,
+    color: "hsl(280, 60%, 50%)",
+    bgColor: "hsl(280, 60%, 96%)",
+    borderColor: "hsl(280, 60%, 50%)",
   },
 } as const;
 

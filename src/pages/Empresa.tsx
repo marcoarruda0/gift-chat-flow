@@ -263,6 +263,11 @@ export default function Empresa() {
               <Settings2 className="h-4 w-4" /> Respostas
             </TabsTrigger>
           )}
+          {isMaster && (
+            <TabsTrigger value="empresas" className="gap-2">
+              <ArrowLeftRight className="h-4 w-4" /> Empresas
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ── Dados da Empresa ── */}
@@ -548,6 +553,55 @@ export default function Empresa() {
         {isAdmin && (
           <TabsContent value="respostas">
             <RespostasRapidasConfig />
+          </TabsContent>
+        )}
+        {/* ── Empresas (multi-tenant) ── */}
+        {isMaster && (
+          <TabsContent value="empresas" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Empresas</CardTitle>
+                  <CardDescription>Gerencie e alterne entre empresas</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setShowNewTenant(true)}>
+                  <Plus className="h-4 w-4 mr-1" /> Nova Empresa
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-32">Ação</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tenants.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-medium">
+                          {t.nome}
+                          {t.id === tenantId && (
+                            <Badge variant="default" className="ml-2 text-xs">Ativa</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">Ativo</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {t.id !== tenantId && (
+                            <Button size="sm" variant="outline" onClick={() => switchTenant(t.id)}>
+                              <ArrowLeftRight className="h-3 w-3 mr-1" /> Alternar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>

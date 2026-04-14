@@ -214,7 +214,7 @@ function FluxoEditorInner() {
 
         <div className="flex-1" ref={reactFlowWrapper}>
           <ReactFlow
-            nodes={nodes}
+            nodes={nodesWithCallbacks}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}

@@ -221,6 +221,26 @@ async function handleFluxoEngine(
   zapiConfig: any
 ): Promise<boolean> {
   try {
+    // 0. Check for auto_off — block automatic responses if still active
+    const { data: existingSessao } = await supabase
+      .from("fluxo_sessoes")
+      .select("id, dados")
+      .eq("conversa_id", conversaId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (existingSessao?.dados?.auto_off_ate) {
+      const autoOffAte = new Date(existingSessao.dados.auto_off_ate);
+      if (autoOffAte > new Date()) {
+        console.log(`Auto-off active until ${autoOffAte.toISOString()}, blocking flow`);
+        return false;
+      } else {
+        // Auto-off expired, clean up session
+        await supabase.from("fluxo_sessoes").delete().eq("id", existingSessao.id);
+        console.log("Auto-off expired, cleaning up session");
+      }
+    }
+
     // 1. Check for active session (conversation in the middle of a flow)
     const { data: sessao } = await supabase
       .from("fluxo_sessoes")
@@ -288,7 +308,100 @@ async function handleFluxoEngine(
         return true;
       }
 
-      // Non-menu waiting state — shouldn't happen, clean up
+      // Handle triagem_ia response
+      if (currentNode?.data?.nodeType === "triagem_ia") {
+        const config = currentNode.data.config || {};
+        const setores: { nome: string; descricao: string }[] = config.setores || [];
+        const modelo = config.modelo || "google/gemini-2.5-flash";
+        const maxTentativas = config.max_tentativas || 2;
+        const msgFallback = config.msg_fallback || "Desculpe, não entendi. Vou te encaminhar para o atendimento.";
+        const tentativasAtuais = (sessao.dados?.triagem_tentativas || 0);
+
+        let matchedIndex = -1;
+        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+        if (LOVABLE_API_KEY && setores.length > 0) {
+          try {
+            const setoresTexto = setores.map((s, i) => `${i + 1}. ${s.nome} — ${s.descricao}`).join("\n");
+            const systemPrompt = `Você é um classificador de intenções. Analise a mensagem do usuário e retorne APENAS o número do setor correspondente.\n\nSetores disponíveis:\n${setoresTexto}\n\nResposta DEVE ser APENAS o número (ex: 1, 2, 3). Se nenhum setor corresponder, responda 0.`;
+
+            const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: modelo,
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: messageText },
+                ],
+              }),
+            });
+
+            if (aiResponse.ok) {
+              const aiData = await aiResponse.json();
+              const resposta = (aiData.choices?.[0]?.message?.content || "").trim();
+              const num = parseInt(resposta, 10);
+              if (num >= 1 && num <= setores.length) {
+                matchedIndex = num - 1;
+              }
+              console.log(`Triagem IA classified: "${resposta}" → index ${matchedIndex}`);
+            }
+          } catch (aiErr) {
+            console.error("Triagem IA error:", aiErr);
+          }
+        }
+
+        let nextNodeId: string | null = null;
+
+        if (matchedIndex >= 0) {
+          const handleId = `setor_${matchedIndex}`;
+          const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === handleId);
+          nextNodeId = edge?.target || null;
+          console.log(`Triagem matched setor "${setores[matchedIndex].nome}" → handle ${handleId} → node ${nextNodeId}`);
+        } else {
+          // Check retry
+          if (tentativasAtuais + 1 < maxTentativas) {
+            // Retry: increment counter, ask again
+            await supabase
+              .from("fluxo_sessoes")
+              .update({
+                dados: { ...(sessao.dados || {}), triagem_tentativas: tentativasAtuais + 1 },
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", sessao.id);
+            await sendZapiText(zapiConfig, phone, "Não entendi bem. Poderia reformular sua pergunta?");
+            await saveBotMessage(supabase, conversaId, tenantId, "Não entendi bem. Poderia reformular sua pergunta?");
+            console.log(`Triagem retry ${tentativasAtuais + 1}/${maxTentativas}`);
+            return true;
+          }
+
+          // Fallback
+          const fallbackEdge = edges.find(e => e.source === currentNode.id && e.sourceHandle === "fallback");
+          nextNodeId = fallbackEdge?.target || null;
+          await sendZapiText(zapiConfig, phone, msgFallback);
+          await saveBotMessage(supabase, conversaId, tenantId, msgFallback);
+          console.log(`Triagem fallback → node ${nextNodeId}`);
+        }
+
+        if (nextNodeId) {
+          await supabase
+            .from("fluxo_sessoes")
+            .update({ node_atual: nextNodeId, aguardando_resposta: false, dados: {}, updated_at: new Date().toISOString() })
+            .eq("id", sessao.id);
+
+          const contato = await getContato(supabase, contatoId);
+          await executeFlowFrom(supabase, tenantId, phone, conversaId, contatoId, contato, zapiConfig, nodes, edges, nextNodeId, sessao.id, sessao.fluxo_id);
+        } else {
+          await supabase.from("fluxo_sessoes").delete().eq("id", sessao.id);
+          console.log("Flow session ended (no next node after triagem)");
+        }
+        return true;
+      }
+
+      // Non-menu/triagem waiting state — shouldn't happen, clean up
       await supabase.from("fluxo_sessoes").delete().eq("id", sessao.id);
     }
 
@@ -475,7 +588,7 @@ async function executeFlowFrom(
         const opcoes: string[] = config.opcoes || [];
         const tipoMenu = config.tipo_menu || "lista";
 
-        if (tipoMenu === "botoes" && opcoes.length > 0 && opcoes.length <= 3) {
+        if (tipoMenu === "botoes" && opcoes.length > 0 && opcoes.length <= 4) {
           // Send as interactive WhatsApp buttons
           const buttonMessage = replaceVariables(pergunta, contato);
           await sendZapiButtons(zapiConfig, phone, buttonMessage, opcoes);
@@ -644,6 +757,47 @@ async function executeFlowFrom(
         // v1: no delay, continue immediately
         console.log("Atraso node (skipping delay in v1)");
         break;
+
+      case "auto_off": {
+        // Calculate duration in seconds
+        let durationSecs = 0;
+        if ((config.formato || "hms") === "dias") {
+          durationSecs = (config.dias || 1) * 86400;
+        } else {
+          durationSecs = (config.horas || 0) * 3600 + (config.minutos || 5) * 60 + (config.segundos || 0);
+        }
+        const autoOffAte = new Date(Date.now() + durationSecs * 1000).toISOString();
+
+        // Store auto_off_ate in session dados
+        if (sessaoId) {
+          await supabase
+            .from("fluxo_sessoes")
+            .update({
+              dados: { auto_off_ate: autoOffAte },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", sessaoId);
+        }
+        console.log(`Auto-off set until ${autoOffAte} (${durationSecs}s)`);
+        break;
+      }
+
+      case "triagem_ia": {
+        // Send greeting and wait for response
+        const saudacao = replaceVariables(config.saudacao || "Olá! Como posso ajudar?", contato);
+        await sendZapiText(zapiConfig, phone, saudacao);
+        await saveBotMessage(supabase, conversaId, tenantId, saudacao);
+
+        // Pause — wait for user response
+        if (sessaoId) {
+          await supabase
+            .from("fluxo_sessoes")
+            .update({ node_atual: node.id, aguardando_resposta: true, dados: { triagem_tentativas: 0 }, updated_at: new Date().toISOString() })
+            .eq("id", sessaoId);
+        }
+        console.log("Triagem IA sent greeting, waiting for response");
+        return; // STOP execution, wait for next message
+      }
 
       case "consultar_saldo": {
         // Refresh contato data for saldo

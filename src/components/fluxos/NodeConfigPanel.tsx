@@ -1,6 +1,6 @@
 import { type Node } from "@xyflow/react";
-import { useEffect, useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, Plus, Trash2, Upload, FileAudio, FileVideo, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { NODE_TYPE_CONFIG, type FlowNodeType } from "./nodeTypes";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface NodeConfigPanelProps {
   node: Node;
@@ -25,6 +26,32 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
 
   const [departamentos, setDepartamentos] = useState<{ id: string; nome: string }[]>([]);
   const [membros, setMembros] = useState<{ id: string; nome: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ACCEPT_MAP: Record<string, string> = {
+    imagem: ".jpg,.jpeg,.png,.gif,.webp",
+    audio: ".mp3,.m4a,.ogg,.wav",
+    video: ".mp4,.mov,.webm",
+  };
+
+  const handleMediaUpload = async (file: File) => {
+    if (!profile?.tenant_id) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.tenant_id}/fluxos/${crypto.randomUUID()}.${ext}`;
+      const { error } = await supabase.storage.from("chat-media").upload(path, file);
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(path);
+      updateConfig("media_url", urlData.publicUrl);
+      toast.success("Mídia enviada!");
+    } catch (err: any) {
+      toast.error("Erro ao enviar mídia: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (nodeType === "transferir" && profile?.tenant_id) {
@@ -109,7 +136,10 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
           <>
             <div className="space-y-1.5">
               <Label className="text-xs">Tipo de conteúdo</Label>
-              <Select value={config.tipo || "texto"} onValueChange={(v) => updateConfig("tipo", v)}>
+              <Select value={config.tipo || "texto"} onValueChange={(v) => {
+                updateConfig("tipo", v);
+                if (v === "texto" || v === "botoes") updateConfig("media_url", "");
+              }}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="texto">Texto</SelectItem>
@@ -120,8 +150,61 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                 </SelectContent>
               </Select>
             </div>
+
+            {["imagem", "audio", "video"].includes(config.tipo || "") && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Arquivo de mídia</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPT_MAP[config.tipo] || ""}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleMediaUpload(file);
+                  }}
+                />
+                {config.media_url ? (
+                  <div className="space-y-2">
+                    {config.tipo === "imagem" && (
+                      <img src={config.media_url} alt="Preview" className="w-full rounded border max-h-32 object-cover" />
+                    )}
+                    {config.tipo === "audio" && (
+                      <div className="flex items-center gap-2 p-2 rounded border bg-muted text-xs">
+                        <FileAudio className="h-4 w-4 shrink-0" />
+                        <span className="truncate">Áudio anexado</span>
+                      </div>
+                    )}
+                    {config.tipo === "video" && (
+                      <div className="flex items-center gap-2 p-2 rounded border bg-muted text-xs">
+                        <FileVideo className="h-4 w-4 shrink-0" />
+                        <span className="truncate">Vídeo anexado</span>
+                      </div>
+                    )}
+                    <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
+                      updateConfig("media_url", "");
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}>
+                      <Trash2 className="h-3 w-3 mr-1" /> Remover mídia
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1.5" />
+                    {uploading ? "Enviando..." : "Enviar arquivo"}
+                  </Button>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <Label className="text-xs">Corpo da mensagem</Label>
+              <Label className="text-xs">{["imagem", "audio", "video"].includes(config.tipo || "") ? "Legenda (opcional)" : "Corpo da mensagem"}</Label>
               <Textarea value={config.corpo || ""} onChange={(e) => updateConfig("corpo", e.target.value)} placeholder="Use {{nome}} para variáveis" className="text-sm min-h-[80px]" />
             </div>
           </>
@@ -167,6 +250,7 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                   <SelectItem value="seg">Segundos</SelectItem>
                   <SelectItem value="min">Minutos</SelectItem>
                   <SelectItem value="hora">Horas</SelectItem>
+                  <SelectItem value="dia">Dias</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -1,62 +1,66 @@
 
 
-# Sincronização WhatsApp com Seletor de Datas
+# Fix: Conversas duplicadas + Timestamp da sincronização
 
-## Situação atual
+## Problemas identificados
 
-A sincronização atual (`handleSync`) busca todos os chats via `chats` endpoint do Z-API e importa as últimas 50 mensagens de cada. Não há filtro de datas — importa tudo de uma vez.
+### 1. Conversas duplicadas (mesma pessoa = múltiplas conversas)
 
-## Solução
+**Sync dialog (linha 122-128):** busca conversa com `.eq("status", "aberta")`. Se a conversa foi fechada (pelo nó `gerenciar_conversa` ou manualmente), a sync cria uma NOVA conversa em vez de reabrir a existente.
 
-Criar um dialog de sincronização com seletor de datas (de/até), onde o usuário escolhe o período e o sistema busca as conversas do WhatsApp naquele intervalo usando o Z-API.
+**Webhook:** já corrigido — `findOrCreateConversa` busca ANY conversa (independente de status) e reabre se necessário.
 
-### Como funciona
+**Fix:** Replicar a lógica do webhook no sync dialog — buscar a conversa mais recente do contato independente do status, e reabrir se fechada.
 
-1. Usuário clica no botão de sync → abre dialog com date picker (de/até)
-2. Sistema busca os chats via `chats` endpoint do Z-API (lista todos os chats)
-3. Para cada chat, busca mensagens via `load-messages-chat-phone/{phone}` filtrando pelo período selecionado (timestamp)
-4. Importa apenas mensagens dentro do intervalo, criando contatos e conversas conforme necessário
-5. Progresso visual com barra e contadores
+### 2. Timestamp errado nas mensagens sincronizadas
 
-### Componentes
+O código da sync (linha 197-199) já tenta usar `msg.timestamp`, mas o campo pode não existir em todas as mensagens retornadas pela Z-API. Quando `msg.timestamp` é `undefined` ou `0`, cai no fallback `new Date().toISOString()` (timestamp atual).
 
-**Novo: `SincronizarWhatsappDialog.tsx`**
-- Dialog com dois date pickers (data início / data fim)
-- Default: última semana
-- Botão "Sincronizar"
-- Barra de progresso durante importação
-- Contador: "Importando chat 3/15... 47 mensagens"
-- Ao finalizar: resumo (X conversas, Y mensagens importadas)
+Além disso, há um problema de **metadados inconsistentes**: o sync salva `zapi_message_id` e o webhook salva `messageId` — isso impede a deduplicação cruzada (mensagens podem aparecer duplicadas).
 
-**Mudança em `Conversas.tsx`**
-- Botão de sync agora abre o dialog em vez de chamar `handleSync` direto
-- Lógica de importação movida para dentro do dialog (com filtro de timestamps)
+**Fix:** 
+- Normalizar o campo de metadata para usar `messageId` em ambos (sync e webhook)
+- Garantir que o timestamp original da mensagem é usado, logando warning quando não existir
 
-**Mudança em `ConversasList.tsx`**
-- Nenhuma mudança visual necessária — o botão de sync já existe
+## Mudanças
 
-### Lógica de filtro por data
+### `SincronizarWhatsappDialog.tsx`
 
-O Z-API retorna mensagens com campo `timestamp` (unix seconds). O filtro é aplicado client-side:
+**A. Busca de conversa sem filtro de status:**
 ```typescript
-const startTs = Math.floor(startDate.getTime() / 1000);
-const endTs = Math.floor(endDate.getTime() / 1000);
-const filteredMsgs = rawMsgs.filter(m => m.timestamp >= startTs && m.timestamp <= endTs);
+// ANTES
+.eq("status", "aberta")
+
+// DEPOIS: buscar a mais recente, qualquer status
+.order("created_at", { ascending: false })
+.limit(1)
+// Se encontrou fechada → reabrir
 ```
 
-Sem o limite de 50 mensagens — importa todas do período selecionado.
+**B. Normalizar metadata key para `messageId`:**
+```typescript
+metadata: {
+  messageId: zapiId,  // era zapi_message_id
+  senderName: ...,
+}
+```
 
-### Melhorias sobre o sync atual
-- Controle do período (não importa tudo)
-- Sem limite de 50 msgs — traz todas do período
-- Feedback visual melhor (progresso por chat)
-- Pode ser executado várias vezes para períodos diferentes
-- Deduplicação mantida via `zapi_message_id`
+**C. Dedup query atualizada:**
+```typescript
+// ANTES
+.contains("metadata", { zapi_message_id: zapiId })
 
-## Arquivos afetados
+// DEPOIS
+.eq("metadata->>messageId", zapiId)
+```
+
+**D. Timestamp mais robusto:**
+- Tentar `msg.timestamp`, `msg.momment` (campo alternativo da Z-API), `msg.messageTimestamp`
+- Logar warning se nenhum timestamp original for encontrado
+
+## Arquivo afetado
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/conversas/SincronizarWhatsappDialog.tsx` | Novo — dialog com date pickers e lógica de sync |
-| `src/pages/Conversas.tsx` | Botão sync abre dialog; remover `handleSync` inline |
+| `src/components/conversas/SincronizarWhatsappDialog.tsx` | Busca conversa sem filtro status; normalizar metadata; timestamp robusto |
 

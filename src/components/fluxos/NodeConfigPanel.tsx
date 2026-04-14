@@ -740,6 +740,145 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
             )}
           </>
         )}
+
+        {nodeType === "triagem_ia" && (
+          <>
+            {/* Bloco 1 — Boas-vindas */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">💬 Mensagem de Boas-vindas</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Enviada ao contato antes da classificação. Use {"{{nome}}"} para personalizar.
+              </p>
+              <Textarea
+                value={config.saudacao || ""}
+                onChange={(e) => updateConfig("saudacao", e.target.value)}
+                placeholder="Olá {{nome}}! Seja bem-vindo(a). Como posso te ajudar?"
+                className="text-sm min-h-[70px]"
+              />
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Bloco 2 — Setores / Intenções */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">🏢 Setores / Intenções</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Cada setor gera uma saída no nó. A IA classificará a mensagem do contato e encaminhará para o setor correspondente.
+              </p>
+              <div className="space-y-2">
+                {(config.setores || []).map((setor: { nome: string; descricao: string }, i: number) => (
+                  <div key={i} className="rounded-md border p-2 space-y-1.5 bg-muted/30">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-muted-foreground w-5 shrink-0">#{i + 1}</span>
+                      <Input
+                        value={setor.nome}
+                        onChange={(e) => {
+                          const novos = [...(config.setores || [])];
+                          novos[i] = { ...novos[i], nome: e.target.value };
+                          updateConfig("setores", novos);
+                        }}
+                        placeholder="Nome do setor (ex: Vendas)"
+                        className="h-7 text-sm font-medium"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          const novos = (config.setores || []).filter((_: any, idx: number) => idx !== i);
+                          updateConfig("setores", novos);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={setor.descricao}
+                      onChange={(e) => {
+                        const novos = [...(config.setores || [])];
+                        novos[i] = { ...novos[i], descricao: e.target.value };
+                        updateConfig("setores", novos);
+                      }}
+                      placeholder="Descreva a intenção (ex: Cliente quer comprar, saber preço, disponibilidade...)"
+                      className="text-xs min-h-[50px]"
+                    />
+                  </div>
+                ))}
+                {(config.setores || []).length < 8 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => updateConfig("setores", [...(config.setores || []), { nome: "", descricao: "" }])}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Adicionar setor
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Bloco 3 — Comportamento IA */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">🤖 Comportamento da IA</Label>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Modelo</Label>
+              <Select value={config.modelo || "google/gemini-2.5-flash"} onValueChange={(v) => updateConfig("modelo", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                  <SelectItem value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</SelectItem>
+                  <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                  <SelectItem value="google/gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
+                  <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
+                  <SelectItem value="openai/gpt-5">GPT-5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Instruções extras de classificação</Label>
+              <Textarea
+                value={config.instrucoes_classificacao || ""}
+                onChange={(e) => updateConfig("instrucoes_classificacao", e.target.value)}
+                placeholder="Ex: Se o cliente mencionar troca ou devolução, encaminhe para Suporte. Se mencionar preço, encaminhe para Vendas."
+                className="text-sm min-h-[70px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Máximo de tentativas</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Quantas vezes a IA tenta classificar antes de usar o fallback.
+              </p>
+              <Input
+                type="number"
+                min={1}
+                max={5}
+                value={config.max_tentativas ?? 2}
+                onChange={(e) => updateConfig("max_tentativas", parseInt(e.target.value) || 2)}
+                className="h-8 text-sm w-20"
+              />
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Bloco 4 — Fallback */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">⚠️ Mensagem Fallback</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Enviada quando a IA não consegue identificar o setor após as tentativas.
+              </p>
+              <Textarea
+                value={config.msg_fallback || ""}
+                onChange={(e) => updateConfig("msg_fallback", e.target.value)}
+                placeholder="Desculpe, não consegui entender seu pedido. Vou transferir para um atendente."
+                className="text-sm min-h-[60px]"
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -924,20 +924,30 @@ async function executeFlowFrom(
 
       case "auto_off": {
         const acaoAutoOff = config.acao || "desligar";
+        
+        // Fetch current session data to merge (preserve historico_ia etc.)
+        let currentDados: any = {};
+        if (sessaoId) {
+          const { data: currentSessao } = await supabase
+            .from("fluxo_sessoes")
+            .select("dados")
+            .eq("id", sessaoId)
+            .single();
+          currentDados = currentSessao?.dados || {};
+        }
+
         if (acaoAutoOff === "religar") {
-          // Clear auto_off_ate to re-enable automatic responses
           if (sessaoId) {
             await supabase
               .from("fluxo_sessoes")
               .update({
-                dados: { auto_off_ate: null },
+                dados: { ...currentDados, auto_off_ate: null },
                 updated_at: new Date().toISOString(),
               })
               .eq("id", sessaoId);
           }
           console.log("Auto-off: religar — automatic responses re-enabled");
         } else {
-          // Calculate duration in seconds
           let durationSecs = 0;
           if ((config.formato || "hms") === "dias") {
             durationSecs = (config.dias || 1) * 86400;
@@ -946,12 +956,11 @@ async function executeFlowFrom(
           }
           const autoOffAte = new Date(Date.now() + durationSecs * 1000).toISOString();
 
-          // Store auto_off_ate in session dados
           if (sessaoId) {
             await supabase
               .from("fluxo_sessoes")
               .update({
-                dados: { auto_off_ate: autoOffAte },
+                dados: { ...currentDados, auto_off_ate: autoOffAte },
                 updated_at: new Date().toISOString(),
               })
               .eq("id", sessaoId);

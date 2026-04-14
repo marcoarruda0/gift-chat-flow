@@ -401,7 +401,161 @@ async function handleFluxoEngine(
         return true;
       }
 
-      // Non-menu/triagem waiting state — shouldn't happen, clean up
+      // Handle assistente_ia response (multi-turn AI conversation)
+      if (currentNode?.data?.nodeType === "assistente_ia") {
+        const config = currentNode.data.config || {};
+        const modelo = config.modelo || "google/gemini-2.5-flash";
+        const temperatura = config.temperatura ?? 0.7;
+        const instrucoes = config.instrucoes || config.prompt || "";
+        const contextoGeral = config.contexto_geral || "";
+        const instrucoesIndividuais = config.instrucoes_individuais || "";
+        const sucessoDescricao = config.sucesso_descricao || "";
+        const interrupcaoDescricao = config.interrupcao_descricao || "";
+        const msgErro = config.msg_erro || "Desculpe, ocorreu um erro. Tente novamente.";
+
+        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+        if (!LOVABLE_API_KEY) {
+          console.error("LOVABLE_API_KEY not configured for assistente_ia");
+          await sendZapiText(zapiConfig, phone, msgErro);
+          await saveBotMessage(supabase, conversaId, tenantId, msgErro);
+          await supabase.from("fluxo_sessoes").delete().eq("id", sessao.id);
+          return true;
+        }
+
+        try {
+          // Build history from session
+          const historicoIa: { role: string; content: string }[] = sessao.dados?.historico_ia || [];
+
+          // Fetch knowledge base articles for context
+          let knowledgeContext = "";
+          const { data: artigos } = await supabase
+            .from("conhecimento_base")
+            .select("titulo, conteudo, categoria")
+            .eq("tenant_id", tenantId)
+            .eq("ativo", true);
+
+          if (artigos && artigos.length > 0) {
+            knowledgeContext = "\n\nBASE DE CONHECIMENTO:\n" +
+              artigos.map((a: any, i: number) => `[${i + 1}] ${a.titulo} (${a.categoria})\n${a.conteudo}`).join("\n---\n");
+          }
+
+          // Build exit conditions instructions
+          let exitInstructions = "";
+          if (sucessoDescricao || interrupcaoDescricao) {
+            exitInstructions = "\n\nCONDIÇÕES DE SAÍDA (IMPORTANTE):";
+            if (sucessoDescricao) {
+              exitInstructions += `\n- Se a condição de SUCESSO for atendida (${sucessoDescricao}), comece sua resposta EXATAMENTE com o prefixo [SUCESSO] seguido da mensagem.`;
+            }
+            if (interrupcaoDescricao) {
+              exitInstructions += `\n- Se detectar INTERRUPÇÃO (${interrupcaoDescricao}), comece sua resposta EXATAMENTE com o prefixo [INTERRUPCAO] seguido da mensagem.`;
+            }
+            exitInstructions += "\n- Caso contrário, responda normalmente SEM nenhum prefixo.";
+          }
+
+          // Build system prompt
+          const contato = await getContato(supabase, contatoId);
+          let systemPrompt = replaceVariables(instrucoes, contato);
+          if (contextoGeral) systemPrompt += "\n\n" + replaceVariables(contextoGeral, contato);
+          if (instrucoesIndividuais) systemPrompt += "\n\n" + replaceVariables(instrucoesIndividuais, contato);
+          systemPrompt += knowledgeContext;
+          systemPrompt += exitInstructions;
+          systemPrompt += "\n\nResponda em português brasileiro. Seja direto e útil.";
+
+          // Build messages array
+          const aiMessages: { role: string; content: string }[] = [
+            { role: "system", content: systemPrompt },
+            ...historicoIa,
+            { role: "user", content: messageText },
+          ];
+
+          const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: modelo,
+              messages: aiMessages,
+              temperature: temperatura,
+            }),
+          });
+
+          if (!aiResponse.ok) {
+            console.error("AI assistente error:", aiResponse.status);
+            await sendZapiText(zapiConfig, phone, msgErro);
+            await saveBotMessage(supabase, conversaId, tenantId, msgErro);
+            return true;
+          }
+
+          const aiData = await aiResponse.json();
+          let resposta = (aiData.choices?.[0]?.message?.content || "").trim();
+          console.log(`Assistente IA raw response: "${resposta.slice(0, 100)}..."`);
+
+          // Check for exit conditions
+          let exitHandle: string | null = null;
+          if (resposta.startsWith("[SUCESSO]")) {
+            resposta = resposta.replace("[SUCESSO]", "").trim();
+            exitHandle = "sim";
+            console.log("Assistente IA: SUCESSO detected");
+          } else if (resposta.startsWith("[INTERRUPCAO]")) {
+            resposta = resposta.replace("[INTERRUPCAO]", "").trim();
+            exitHandle = "interrupcao";
+            console.log("Assistente IA: INTERRUPCAO detected");
+          }
+
+          // Send response to contact
+          if (resposta) {
+            await sendZapiText(zapiConfig, phone, resposta);
+            await saveBotMessage(supabase, conversaId, tenantId, resposta);
+          }
+
+          if (exitHandle) {
+            // Exit the AI loop, follow the appropriate handle
+            const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === exitHandle);
+            const nextNodeId = edge?.target || null;
+
+            if (nextNodeId) {
+              await supabase
+                .from("fluxo_sessoes")
+                .update({ node_atual: nextNodeId, aguardando_resposta: false, dados: {}, updated_at: new Date().toISOString() })
+                .eq("id", sessao.id);
+
+              await executeFlowFrom(supabase, tenantId, phone, conversaId, contatoId, contato, zapiConfig, nodes, edges, nextNodeId, sessao.id, sessao.fluxo_id);
+            } else {
+              await supabase.from("fluxo_sessoes").delete().eq("id", sessao.id);
+              console.log("Flow ended after assistente_ia exit (no next node)");
+            }
+          } else {
+            // Continue multi-turn: update history and keep waiting
+            const updatedHistorico = [
+              ...historicoIa,
+              { role: "user", content: messageText },
+              { role: "assistant", content: resposta },
+            ];
+
+            // Limit history to last 20 messages to avoid token overflow
+            const trimmedHistorico = updatedHistorico.slice(-20);
+
+            await supabase
+              .from("fluxo_sessoes")
+              .update({
+                dados: { historico_ia: trimmedHistorico, ultima_interacao: new Date().toISOString() },
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", sessao.id);
+            console.log(`Assistente IA: multi-turn continues, history size: ${trimmedHistorico.length}`);
+          }
+          return true;
+        } catch (aiErr) {
+          console.error("Assistente IA error:", aiErr);
+          await sendZapiText(zapiConfig, phone, msgErro);
+          await saveBotMessage(supabase, conversaId, tenantId, msgErro);
+          return true;
+        }
+      }
+
+      // Non-menu/triagem/assistente waiting state — shouldn't happen, clean up
       await supabase.from("fluxo_sessoes").delete().eq("id", sessao.id);
     }
 

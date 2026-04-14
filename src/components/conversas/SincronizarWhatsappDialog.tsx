@@ -49,7 +49,26 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
     });
   };
 
-  const formatPhone = (p: string) => (p.includes("@g.us") ? p : p.replace(/\D/g, ""));
+  const fetchAllChats = async (): Promise<any[]> => {
+    const PAGE_SIZE = 100;
+    let page = 1;
+    let allChats: any[] = [];
+
+    while (true) {
+      setStatusText(`Buscando chats (página ${page})...`);
+      const res = await callZapi(`chats?page=${page}&pageSize=${PAGE_SIZE}`, "GET");
+      const chats = await res.json();
+
+      if (!Array.isArray(chats) || chats.length === 0) break;
+
+      allChats = allChats.concat(chats);
+
+      if (chats.length < PAGE_SIZE) break;
+      page++;
+    }
+
+    return allChats;
+  };
 
   const handleSync = async () => {
     if (!tenantId) return;
@@ -59,16 +78,15 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
     setStatusText("Buscando chats do WhatsApp...");
 
     try {
-      const res = await callZapi("chats", "GET");
-      const chats = await res.json();
+      const allChats = await fetchAllChats();
 
-      if (!Array.isArray(chats)) {
-        toast.error("Erro ao buscar chats do WhatsApp");
+      if (allChats.length === 0) {
+        toast.error("Nenhum chat encontrado no WhatsApp");
         setSyncing(false);
         return;
       }
 
-      const chatsToProcess = chats.filter((chat: any) => !!chat.phone);
+      const chatsToProcess = allChats.filter((chat: any) => !!chat.phone);
       const totalChats = chatsToProcess.length;
       const startTs = Math.floor(startOfDay(startDate).getTime() / 1000);
       const endTs = Math.floor(endOfDay(endDate).getTime() / 1000);
@@ -130,7 +148,6 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
 
         if (existingConv) {
           convId = existingConv.id;
-          // Reopen if closed
           if (existingConv.status === "fechada") {
             await supabase.from("conversas").update({ status: "aberta" }).eq("id", convId);
           }
@@ -153,13 +170,13 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
           imported++;
         }
 
-        // Import messages filtered by date range
+        // Import messages using correct endpoint
         try {
-          const msgRes = await callZapi(`load-messages-chat-phone/${phone}`, "GET");
+          const msgRes = await callZapi(`chat-messages/${phone}`, "GET");
           const rawMsgs = await msgRes.json();
 
           if (rawMsgs?.error || !Array.isArray(rawMsgs)) {
-            console.warn(`Skipping messages for ${phone}:`, rawMsgs?.error || "invalid");
+            console.warn(`Skipping messages for ${phone}:`, rawMsgs?.error || "invalid response");
             continue;
           }
 
@@ -172,13 +189,16 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
             `Chat ${i + 1}/${totalChats}: ${chatName.slice(0, 20)} — ${filteredMsgs.length} msgs no período`
           );
 
+          // Prepare batch of messages to insert
+          const batch: any[] = [];
+
           for (const msg of filteredMsgs) {
             const zapiId = msg.messageId || msg.id?.id;
             if (!zapiId) continue;
             const content = msg.body || msg.text || msg.caption || "";
             if (!content) continue;
 
-            // Check duplicate (normalized key: messageId)
+            // Check duplicate
             const { data: existing } = await supabase
               .from("mensagens")
               .select("id")
@@ -188,13 +208,12 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
 
             if (existing) continue;
 
-            // Robust timestamp: try multiple Z-API fields
             const rawTs = msg.timestamp || msg.momment || msg.messageTimestamp;
             const msgDate = rawTs
               ? new Date(rawTs * 1000).toISOString()
               : (() => { console.warn(`No timestamp for msg ${zapiId}`); return new Date().toISOString(); })();
 
-            await supabase.from("mensagens").insert({
+            batch.push({
               conversa_id: convId,
               tenant_id: tenantId,
               conteudo: content,
@@ -207,7 +226,13 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
               },
               created_at: msgDate,
             });
-            msgsImported++;
+          }
+
+          // Batch insert in chunks of 50
+          for (let b = 0; b < batch.length; b += 50) {
+            const chunk = batch.slice(b, b + 50);
+            await supabase.from("mensagens").insert(chunk);
+            msgsImported += chunk.length;
           }
         } catch (msgErr) {
           console.warn(`Failed to import messages for ${phone}:`, msgErr);
@@ -247,7 +272,6 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Date pickers */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Data início</label>
@@ -310,7 +334,6 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
             </div>
           </div>
 
-          {/* Progress */}
           {syncing && (
             <div className="space-y-2">
               <Progress value={progress} className="h-2" />
@@ -318,7 +341,6 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
             </div>
           )}
 
-          {/* Result */}
           {result && !syncing && (
             <div className="rounded-md bg-muted p-3 text-sm">
               <p className="font-medium text-foreground">✅ Sincronização concluída</p>

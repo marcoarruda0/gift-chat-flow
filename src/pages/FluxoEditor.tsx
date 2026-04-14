@@ -100,6 +100,15 @@ function FluxoEditorInner() {
     [setNodes, setEdges]
   );
 
+  const nodesWithCallbacks = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, onDuplicate: duplicateNode, onDelete: deleteNode },
+      })),
+    [nodes, duplicateNode, deleteNode]
+  );
+
   const onNodeClick = useCallback((_: any, node: Node) => {
     setSelectedNode(node);
   }, []);

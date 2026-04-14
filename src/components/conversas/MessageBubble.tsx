@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { FileDown } from "lucide-react";
+import { FileDown, Image, Mic, Video } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface MessageBubbleProps {
@@ -10,6 +10,7 @@ interface MessageBubbleProps {
   createdAt: string;
   senderName?: string | null;
   senderAvatar?: string | null;
+  metadata?: Record<string, any> | null;
 }
 
 const NAME_COLORS = [
@@ -26,12 +27,31 @@ function getNameColor(name: string) {
   return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
 }
 
-export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar }: MessageBubbleProps) {
+function isPlaceholderMedia(conteudo: string): boolean {
+  return /^\[(Imagem|Áudio|Vídeo|Documento)\]$/.test(conteudo);
+}
+
+export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar, metadata }: MessageBubbleProps) {
   const isOutgoing = remetente === "atendente" || remetente === "bot";
   const showSenderIncoming = !isOutgoing && !!senderName;
   const showSenderOutgoing = isOutgoing && remetente === "atendente" && !!senderName;
+  const isPending = metadata?.media_status === "pending";
 
   const renderContent = () => {
+    // Pending media placeholder
+    if (isPending && isPlaceholderMedia(conteudo)) {
+      const iconClass = "h-5 w-5 opacity-50";
+      return (
+        <div className="flex items-center gap-2 text-xs opacity-60 italic">
+          {tipo === "audio" && <Mic className={iconClass} />}
+          {tipo === "imagem" && <Image className={iconClass} />}
+          {tipo === "video" && <Video className={iconClass} />}
+          {tipo === "documento" && <FileDown className={iconClass} />}
+          <span>{conteudo.replace("[", "").replace("]", "")} pendente</span>
+        </div>
+      );
+    }
+
     switch (tipo) {
       case "audio":
         return <audio controls src={conteudo} className="max-w-[240px]" />;
@@ -41,14 +61,13 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
             <img src={conteudo} alt="Imagem" className="max-w-[240px] rounded-lg" loading="lazy" />
           </a>
         );
+      case "video":
+        return (
+          <video controls src={conteudo} className="max-w-[240px] rounded-lg" />
+        );
       case "documento":
         return (
-          <a
-            href={conteudo}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 underline text-xs"
-          >
+          <a href={conteudo} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline text-xs">
             <FileDown className="h-4 w-4 shrink-0" />
             <span className="truncate">{conteudo.split("/").pop() || "Documento"}</span>
           </a>
@@ -80,10 +99,7 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
           <span className="text-[10px] font-medium opacity-70 block mb-0.5">Bot</span>
         )}
         {showSenderIncoming && (
-          <span
-            className="text-[11px] font-semibold block mb-0.5"
-            style={{ color: getNameColor(senderName) }}
-          >
+          <span className="text-[11px] font-semibold block mb-0.5" style={{ color: getNameColor(senderName) }}>
             {senderName}
           </span>
         )}

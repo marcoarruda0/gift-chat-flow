@@ -1,58 +1,74 @@
 
 
-# Nó de Gerenciamento de Conversa + Auto-Off com "Religar"
+# Fix: Assistente IA não avança no fluxo + auto_off/gerenciar_conversa
 
-## Resumo
+## Problemas identificados
 
-Duas mudanças:
-1. **Novo nó "Gerenciar Conversa"** — permite abrir ou fechar uma conversa dentro do fluxo, conectando com a funcionalidade do módulo Conversas (que já usa `status: "aberta" | "fechada"`)
-2. **Auto-Off com modo "Religar"** — adicionar uma opção ao nó auto_off para limpar o bloqueio de respostas automáticas (usar no final dos fluxos para reativar)
+### 1. Assistente IA nunca detecta `[SUCESSO]` (problema principal)
 
----
+Os logs mostram que a IA respondeu "De nada! Se precisar de mais alguma coisa..." mas sem o prefixo `[SUCESSO]`. Causas:
 
-## 1. Novo nó: `gerenciar_conversa`
+- **Linha 444**: quando `sucesso_descricao` e `interrupcao_descricao` estão vazios, `exitInstructions` fica vazio — a IA nunca recebe instruções para usar os prefixos
+- **Linha 497**: `resposta.startsWith("[SUCESSO]")` é frágil — falha se a IA colocar espaço, aspas, markdown ou qualquer coisa antes do prefixo
+- A IA fica presa em loop multi-turno para sempre
 
-### `nodeTypes.ts`
-- Adicionar tipo `gerenciar_conversa` com ícone `DoorOpen` ou `MessageSquareOff`, cor distinta
+### 2. Auto-off sobrescreve dados da sessão
 
-### `NodeConfigPanel.tsx`
-- Config com select de ação: `"fechar"` ou `"abrir"`
-- Campo opcional `motivo` (texto livre, salvo como nota/metadata)
+- **Linhas 912 e 933**: `dados: { auto_off_ate: null }` substitui **todo** o objeto `dados`, apagando `historico_ia` e qualquer outro dado de sessão anterior
+- Deveria fazer merge: `{ ...sessao.dados, auto_off_ate: ... }`
 
-### `FlowNode.tsx`
-- Preview: "Fechar conversa" ou "Abrir conversa"
+### 3. Gerenciar conversa — funciona em tese
 
-### `zapi-webhook/index.ts` (handler no `executeFlowFrom`)
-- `case "gerenciar_conversa"`:
-  - Se `config.acao === "fechar"`: `UPDATE conversas SET status = 'fechada' WHERE id = conversaId`
-  - Se `config.acao === "abrir"`: `UPDATE conversas SET status = 'aberta' WHERE id = conversaId`
-  - Continua para o próximo nó
+O handler usa `break` que cai na lógica de "find next edge" (linha 1003). Se a edge existir, funciona. O problema é que o fluxo nunca chega lá porque fica preso no assistente IA.
 
----
+## Solução
 
-## 2. Auto-Off com opção "Religar"
+### Em `supabase/functions/zapi-webhook/index.ts`
 
-### `NodeConfigPanel.tsx`
-- Adicionar um select no topo do bloco auto_off: **Ação** → `"desligar"` (padrão atual) ou `"religar"`
-- Quando `acao === "religar"`, esconder os campos de tempo (não precisa de duração)
-- Label muda para "Religar resposta automática"
+**A. Defaults para condições de saída (linhas ~443-453)**
 
-### `FlowNode.tsx`
-- Preview: se `config.acao === "religar"` → mostrar "⚡ Religar auto" em vez do timer
+Quando `sucesso_descricao` estiver vazio, usar default automático:
+- Sucesso: "A dúvida ou solicitação do usuário foi respondida/resolvida satisfatoriamente, o usuário agradeceu ou se despediu"
+- Interrupção: "O usuário pede para falar com um humano, ou muda de assunto para algo completamente fora do escopo"
 
-### `zapi-webhook/index.ts`
-- No handler `auto_off`:
-  - Se `config.acao === "religar"`: limpar `auto_off_ate` da sessão (`dados: { auto_off_ate: null }`)
-  - Caso contrário: comportamento atual (setar timer)
+Isso garante que **todo** assistente_ia sempre tenha instruções de saída.
 
----
+**B. Detecção robusta de prefixo (linhas ~497-504)**
 
-## Arquivos afetados
+Trocar `startsWith` por regex:
+```typescript
+const sucessoMatch = resposta.match(/^\s*\*?\*?\[SUCESSO\]\*?\*?:?\s*/i);
+const interrupcaoMatch = resposta.match(/^\s*\*?\*?\[INTERRUPCAO\]\*?\*?:?\s*/i);
+```
+
+Também verificar com `includes` como fallback — se a IA colocar o prefixo no meio da resposta.
+
+**C. Reforçar prompt de saída**
+
+Mover as instruções de saída para o **início** do system prompt (antes de `instrucoes`) e torná-las mais enfáticas com exemplos concretos.
+
+**D. Auto-off: preservar dados da sessão (linhas 908-936)**
+
+Em vez de `dados: { auto_off_ate: null }`, fazer:
+```typescript
+const currentDados = sessao?.dados || {};
+dados: { ...currentDados, auto_off_ate: autoOffAte }
+```
+Porém, no contexto do `executeFlowFrom`, não temos acesso direto aos dados da sessão. Solução: buscar a sessão atual antes de atualizar, ou usar SQL raw para fazer jsonb merge.
+
+Alternativa mais simples: usar `UPDATE ... SET dados = dados || '{"auto_off_ate": "..."}'::jsonb` via RPC ou query direta.
+
+**E. Adicionar log no exit para debug**
+
+Logar quando o exitHandle é detectado e qual é o próximo nó para facilitar debug futuro.
+
+## Arquivo afetado
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/fluxos/nodeTypes.ts` | Adicionar `gerenciar_conversa` |
-| `src/components/fluxos/NodeConfigPanel.tsx` | Config do novo nó + toggle religar no auto_off |
-| `src/components/fluxos/nodes/FlowNode.tsx` | Preview dos dois |
-| `supabase/functions/zapi-webhook/index.ts` | Handler `gerenciar_conversa` + lógica religar no `auto_off` |
+| `supabase/functions/zapi-webhook/index.ts` | Defaults de saída, regex robusta, prompt reforçado, auto_off preservar dados |
+
+## Resultado esperado
+
+Quando a IA perceber que a dúvida foi resolvida (ex: "De nada! Qualquer coisa é só chamar"), ela usará `[SUCESSO]` porque agora sempre terá instruções para isso. O engine detectará o prefixo mesmo com variações, seguirá pelo handle `sim` → auto_off → gerenciar_conversa → conversa fechada.
 

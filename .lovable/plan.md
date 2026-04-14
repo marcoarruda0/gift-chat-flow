@@ -1,64 +1,84 @@
 
 
-# Implementar Engine de Execução para `triagem_ia` e `auto_off` no Webhook
+# Implementar Backend Completo do Nó "Assistente IA"
 
-## Problema identificado
+## Problema
 
-O flow engine em `supabase/functions/zapi-webhook/index.ts` **não tem handlers** para os nós `triagem_ia` nem `auto_off`. Quando o fluxo chega nesses nós, cai no `default` (linha 659) e o fluxo termina silenciosamente. Além disso, o handler de resposta de sessão (linhas 232-293) só processa respostas para nós `menu` — não há lógica para processar a resposta do usuário quando está aguardando classificação da `triagem_ia`.
+O handler `assistente_ia` no webhook (linhas 697-731) é uma versão mínima que:
+- Lê `config.prompt` mas o frontend salva `config.instrucoes`
+- Envia uma mensagem fixa ("Responda de forma direta e concisa") em vez da mensagem real do contato
+- Não suporta multi-turno (responde uma vez e o fluxo termina)
+- Ignora todas as configurações do frontend: modelo, mensagem inicial, contexto geral, temperatura, condições de saída (sucesso/interrupção), inatividade
 
-Também: o limite de botões na engine está em `<= 3` (linha 478), mas a UI agora permite 4.
+Por isso o fluxo parou no "Agente IA - Outros Assuntos" — o nó respondeu uma vez e encerrou a sessão.
 
 ## Mudanças no `supabase/functions/zapi-webhook/index.ts`
 
-### 1. Handler `triagem_ia` no `switch` (dentro de `executeFlowFrom`)
+### 1. Handler `assistente_ia` no `executeFlowFrom` (linhas 697-731)
 
-Quando o fluxo chega num nó `triagem_ia`:
-- Enviar a mensagem de saudação (`config.saudacao`) via Z-API, com `replaceVariables`
-- Marcar sessão como `aguardando_resposta: true` no nó atual
-- Parar execução (`return`)
+Reescrever completamente para:
+- **Mensagem inicial**: Se `config.msg_inicial` está configurado e `config.msg_inicial_tipo === "contato"`, enviar a mensagem ao contato via Z-API
+- **Marcar sessão como `aguardando_resposta: true`** no nó atual, com `dados` contendo o histórico de conversa da IA (array de mensagens)
+- **Parar execução** (como faz o `triagem_ia` e o `menu`)
 
-### 2. Resposta da `triagem_ia` no handler de sessão (linhas 232-293)
+### 2. Resposta do `assistente_ia` no handler de sessão (após triagem_ia, ~linha 410)
 
-Quando `sessao.aguardando_resposta` e o nó atual é `triagem_ia`:
-- Pegar os setores do config (`config.setores`)
-- Chamar a Lovable AI (modelo do config ou default `gemini-2.5-flash`) com um prompt de classificação:
-  - System prompt: listar os setores com nome e descrição, pedir para retornar APENAS o nome exato do setor que corresponde
-  - User message: a mensagem do contato
-- Fazer match do resultado da IA com os setores configurados
-- Se match → encontrar o edge com `sourceHandle: setor_{index}` → continuar execução
-- Se não match → tentar novamente (até `max_tentativas`) ou seguir pelo handle `fallback`, enviando `msg_fallback`
+Quando `sessao.aguardando_resposta` e nó atual é `assistente_ia`:
+- Montar o system prompt usando: `config.instrucoes` + `config.contexto_geral` + `config.instrucoes_individuais` (com `replaceVariables`)
+- Buscar artigos da `conhecimento_base` se existirem para o tenant (integrar base de conhecimento)
+- Recuperar histórico de conversa da sessão (`sessao.dados.historico_ia`)
+- Chamar a IA com o modelo configurado (`config.modelo`) e temperatura (`config.temperatura`)
+- Adicionar condições de saída ao prompt:
+  - Se a IA determinar "SUCESSO" (baseado em `config.sucesso_descricao`), seguir pelo handle `sim`
+  - Se determinar "INTERRUPÇÃO" (baseado em `config.interrupcao_descricao`), seguir pelo handle `interrupcao`
+  - Caso contrário, enviar resposta ao contato e manter `aguardando_resposta: true` (multi-turno)
+- Atualizar histórico no `dados` da sessão
+- Controle de inatividade: se `config.inatividade_tempo` configurado, verificar timestamp da última interação
 
-### 3. Handler `auto_off` no `switch`
+### 3. Prompt inteligente com detecção de saída
 
-Quando o fluxo chega num nó `auto_off`:
-- Calcular duração total em segundos a partir do config (`horas`, `minutos`, `segundos` ou `dias`)
-- Salvar na tabela `fluxo_sessoes` um campo `auto_off_ate` (timestamp) = `now() + duração`
-- No início do flow engine (`handleFluxoEngine`), antes de checar triggers, verificar se existe uma sessão com `auto_off_ate > now()` → se sim, retornar `true` (bloquear resposta automática)
-- Continuar execução pro próximo nó normalmente
+O system prompt incluirá instrução para a IA retornar um prefixo especial:
+- `[SUCESSO]` quando a condição de sucesso for atendida
+- `[INTERRUPCAO]` quando detectar pedido de interrupção
+- Caso contrário, responder normalmente
 
-### 4. Corrigir limite de botões
+O handler parseará o prefixo para decidir se continua o loop ou segue para o próximo nó.
 
-Linha 478: mudar `opcoes.length <= 3` para `opcoes.length <= 4`
+### 4. Tratamento de erro
 
-### 5. Migração DB (se necessário)
+Se a IA falhar, enviar `config.msg_erro` (ou mensagem padrão) ao contato.
 
-Adicionar coluna `auto_off_ate` (timestamptz, nullable) na tabela `fluxo_sessoes` para armazenar quando o auto-off expira. Alternativamente, usar o campo `dados` (jsonb) já existente.
+## Estrutura dos dados na sessão
 
-## Arquivos afetados
+```text
+sessao.dados = {
+  historico_ia: [
+    { role: "system", content: "..." },
+    { role: "user", content: "mensagem do contato" },
+    { role: "assistant", content: "resposta da IA" },
+    ...
+  ],
+  ultima_interacao: "2026-04-14T09:34:44Z"
+}
+```
+
+## Fluxo de execução
+
+```text
+1. Fluxo chega no assistente_ia
+2. Envia msg_inicial (se configurada) → "Olá! Sou o assistente do setor X"
+3. Pausa (aguardando_resposta = true, historico_ia = [])
+4. Contato envia: "qual o horário de funcionamento?"
+5. Monta prompt com instrucoes + contexto_geral + conhecimento_base
+6. IA responde → envia ao contato
+7. Se [SUCESSO] → handle "sim" → próximo nó
+8. Se [INTERRUPCAO] → handle "interrupcao" → próximo nó
+9. Caso contrário → mantém loop (volta ao passo 4)
+```
+
+## Arquivo afetado
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/zapi-webhook/index.ts` | Handlers `triagem_ia` e `auto_off`; resposta triagem na sessão; botões 4 |
-
-## Fluxo de execução da Triagem IA
-
-```text
-1. Fluxo chega no nó triagem_ia
-2. Envia saudação → "Olá {{nome}}! Como posso ajudar?"
-3. Pausa (aguardando_resposta = true)
-4. Usuário responde: "quero saber meu saldo"
-5. IA classifica: "FINANCEIRO"
-6. Match com setor[0].nome → handle setor_0 → próximo nó
-7. Se não match após N tentativas → handle fallback
-```
+| `supabase/functions/zapi-webhook/index.ts` | Reescrever handler `assistente_ia`; adicionar resposta multi-turno no handler de sessão |
 

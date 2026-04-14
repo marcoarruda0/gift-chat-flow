@@ -22,7 +22,9 @@ function FlowNode({ id, data, selected }: NodeProps) {
   const isGatilho = nodeData.nodeType === "gatilho";
   const isMenu = nodeData.nodeType === "menu";
   const isAssistenteIA = nodeData.nodeType === "assistente_ia";
+  const isTriagemIA = nodeData.nodeType === "triagem_ia";
   const opcoes: string[] = (nodeData.config?.opcoes as string[]) || [];
+  const setores: Array<{ nome: string; descricao: string }> = (nodeData.config?.setores as any[]) || [];
 
   return (
     <div className="relative">
@@ -108,19 +110,33 @@ function FlowNode({ id, data, selected }: NodeProps) {
           </div>
         )}
 
+        {isTriagemIA && setores.length > 0 && (
+          <div className="px-3 pb-2 space-y-1">
+            {setores.map((setor, i) => (
+              <div
+                key={i}
+                className="text-[10px] px-2 py-0.5 rounded border truncate"
+                style={{ borderColor: typeConfig.color + "60", color: typeConfig.color }}
+              >
+                {setor.nome || `Setor ${i + 1}`}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Source handles (saída) à direita */}
-        {isMenu ? (
+        {isMenu || isTriagemIA ? (
           <>
-            {opcoes.map((_, i) => (
+            {(isMenu ? opcoes : setores).map((_, i) => (
               <Handle
-                key={`opcao_${i}`}
+                key={isMenu ? `opcao_${i}` : `setor_${i}`}
                 type="source"
                 position={Position.Right}
-                id={`opcao_${i}`}
+                id={isMenu ? `opcao_${i}` : `setor_${i}`}
                 className="!w-3 !h-3 !border-2 !bg-background"
                 style={{
                   borderColor: typeConfig.color,
-                  top: `${((i + 1) / (opcoes.length + 2)) * 100}%`,
+                  top: `${((i + 1) / ((isMenu ? opcoes.length : setores.length) + 2)) * 100}%`,
                 }}
               />
             ))}
@@ -131,7 +147,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
               className="!w-3 !h-3 !border-2 !bg-background"
               style={{
                 borderColor: "hsl(0, 84%, 60%)",
-                top: `${((opcoes.length + 1) / (opcoes.length + 2)) * 100}%`,
+                top: `${(((isMenu ? opcoes.length : setores.length) + 1) / ((isMenu ? opcoes.length : setores.length) + 2)) * 100}%`,
               }}
             />
           </>

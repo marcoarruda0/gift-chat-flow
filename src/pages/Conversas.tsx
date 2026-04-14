@@ -47,7 +47,7 @@ export default function Conversas() {
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});

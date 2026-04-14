@@ -1,74 +1,62 @@
 
 
-# Fix: Assistente IA não avança no fluxo + auto_off/gerenciar_conversa
+# Sincronização WhatsApp com Seletor de Datas
 
-## Problemas identificados
+## Situação atual
 
-### 1. Assistente IA nunca detecta `[SUCESSO]` (problema principal)
-
-Os logs mostram que a IA respondeu "De nada! Se precisar de mais alguma coisa..." mas sem o prefixo `[SUCESSO]`. Causas:
-
-- **Linha 444**: quando `sucesso_descricao` e `interrupcao_descricao` estão vazios, `exitInstructions` fica vazio — a IA nunca recebe instruções para usar os prefixos
-- **Linha 497**: `resposta.startsWith("[SUCESSO]")` é frágil — falha se a IA colocar espaço, aspas, markdown ou qualquer coisa antes do prefixo
-- A IA fica presa em loop multi-turno para sempre
-
-### 2. Auto-off sobrescreve dados da sessão
-
-- **Linhas 912 e 933**: `dados: { auto_off_ate: null }` substitui **todo** o objeto `dados`, apagando `historico_ia` e qualquer outro dado de sessão anterior
-- Deveria fazer merge: `{ ...sessao.dados, auto_off_ate: ... }`
-
-### 3. Gerenciar conversa — funciona em tese
-
-O handler usa `break` que cai na lógica de "find next edge" (linha 1003). Se a edge existir, funciona. O problema é que o fluxo nunca chega lá porque fica preso no assistente IA.
+A sincronização atual (`handleSync`) busca todos os chats via `chats` endpoint do Z-API e importa as últimas 50 mensagens de cada. Não há filtro de datas — importa tudo de uma vez.
 
 ## Solução
 
-### Em `supabase/functions/zapi-webhook/index.ts`
+Criar um dialog de sincronização com seletor de datas (de/até), onde o usuário escolhe o período e o sistema busca as conversas do WhatsApp naquele intervalo usando o Z-API.
 
-**A. Defaults para condições de saída (linhas ~443-453)**
+### Como funciona
 
-Quando `sucesso_descricao` estiver vazio, usar default automático:
-- Sucesso: "A dúvida ou solicitação do usuário foi respondida/resolvida satisfatoriamente, o usuário agradeceu ou se despediu"
-- Interrupção: "O usuário pede para falar com um humano, ou muda de assunto para algo completamente fora do escopo"
+1. Usuário clica no botão de sync → abre dialog com date picker (de/até)
+2. Sistema busca os chats via `chats` endpoint do Z-API (lista todos os chats)
+3. Para cada chat, busca mensagens via `load-messages-chat-phone/{phone}` filtrando pelo período selecionado (timestamp)
+4. Importa apenas mensagens dentro do intervalo, criando contatos e conversas conforme necessário
+5. Progresso visual com barra e contadores
 
-Isso garante que **todo** assistente_ia sempre tenha instruções de saída.
+### Componentes
 
-**B. Detecção robusta de prefixo (linhas ~497-504)**
+**Novo: `SincronizarWhatsappDialog.tsx`**
+- Dialog com dois date pickers (data início / data fim)
+- Default: última semana
+- Botão "Sincronizar"
+- Barra de progresso durante importação
+- Contador: "Importando chat 3/15... 47 mensagens"
+- Ao finalizar: resumo (X conversas, Y mensagens importadas)
 
-Trocar `startsWith` por regex:
+**Mudança em `Conversas.tsx`**
+- Botão de sync agora abre o dialog em vez de chamar `handleSync` direto
+- Lógica de importação movida para dentro do dialog (com filtro de timestamps)
+
+**Mudança em `ConversasList.tsx`**
+- Nenhuma mudança visual necessária — o botão de sync já existe
+
+### Lógica de filtro por data
+
+O Z-API retorna mensagens com campo `timestamp` (unix seconds). O filtro é aplicado client-side:
 ```typescript
-const sucessoMatch = resposta.match(/^\s*\*?\*?\[SUCESSO\]\*?\*?:?\s*/i);
-const interrupcaoMatch = resposta.match(/^\s*\*?\*?\[INTERRUPCAO\]\*?\*?:?\s*/i);
+const startTs = Math.floor(startDate.getTime() / 1000);
+const endTs = Math.floor(endDate.getTime() / 1000);
+const filteredMsgs = rawMsgs.filter(m => m.timestamp >= startTs && m.timestamp <= endTs);
 ```
 
-Também verificar com `includes` como fallback — se a IA colocar o prefixo no meio da resposta.
+Sem o limite de 50 mensagens — importa todas do período selecionado.
 
-**C. Reforçar prompt de saída**
+### Melhorias sobre o sync atual
+- Controle do período (não importa tudo)
+- Sem limite de 50 msgs — traz todas do período
+- Feedback visual melhor (progresso por chat)
+- Pode ser executado várias vezes para períodos diferentes
+- Deduplicação mantida via `zapi_message_id`
 
-Mover as instruções de saída para o **início** do system prompt (antes de `instrucoes`) e torná-las mais enfáticas com exemplos concretos.
-
-**D. Auto-off: preservar dados da sessão (linhas 908-936)**
-
-Em vez de `dados: { auto_off_ate: null }`, fazer:
-```typescript
-const currentDados = sessao?.dados || {};
-dados: { ...currentDados, auto_off_ate: autoOffAte }
-```
-Porém, no contexto do `executeFlowFrom`, não temos acesso direto aos dados da sessão. Solução: buscar a sessão atual antes de atualizar, ou usar SQL raw para fazer jsonb merge.
-
-Alternativa mais simples: usar `UPDATE ... SET dados = dados || '{"auto_off_ate": "..."}'::jsonb` via RPC ou query direta.
-
-**E. Adicionar log no exit para debug**
-
-Logar quando o exitHandle é detectado e qual é o próximo nó para facilitar debug futuro.
-
-## Arquivo afetado
+## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/zapi-webhook/index.ts` | Defaults de saída, regex robusta, prompt reforçado, auto_off preservar dados |
-
-## Resultado esperado
-
-Quando a IA perceber que a dúvida foi resolvida (ex: "De nada! Qualquer coisa é só chamar"), ela usará `[SUCESSO]` porque agora sempre terá instruções para isso. O engine detectará o prefixo mesmo com variações, seguirá pelo handle `sim` → auto_off → gerenciar_conversa → conversa fechada.
+| `src/components/conversas/SincronizarWhatsappDialog.tsx` | Novo — dialog com date pickers e lógica de sync |
+| `src/pages/Conversas.tsx` | Botão sync abre dialog; remover `handleSync` inline |
 

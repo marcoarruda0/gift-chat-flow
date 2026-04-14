@@ -448,10 +448,10 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Salvar resumo da interação em</Label>
-                <Select value={config.salvar_resumo_campo || ""} onValueChange={(v) => updateConfig("salvar_resumo_campo", v)}>
+                <Select value={config.salvar_resumo_campo || "nenhum"} onValueChange={(v) => updateConfig("salvar_resumo_campo", v === "nenhum" ? "" : v)}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhum" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="nenhum">Nenhum</SelectItem>
                     <SelectItem value="notas">Notas do contato</SelectItem>
                     <SelectItem value="campo_personalizado">Campo personalizado</SelectItem>
                   </SelectContent>

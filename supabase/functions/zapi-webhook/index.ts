@@ -502,14 +502,27 @@ IMPORTANTE: Não use markdown (**, ##) nos prefixos. O prefixo deve ser LITERAL:
 
           // Check for exit conditions
           let exitHandle: string | null = null;
-          if (resposta.startsWith("[SUCESSO]")) {
-            resposta = resposta.replace("[SUCESSO]", "").trim();
+          // Robust exit detection with regex (handles markdown, spaces, colons)
+          const sucessoMatch = resposta.match(/^\s*\*{0,2}\[SUCESSO\]\*{0,2}:?\s*/i);
+          const interrupcaoMatch = !sucessoMatch ? resposta.match(/^\s*\*{0,2}\[INTERRUPCAO\]\*{0,2}:?\s*/i) : null;
+
+          if (sucessoMatch) {
+            resposta = resposta.slice(sucessoMatch[0].length).trim();
             exitHandle = "sim";
-            console.log("Assistente IA: SUCESSO detected");
-          } else if (resposta.startsWith("[INTERRUPCAO]")) {
-            resposta = resposta.replace("[INTERRUPCAO]", "").trim();
+            console.log("Assistente IA: SUCESSO detected via regex");
+          } else if (interrupcaoMatch) {
+            resposta = resposta.slice(interrupcaoMatch[0].length).trim();
             exitHandle = "interrupcao";
-            console.log("Assistente IA: INTERRUPCAO detected");
+            console.log("Assistente IA: INTERRUPCAO detected via regex");
+          } else if (resposta.includes("[SUCESSO]")) {
+            // Fallback: prefix somewhere in the response
+            resposta = resposta.replace(/\*{0,2}\[SUCESSO\]\*{0,2}:?\s*/i, "").trim();
+            exitHandle = "sim";
+            console.log("Assistente IA: SUCESSO detected via includes fallback");
+          } else if (resposta.includes("[INTERRUPCAO]")) {
+            resposta = resposta.replace(/\*{0,2}\[INTERRUPCAO\]\*{0,2}:?\s*/i, "").trim();
+            exitHandle = "interrupcao";
+            console.log("Assistente IA: INTERRUPCAO detected via includes fallback");
           }
 
           // Send response to contact

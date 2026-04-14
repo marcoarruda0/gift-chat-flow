@@ -695,39 +695,28 @@ async function executeFlowFrom(
       }
 
       case "assistente_ia": {
-        const prompt = config.prompt || "";
-        if (prompt) {
-          const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-          if (LOVABLE_API_KEY) {
-            try {
-              const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  model: "google/gemini-2.5-flash",
-                  messages: [
-                    { role: "system", content: replaceVariables(prompt, contato) },
-                    { role: "user", content: "Responda de forma direta e concisa." },
-                  ],
-                }),
-              });
-              if (aiResponse.ok) {
-                const aiData = await aiResponse.json();
-                const resposta = aiData.choices?.[0]?.message?.content || "";
-                if (resposta) {
-                  await sendZapiText(zapiConfig, phone, resposta);
-                  await saveBotMessage(supabase, conversaId, tenantId, resposta);
-                }
-              }
-            } catch (aiErr) {
-              console.error("AI node error:", aiErr);
-            }
-          }
+        // Send initial message if configured
+        const msgInicial = config.msg_inicial || "";
+        if (msgInicial && config.msg_inicial_tipo !== "sistema") {
+          const msgInicialText = replaceVariables(msgInicial, contato);
+          await sendZapiText(zapiConfig, phone, msgInicialText);
+          await saveBotMessage(supabase, conversaId, tenantId, msgInicialText);
         }
-        break;
+
+        // Mark session as waiting for response (multi-turn AI conversation)
+        if (sessaoId) {
+          await supabase
+            .from("fluxo_sessoes")
+            .update({
+              node_atual: node.id,
+              aguardando_resposta: true,
+              dados: { historico_ia: [], ultima_interacao: new Date().toISOString() },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", sessaoId);
+        }
+        console.log("Assistente IA initialized, waiting for user message");
+        return; // STOP execution, wait for next message
       }
 
       case "webhook": {

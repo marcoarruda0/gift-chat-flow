@@ -111,6 +111,7 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
               createdAt={m.created_at}
               senderName={m.metadata?.senderName}
               senderAvatar={m.metadata?.senderAvatar}
+              metadata={m.metadata}
             />
           ))
         )}

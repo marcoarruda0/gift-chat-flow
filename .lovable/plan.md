@@ -1,84 +1,58 @@
 
 
-# Implementar Backend Completo do Nó "Assistente IA"
+# Nó de Gerenciamento de Conversa + Auto-Off com "Religar"
 
-## Problema
+## Resumo
 
-O handler `assistente_ia` no webhook (linhas 697-731) é uma versão mínima que:
-- Lê `config.prompt` mas o frontend salva `config.instrucoes`
-- Envia uma mensagem fixa ("Responda de forma direta e concisa") em vez da mensagem real do contato
-- Não suporta multi-turno (responde uma vez e o fluxo termina)
-- Ignora todas as configurações do frontend: modelo, mensagem inicial, contexto geral, temperatura, condições de saída (sucesso/interrupção), inatividade
+Duas mudanças:
+1. **Novo nó "Gerenciar Conversa"** — permite abrir ou fechar uma conversa dentro do fluxo, conectando com a funcionalidade do módulo Conversas (que já usa `status: "aberta" | "fechada"`)
+2. **Auto-Off com modo "Religar"** — adicionar uma opção ao nó auto_off para limpar o bloqueio de respostas automáticas (usar no final dos fluxos para reativar)
 
-Por isso o fluxo parou no "Agente IA - Outros Assuntos" — o nó respondeu uma vez e encerrou a sessão.
+---
 
-## Mudanças no `supabase/functions/zapi-webhook/index.ts`
+## 1. Novo nó: `gerenciar_conversa`
 
-### 1. Handler `assistente_ia` no `executeFlowFrom` (linhas 697-731)
+### `nodeTypes.ts`
+- Adicionar tipo `gerenciar_conversa` com ícone `DoorOpen` ou `MessageSquareOff`, cor distinta
 
-Reescrever completamente para:
-- **Mensagem inicial**: Se `config.msg_inicial` está configurado e `config.msg_inicial_tipo === "contato"`, enviar a mensagem ao contato via Z-API
-- **Marcar sessão como `aguardando_resposta: true`** no nó atual, com `dados` contendo o histórico de conversa da IA (array de mensagens)
-- **Parar execução** (como faz o `triagem_ia` e o `menu`)
+### `NodeConfigPanel.tsx`
+- Config com select de ação: `"fechar"` ou `"abrir"`
+- Campo opcional `motivo` (texto livre, salvo como nota/metadata)
 
-### 2. Resposta do `assistente_ia` no handler de sessão (após triagem_ia, ~linha 410)
+### `FlowNode.tsx`
+- Preview: "Fechar conversa" ou "Abrir conversa"
 
-Quando `sessao.aguardando_resposta` e nó atual é `assistente_ia`:
-- Montar o system prompt usando: `config.instrucoes` + `config.contexto_geral` + `config.instrucoes_individuais` (com `replaceVariables`)
-- Buscar artigos da `conhecimento_base` se existirem para o tenant (integrar base de conhecimento)
-- Recuperar histórico de conversa da sessão (`sessao.dados.historico_ia`)
-- Chamar a IA com o modelo configurado (`config.modelo`) e temperatura (`config.temperatura`)
-- Adicionar condições de saída ao prompt:
-  - Se a IA determinar "SUCESSO" (baseado em `config.sucesso_descricao`), seguir pelo handle `sim`
-  - Se determinar "INTERRUPÇÃO" (baseado em `config.interrupcao_descricao`), seguir pelo handle `interrupcao`
-  - Caso contrário, enviar resposta ao contato e manter `aguardando_resposta: true` (multi-turno)
-- Atualizar histórico no `dados` da sessão
-- Controle de inatividade: se `config.inatividade_tempo` configurado, verificar timestamp da última interação
+### `zapi-webhook/index.ts` (handler no `executeFlowFrom`)
+- `case "gerenciar_conversa"`:
+  - Se `config.acao === "fechar"`: `UPDATE conversas SET status = 'fechada' WHERE id = conversaId`
+  - Se `config.acao === "abrir"`: `UPDATE conversas SET status = 'aberta' WHERE id = conversaId`
+  - Continua para o próximo nó
 
-### 3. Prompt inteligente com detecção de saída
+---
 
-O system prompt incluirá instrução para a IA retornar um prefixo especial:
-- `[SUCESSO]` quando a condição de sucesso for atendida
-- `[INTERRUPCAO]` quando detectar pedido de interrupção
-- Caso contrário, responder normalmente
+## 2. Auto-Off com opção "Religar"
 
-O handler parseará o prefixo para decidir se continua o loop ou segue para o próximo nó.
+### `NodeConfigPanel.tsx`
+- Adicionar um select no topo do bloco auto_off: **Ação** → `"desligar"` (padrão atual) ou `"religar"`
+- Quando `acao === "religar"`, esconder os campos de tempo (não precisa de duração)
+- Label muda para "Religar resposta automática"
 
-### 4. Tratamento de erro
+### `FlowNode.tsx`
+- Preview: se `config.acao === "religar"` → mostrar "⚡ Religar auto" em vez do timer
 
-Se a IA falhar, enviar `config.msg_erro` (ou mensagem padrão) ao contato.
+### `zapi-webhook/index.ts`
+- No handler `auto_off`:
+  - Se `config.acao === "religar"`: limpar `auto_off_ate` da sessão (`dados: { auto_off_ate: null }`)
+  - Caso contrário: comportamento atual (setar timer)
 
-## Estrutura dos dados na sessão
+---
 
-```text
-sessao.dados = {
-  historico_ia: [
-    { role: "system", content: "..." },
-    { role: "user", content: "mensagem do contato" },
-    { role: "assistant", content: "resposta da IA" },
-    ...
-  ],
-  ultima_interacao: "2026-04-14T09:34:44Z"
-}
-```
-
-## Fluxo de execução
-
-```text
-1. Fluxo chega no assistente_ia
-2. Envia msg_inicial (se configurada) → "Olá! Sou o assistente do setor X"
-3. Pausa (aguardando_resposta = true, historico_ia = [])
-4. Contato envia: "qual o horário de funcionamento?"
-5. Monta prompt com instrucoes + contexto_geral + conhecimento_base
-6. IA responde → envia ao contato
-7. Se [SUCESSO] → handle "sim" → próximo nó
-8. Se [INTERRUPCAO] → handle "interrupcao" → próximo nó
-9. Caso contrário → mantém loop (volta ao passo 4)
-```
-
-## Arquivo afetado
+## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/zapi-webhook/index.ts` | Reescrever handler `assistente_ia`; adicionar resposta multi-turno no handler de sessão |
+| `src/components/fluxos/nodeTypes.ts` | Adicionar `gerenciar_conversa` |
+| `src/components/fluxos/NodeConfigPanel.tsx` | Config do novo nó + toggle religar no auto_off |
+| `src/components/fluxos/nodes/FlowNode.tsx` | Preview dos dois |
+| `supabase/functions/zapi-webhook/index.ts` | Handler `gerenciar_conversa` + lógica religar no `auto_off` |
 

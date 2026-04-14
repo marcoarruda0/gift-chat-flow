@@ -221,6 +221,26 @@ async function handleFluxoEngine(
   zapiConfig: any
 ): Promise<boolean> {
   try {
+    // 0. Check for auto_off — block automatic responses if still active
+    const { data: existingSessao } = await supabase
+      .from("fluxo_sessoes")
+      .select("id, dados")
+      .eq("conversa_id", conversaId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (existingSessao?.dados?.auto_off_ate) {
+      const autoOffAte = new Date(existingSessao.dados.auto_off_ate);
+      if (autoOffAte > new Date()) {
+        console.log(`Auto-off active until ${autoOffAte.toISOString()}, blocking flow`);
+        return false;
+      } else {
+        // Auto-off expired, clean up session
+        await supabase.from("fluxo_sessoes").delete().eq("id", existingSessao.id);
+        console.log("Auto-off expired, cleaning up session");
+      }
+    }
+
     // 1. Check for active session (conversation in the middle of a flow)
     const { data: sessao } = await supabase
       .from("fluxo_sessoes")

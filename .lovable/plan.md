@@ -1,33 +1,26 @@
 
 
-# Mudanças Estéticas e Funcionais nos Nós do Fluxo
+# Melhorias nos Nós "Conteúdo" e "Atraso" do Editor de Fluxos
 
-## 1. Handles horizontais (entrada esquerda, saída direita)
+## 1. Nó "Conteúdo" — Upload de mídia
 
-Trocar todos os `Position.Top` (target) para `Position.Left` e `Position.Bottom` (source) para `Position.Right`.
+Atualmente, ao selecionar tipo "Imagem", "Áudio" ou "Vídeo", só aparece o campo de texto. Vamos adicionar um campo de upload de arquivo que salva no storage e guarda a URL no config.
 
-Para nós especiais:
-- **Menu**: handles de opções empilhados verticalmente no lado direito (distribuídos por `top` em vez de `left`)
-- **Condicional**: handles "sim" e "nao" empilhados verticalmente no lado direito (top 35% e 65%)
+**Mudança em `NodeConfigPanel.tsx`:**
+- Quando `config.tipo` for `imagem`, `audio` ou `video`: mostrar um campo `<input type="file">` com accept adequado (`.jpg,.png,.gif,.webp` / `.mp3,.m4a,.ogg` / `.mp4,.mov,.webm`)
+- Ao selecionar arquivo, fazer upload para o bucket `chat-media` via Supabase storage em `{tenant_id}/fluxos/{filename}`
+- Salvar a URL pública em `config.media_url`
+- Mostrar preview da mídia (imagem inline, nome do arquivo para áudio/vídeo)
+- Manter o campo "Corpo da mensagem" como legenda opcional
 
-**Arquivo:** `src/components/fluxos/nodes/FlowNode.tsx`
+## 2. Nó "Atraso" — Adicionar opção "Dias"
 
-## 2. Context menu (duplicar / excluir) ao clicar no nó
+**Mudança em `NodeConfigPanel.tsx` (linhas ~163-170):**
+- Adicionar `<SelectItem value="dia">Dias</SelectItem>` no Select de unidade do nó `atraso`
 
-Ao clicar com botão direito (ou via botões que aparecem ao selecionar), mostrar opções "Duplicar" e "Excluir".
-
-Abordagem: adicionar um pequeno toolbar flutuante que aparece quando o nó está selecionado (`selected === true`), posicionado no canto superior direito do nó, com dois botões de ícone (Copy + Trash2).
-
-As ações de duplicar e excluir precisam ser executadas no `FluxoEditor.tsx`, então passaremos callbacks `onDuplicate` e `onDelete` via `data` do nó.
-
-**Arquivos:**
-- `src/components/fluxos/nodes/FlowNode.tsx` — toolbar com botões ao selecionar
-- `src/pages/FluxoEditor.tsx` — funções `duplicateNode` e `deleteNode`, passadas via `data` de cada nó
-
-### Detalhes técnicos
+## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `FlowNode.tsx` | `Position.Top` → `Position.Left`, `Position.Bottom` → `Position.Right`; toolbar flutuante com Duplicar/Excluir quando `selected` |
-| `FluxoEditor.tsx` | Funções `duplicateNode(nodeId)` e `deleteNode(nodeId)`; injetar callbacks no `data` dos nós |
+| `src/components/fluxos/NodeConfigPanel.tsx` | Upload de mídia no nó conteúdo; opção "Dias" no nó atraso |
 

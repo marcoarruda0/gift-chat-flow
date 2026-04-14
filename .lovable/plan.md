@@ -1,26 +1,78 @@
 
 
-# Melhorias nos Nós "Conteúdo" e "Atraso" do Editor de Fluxos
+# Melhorias no Nó "Assistente IA" do Editor de Fluxos
 
-## 1. Nó "Conteúdo" — Upload de mídia
+Baseado nas referências do BotConversa, o nó atual tem apenas 2 campos (Prompt e Máximo de turnos). Vamos expandir significativamente com todas as funcionalidades relevantes.
 
-Atualmente, ao selecionar tipo "Imagem", "Áudio" ou "Vídeo", só aparece o campo de texto. Vamos adicionar um campo de upload de arquivo que salva no storage e guarda a URL no config.
+## Funcionalidades a implementar
 
-**Mudança em `NodeConfigPanel.tsx`:**
-- Quando `config.tipo` for `imagem`, `audio` ou `video`: mostrar um campo `<input type="file">` com accept adequado (`.jpg,.png,.gif,.webp` / `.mp3,.m4a,.ogg` / `.mp4,.mov,.webm`)
-- Ao selecionar arquivo, fazer upload para o bucket `chat-media` via Supabase storage em `{tenant_id}/fluxos/{filename}`
-- Salvar a URL pública em `config.media_url`
-- Mostrar preview da mídia (imagem inline, nome do arquivo para áudio/vídeo)
-- Manter o campo "Corpo da mensagem" como legenda opcional
+### Configurações no painel lateral (`NodeConfigPanel.tsx`)
 
-## 2. Nó "Atraso" — Adicionar opção "Dias"
+**Bloco 1 — Mensagem Inicial**
+- Radio: "Mensagem Inicial Para o Contato" / "Mensagem Inicial Para a IA"
+- Textarea com a mensagem (suporte a variáveis `{{nome}}`, `{{plano}}`)
+- Contador de caracteres (limite 1000)
 
-**Mudança em `NodeConfigPanel.tsx` (linhas ~163-170):**
-- Adicionar `<SelectItem value="dia">Dias</SelectItem>` no Select de unidade do nó `atraso`
+**Bloco 2 — Personalidade**
+- Idioma (Select: Português, Inglês, Espanhol)
+- Temperatura (Slider 0 a 2, default 1) com tooltip explicativo
+- Instruções do assistente (Textarea — prompt principal do sistema)
+- Instruções individuais (Textarea — variáveis de contexto por contato, ex: `Nome: {{nome}}, Plano: {{plano}}`)
+
+**Bloco 3 — Comportamento**
+- Mensagem de erro personalizada (Textarea — mensagem quando IA falha)
+- Modelo (Select: gemini-2.5-flash, gemini-2.5-pro, gpt-5-mini, gpt-5)
+- Contexto Geral (Textarea — informações da empresa/produto)
+- Tempo de espera para agrupar mensagens (Switch + campos número/unidade em segundos)
+
+**Bloco 4 — Condições de Saída**
+- Sucesso do assistente (Textarea — descrever quando considerar sucesso)
+- Interrupção do assistente (Textarea — quando interromper e transferir)
+- Parar IA por inatividade (número + unidade minutos/horas)
+- Salvar resumo da interação em (Select — campo do contato)
+
+### Saídas do nó (`FlowNode.tsx`)
+
+O nó passa a ter **2 handles de saída** (como o condicional):
+- **Sucesso** (verde) — quando IA resolve a dúvida
+- **Interrupção** (vermelho) — quando IA é interrompida ou transfere
+
+### Preview no nó
+
+Mostrar o nome do modelo e trecho das instruções do assistente.
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/fluxos/NodeConfigPanel.tsx` | Upload de mídia no nó conteúdo; opção "Dias" no nó atraso |
+| `src/components/fluxos/NodeConfigPanel.tsx` | Reescrever seção `assistente_ia` com todos os campos acima |
+| `src/components/fluxos/nodes/FlowNode.tsx` | Adicionar handles "sucesso" e "interrupcao" para `assistente_ia` |
+
+## Detalhes técnicos
+
+Todos os valores são salvos em `config` do nó (não há mudança de DB — são dados do JSON do fluxo):
+
+```text
+config: {
+  msg_inicial_tipo: "contato" | "ia",
+  msg_inicial: string,
+  idioma: "pt" | "en" | "es",
+  temperatura: number,
+  instrucoes: string,
+  instrucoes_individuais: string,
+  msg_erro: string,
+  modelo: string,
+  contexto_geral: string,
+  agrupar_msgs: boolean,
+  agrupar_tempo: number,
+  agrupar_unidade: "seg",
+  sucesso_descricao: string,
+  interrupcao_descricao: string,
+  inatividade_tempo: number,
+  inatividade_unidade: "min" | "hora",
+  salvar_resumo_campo: string,
+}
+```
+
+O painel será organizado em seções visuais com labels e descrições, similar às screenshots de referência. O Slider usará o componente `@/components/ui/slider` já existente.
 

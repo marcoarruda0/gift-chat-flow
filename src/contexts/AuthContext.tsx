@@ -12,16 +12,23 @@ interface Profile {
   mostrar_apelido: boolean;
 }
 
+interface TenantInfo {
+  id: string;
+  nome: string;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   roles: string[];
+  tenants: TenantInfo[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, nome: string, empresa?: string) => Promise<void>;
   signOut: () => Promise<void>;
   hasRole: (role: string) => boolean;
+  switchTenant: (tenantId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
+  const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -50,6 +58,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRoles(data?.map((r) => r.role) || []);
   };
 
+  const fetchTenants = async (userId: string) => {
+    const { data: userTenants } = await supabase
+      .from("user_tenants")
+      .select("tenant_id")
+      .eq("user_id", userId);
+
+    if (userTenants && userTenants.length > 0) {
+      const tenantIds = userTenants.map((ut: any) => ut.tenant_id);
+      const { data: tenantData } = await supabase
+        .from("tenants")
+        .select("id, nome")
+        .in("id", tenantIds);
+      setTenants(tenantData || []);
+    } else {
+      setTenants([]);
+    }
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
@@ -59,10 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(() => {
             fetchProfile(session.user.id);
             fetchRoles(session.user.id);
+            fetchTenants(session.user.id);
           }, 0);
         } else {
           setProfile(null);
           setRoles([]);
+          setTenants([]);
         }
         setLoading(false);
       }
@@ -74,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         fetchProfile(session.user.id);
         fetchRoles(session.user.id);
+        fetchTenants(session.user.id);
       }
       setLoading(false);
     });
@@ -101,9 +130,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = (role: string) => roles.includes(role);
 
+  const switchTenant = async (tenantId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ tenant_id: tenantId } as any)
+      .eq("id", user.id);
+    if (!error) {
+      await fetchProfile(user.id);
+      await fetchRoles(user.id);
+    }
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, roles, loading, signIn, signUp, signOut, hasRole }}
+      value={{ user, session, profile, roles, tenants, loading, signIn, signUp, signOut, hasRole, switchTenant }}
     >
       {children}
     </AuthContext.Provider>

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight } from "lucide-react";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
 import DepartamentosConfig from "@/components/empresa/DepartamentosConfig";
@@ -25,9 +25,10 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function Empresa() {
-  const { profile, user, hasRole } = useAuth();
+  const { profile, user, hasRole, tenants, switchTenant } = useAuth();
   const { toast } = useToast();
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
+  const isMaster = hasRole("admin_master");
 
   // Dados da Empresa
   const [tenantData, setTenantData] = useState({ nome: "", cnpj: "", telefone_empresa: "" });
@@ -56,6 +57,11 @@ export default function Empresa() {
   const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; nome: string } | null>(null);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+
+  // Nova empresa
+  const [showNewTenant, setShowNewTenant] = useState(false);
+  const [newTenantName, setNewTenantName] = useState("");
+  const [creatingTenant, setCreatingTenant] = useState(false);
 
   const tenantId = profile?.tenant_id;
 
@@ -255,6 +261,11 @@ export default function Empresa() {
           {isAdmin && (
             <TabsTrigger value="respostas" className="gap-2">
               <Settings2 className="h-4 w-4" /> Respostas
+            </TabsTrigger>
+          )}
+          {isMaster && (
+            <TabsTrigger value="empresas" className="gap-2">
+              <ArrowLeftRight className="h-4 w-4" /> Empresas
             </TabsTrigger>
           )}
         </TabsList>
@@ -544,6 +555,55 @@ export default function Empresa() {
             <RespostasRapidasConfig />
           </TabsContent>
         )}
+        {/* ── Empresas (multi-tenant) ── */}
+        {isMaster && (
+          <TabsContent value="empresas" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Empresas</CardTitle>
+                  <CardDescription>Gerencie e alterne entre empresas</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setShowNewTenant(true)}>
+                  <Plus className="h-4 w-4 mr-1" /> Nova Empresa
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-32">Ação</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tenants.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-medium">
+                          {t.nome}
+                          {t.id === tenantId && (
+                            <Badge variant="default" className="ml-2 text-xs">Ativa</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">Ativo</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {t.id !== tenantId && (
+                            <Button size="sm" variant="outline" onClick={() => switchTenant(t.id)}>
+                              <ArrowLeftRight className="h-3 w-3 mr-1" /> Alternar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Dialog de convite */}
@@ -604,6 +664,60 @@ export default function Empresa() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Nova Empresa */}
+      <Dialog open={showNewTenant} onOpenChange={setShowNewTenant}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nova Empresa</DialogTitle>
+            <DialogDescription>Crie uma nova empresa no sistema</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nome da Empresa</Label>
+              <Input
+                value={newTenantName}
+                onChange={(e) => setNewTenantName(e.target.value)}
+                placeholder="Nome da empresa"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewTenant(false)}>Cancelar</Button>
+            <Button
+              onClick={async () => {
+                if (!newTenantName.trim() || !user) return;
+                setCreatingTenant(true);
+                const { data: newTenant, error } = await supabase
+                  .from("tenants")
+                  .insert({ nome: newTenantName.trim() } as any)
+                  .select("id")
+                  .single();
+                if (error) {
+                  toast({ title: "Erro ao criar empresa", description: error.message, variant: "destructive" });
+                  setCreatingTenant(false);
+                  return;
+                }
+                // Add user to new tenant
+                await supabase.from("user_tenants").insert({
+                  user_id: user.id,
+                  tenant_id: newTenant.id,
+                } as any);
+                toast({ title: "Empresa criada com sucesso!" });
+                setShowNewTenant(false);
+                setNewTenantName("");
+                setCreatingTenant(false);
+                // Reload tenants
+                window.location.reload();
+              }}
+              disabled={creatingTenant || !newTenantName.trim()}
+            >
+              {creatingTenant ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Criar Empresa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,78 +1,44 @@
 
 
-# Melhorias no Nó "Assistente IA" do Editor de Fluxos
+# Correções no Módulo Fluxos: Menu (4 botões) + Novo Nó Auto-Off
 
-Baseado nas referências do BotConversa, o nó atual tem apenas 2 campos (Prompt e Máximo de turnos). Vamos expandir significativamente com todas as funcionalidades relevantes.
+## 1. Nó Menu — Permitir 4 botões
 
-## Funcionalidades a implementar
+O WhatsApp na verdade permite até **3 reply buttons**, mas a API de listas permite até 10 seções. O usuário pediu "4 botões", então vamos aumentar o limite de botões interativos de 3 para 4.
 
-### Configurações no painel lateral (`NodeConfigPanel.tsx`)
+**Mudança em `NodeConfigPanel.tsx`:**
+- Linha 597-598: trocar limite de `3` para `4`
+- Linha 608: atualizar texto de "Máximo 3" para "Máximo 4"
+- Linha 649: trocar `3` para `4`
 
-**Bloco 1 — Mensagem Inicial**
-- Radio: "Mensagem Inicial Para o Contato" / "Mensagem Inicial Para a IA"
-- Textarea com a mensagem (suporte a variáveis `{{nome}}`, `{{plano}}`)
-- Contador de caracteres (limite 1000)
+## 2. Novo Nó "Auto-Off" — Pausar resposta automática
 
-**Bloco 2 — Personalidade**
-- Idioma (Select: Português, Inglês, Espanhol)
-- Temperatura (Slider 0 a 2, default 1) com tooltip explicativo
-- Instruções do assistente (Textarea — prompt principal do sistema)
-- Instruções individuais (Textarea — variáveis de contexto por contato, ex: `Nome: {{nome}}, Plano: {{plano}}`)
+Baseado na referência (imagem enviada), o Auto-Off é um nó que **pausa a resposta automática por um tempo determinado** (formato `HH:MM:SS` ou dias). Isso evita que o contato receba a mesma mensagem de boas-vindas/início do fluxo repetidamente após ser atendido.
 
-**Bloco 3 — Comportamento**
-- Mensagem de erro personalizada (Textarea — mensagem quando IA falha)
-- Modelo (Select: gemini-2.5-flash, gemini-2.5-pro, gpt-5-mini, gpt-5)
-- Contexto Geral (Textarea — informações da empresa/produto)
-- Tempo de espera para agrupar mensagens (Switch + campos número/unidade em segundos)
+**Mudanças:**
 
-**Bloco 4 — Condições de Saída**
-- Sucesso do assistente (Textarea — descrever quando considerar sucesso)
-- Interrupção do assistente (Textarea — quando interromper e transferir)
-- Parar IA por inatividade (número + unidade minutos/horas)
-- Salvar resumo da interação em (Select — campo do contato)
+### `nodeTypes.ts`
+- Adicionar `auto_off` com ícone `TimerOff` (lucide), cor vermelha/alaranjada
 
-### Saídas do nó (`FlowNode.tsx`)
+### `NodeConfigPanel.tsx`
+- Nova seção para `auto_off`:
+  - Label "Desligar resposta padrão por"
+  - 3 campos numéricos lado a lado: Horas / Minutos / Segundos (formato `HH:MM:SS` como na referência)
+  - Campo adicional: opção de dias (Select com "Horas:Min:Seg" / "Dias")
+  - Descrição explicativa: "A resposta automática será pausada para este contato pelo tempo definido"
 
-O nó passa a ter **2 handles de saída** (como o condicional):
-- **Sucesso** (verde) — quando IA resolve a dúvida
-- **Interrupção** (vermelho) — quando IA é interrompida ou transfere
+### `FlowNode.tsx`
+- Preview: mostrar o tempo formatado (ex: `00:05:00`)
+- Handles: entrada à esquerda, saída à direita (padrão)
 
-### Preview no nó
-
-Mostrar o nome do modelo e trecho das instruções do assistente.
+### `NodePalette.tsx`
+- Verificar se `auto_off` aparece automaticamente (provavelmente já lista todos do `NODE_TYPE_CONFIG`)
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/fluxos/NodeConfigPanel.tsx` | Reescrever seção `assistente_ia` com todos os campos acima |
-| `src/components/fluxos/nodes/FlowNode.tsx` | Adicionar handles "sucesso" e "interrupcao" para `assistente_ia` |
-
-## Detalhes técnicos
-
-Todos os valores são salvos em `config` do nó (não há mudança de DB — são dados do JSON do fluxo):
-
-```text
-config: {
-  msg_inicial_tipo: "contato" | "ia",
-  msg_inicial: string,
-  idioma: "pt" | "en" | "es",
-  temperatura: number,
-  instrucoes: string,
-  instrucoes_individuais: string,
-  msg_erro: string,
-  modelo: string,
-  contexto_geral: string,
-  agrupar_msgs: boolean,
-  agrupar_tempo: number,
-  agrupar_unidade: "seg",
-  sucesso_descricao: string,
-  interrupcao_descricao: string,
-  inatividade_tempo: number,
-  inatividade_unidade: "min" | "hora",
-  salvar_resumo_campo: string,
-}
-```
-
-O painel será organizado em seções visuais com labels e descrições, similar às screenshots de referência. O Slider usará o componente `@/components/ui/slider` já existente.
+| `src/components/fluxos/nodeTypes.ts` | Adicionar `auto_off` |
+| `src/components/fluxos/NodeConfigPanel.tsx` | Limite 4 no menu; seção config `auto_off` |
+| `src/components/fluxos/nodes/FlowNode.tsx` | Preview do `auto_off` |
 

@@ -38,10 +38,8 @@ const mainItems = [
   { title: "Disparos", url: "/disparos", icon: Send },
   { title: "Giftback", url: "/giftback", icon: Gift },
   { title: "Base de Conhecimento", url: "/conhecimento", icon: BookOpen },
-  { title: "Empresa", url: "/empresa", icon: Building2 },
   { title: "Peça Rara", url: "/peca-rara", icon: ShoppingBag },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
-  { title: "Config. IA", url: "/configuracoes/ia", icon: Bot },
 ];
 
 export function AppSidebar() {

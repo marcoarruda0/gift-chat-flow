@@ -7,6 +7,7 @@ import { ChatPanel, ChatPanelEmpty } from "@/components/conversas/ChatPanel";
 import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
 import { TransferirDialog } from "@/components/conversas/TransferirDialog";
 import { ImportarConversasDialog } from "@/components/conversas/ImportarConversasDialog";
+import { SincronizarWhatsappDialog } from "@/components/conversas/SincronizarWhatsappDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 

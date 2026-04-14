@@ -117,18 +117,23 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
 
         if (!contato) continue;
 
-        // Find or create conversation
+        // Find or create conversation (any status, most recent)
         let convId: string;
         const { data: existingConv } = await supabase
           .from("conversas")
-          .select("id")
+          .select("id, status")
           .eq("tenant_id", tenantId)
           .eq("contato_id", contato.id)
-          .eq("status", "aberta")
+          .order("created_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (existingConv) {
           convId = existingConv.id;
+          // Reopen if closed
+          if (existingConv.status === "fechada") {
+            await supabase.from("conversas").update({ status: "aberta" }).eq("id", convId);
+          }
         } else {
           const { data: newConv } = await supabase
             .from("conversas")
@@ -173,15 +178,21 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
             const content = msg.body || msg.text || msg.caption || "";
             if (!content) continue;
 
-            // Check duplicate
+            // Check duplicate (normalized key: messageId)
             const { data: existing } = await supabase
               .from("mensagens")
               .select("id")
               .eq("conversa_id", convId)
-              .contains("metadata", { zapi_message_id: zapiId })
+              .or(`metadata->>messageId.eq.${zapiId},metadata->>zapi_message_id.eq.${zapiId}`)
               .maybeSingle();
 
             if (existing) continue;
+
+            // Robust timestamp: try multiple Z-API fields
+            const rawTs = msg.timestamp || msg.momment || msg.messageTimestamp;
+            const msgDate = rawTs
+              ? new Date(rawTs * 1000).toISOString()
+              : (() => { console.warn(`No timestamp for msg ${zapiId}`); return new Date().toISOString(); })();
 
             await supabase.from("mensagens").insert({
               conversa_id: convId,
@@ -190,13 +201,11 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
               remetente: (msg.fromMe ? "atendente" : "contato") as any,
               tipo: "texto" as any,
               metadata: {
-                zapi_message_id: zapiId,
+                messageId: zapiId,
                 senderName: msg.senderName || msg.sender?.name || null,
                 senderAvatar: msg.senderPhoto || msg.sender?.profilePicture || null,
               },
-              created_at: msg.timestamp
-                ? new Date(msg.timestamp * 1000).toISOString()
-                : new Date().toISOString(),
+              created_at: msgDate,
             });
             msgsImported++;
           }

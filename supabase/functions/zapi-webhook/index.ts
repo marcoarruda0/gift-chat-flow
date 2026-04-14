@@ -902,26 +902,67 @@ async function executeFlowFrom(
         break;
 
       case "auto_off": {
-        // Calculate duration in seconds
-        let durationSecs = 0;
-        if ((config.formato || "hms") === "dias") {
-          durationSecs = (config.dias || 1) * 86400;
+        const acaoAutoOff = config.acao || "desligar";
+        if (acaoAutoOff === "religar") {
+          // Clear auto_off_ate to re-enable automatic responses
+          if (sessaoId) {
+            await supabase
+              .from("fluxo_sessoes")
+              .update({
+                dados: { auto_off_ate: null },
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", sessaoId);
+          }
+          console.log("Auto-off: religar — automatic responses re-enabled");
         } else {
-          durationSecs = (config.horas || 0) * 3600 + (config.minutos || 5) * 60 + (config.segundos || 0);
-        }
-        const autoOffAte = new Date(Date.now() + durationSecs * 1000).toISOString();
+          // Calculate duration in seconds
+          let durationSecs = 0;
+          if ((config.formato || "hms") === "dias") {
+            durationSecs = (config.dias || 1) * 86400;
+          } else {
+            durationSecs = (config.horas || 0) * 3600 + (config.minutos || 5) * 60 + (config.segundos || 0);
+          }
+          const autoOffAte = new Date(Date.now() + durationSecs * 1000).toISOString();
 
-        // Store auto_off_ate in session dados
-        if (sessaoId) {
-          await supabase
-            .from("fluxo_sessoes")
-            .update({
-              dados: { auto_off_ate: autoOffAte },
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", sessaoId);
+          // Store auto_off_ate in session dados
+          if (sessaoId) {
+            await supabase
+              .from("fluxo_sessoes")
+              .update({
+                dados: { auto_off_ate: autoOffAte },
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", sessaoId);
+          }
+          console.log(`Auto-off set until ${autoOffAte} (${durationSecs}s)`);
         }
-        console.log(`Auto-off set until ${autoOffAte} (${durationSecs}s)`);
+        break;
+      }
+
+      case "gerenciar_conversa": {
+        const acaoConversa = config.acao || "fechar";
+        const motivo = config.motivo || "";
+        const novoStatus = acaoConversa === "abrir" ? "aberta" : "fechada";
+
+        await supabase
+          .from("conversas")
+          .update({ status: novoStatus })
+          .eq("id", conversaId);
+
+        // Insert system message
+        const sysMsg = acaoConversa === "abrir"
+          ? "Conversa reaberta pelo fluxo automático" + (motivo ? ` — ${motivo}` : "")
+          : "Conversa fechada pelo fluxo automático" + (motivo ? ` — ${motivo}` : "");
+        await supabase.from("mensagens").insert({
+          conversa_id: conversaId,
+          tenant_id: tenantId,
+          conteudo: sysMsg,
+          remetente: "sistema",
+          tipo: "texto",
+        });
+
+        console.log(`Gerenciar conversa: ${novoStatus}${motivo ? ` (${motivo})` : ""}`);
         break;
       }
 

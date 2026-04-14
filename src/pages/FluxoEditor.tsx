@@ -73,6 +73,42 @@ function FluxoEditorInner() {
     [setEdges]
   );
 
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      setNodes((nds) => {
+        const original = nds.find((n) => n.id === nodeId);
+        if (!original) return nds;
+        const newNode: Node = {
+          ...original,
+          id: `${(original.data as any).nodeType}_${Date.now()}`,
+          position: { x: original.position.x + 40, y: original.position.y + 40 },
+          selected: false,
+          data: { ...original.data },
+        };
+        return [...nds, newNode];
+      });
+    },
+    [setNodes]
+  );
+
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
+    },
+    [setNodes, setEdges]
+  );
+
+  const nodesWithCallbacks = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, onDuplicate: duplicateNode, onDelete: deleteNode },
+      })),
+    [nodes, duplicateNode, deleteNode]
+  );
+
   const onNodeClick = useCallback((_: any, node: Node) => {
     setSelectedNode(node);
   }, []);
@@ -187,7 +223,7 @@ function FluxoEditorInner() {
 
         <div className="flex-1" ref={reactFlowWrapper}>
           <ReactFlow
-            nodes={nodes}
+            nodes={nodesWithCallbacks}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}

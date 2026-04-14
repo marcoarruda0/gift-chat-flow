@@ -475,9 +475,9 @@ export default function Conversas() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             onNewConversa={() => setNovaConversaOpen(true)}
-            onSync={handleSync}
+            onSync={() => setSyncDialogOpen(true)}
             onImport={() => setImportDialogOpen(true)}
-            syncing={syncing}
+            syncing={false}
             loading={loadingConversas}
             currentUserId={user?.id || null}
             userDepartamentoId={(profile as any)?.departamento_id || null}

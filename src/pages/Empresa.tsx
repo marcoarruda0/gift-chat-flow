@@ -58,7 +58,10 @@ export default function Empresa() {
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; nome: string } | null>(null);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
 
-  const tenantId = profile?.tenant_id;
+  // Nova empresa
+  const [showNewTenant, setShowNewTenant] = useState(false);
+  const [newTenantName, setNewTenantName] = useState("");
+  const [creatingTenant, setCreatingTenant] = useState(false);
 
   useEffect(() => {
     if (!tenantId) return;

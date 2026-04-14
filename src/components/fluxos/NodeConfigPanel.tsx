@@ -674,70 +674,112 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
         {nodeType === "auto_off" && (
           <>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Desligar resposta padrão por</Label>
+              <Label className="text-xs font-semibold">Ação</Label>
+              <Select value={config.acao || "desligar"} onValueChange={(v) => updateConfig("acao", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desligar">⏸️ Desligar resposta automática</SelectItem>
+                  <SelectItem value="religar">⚡ Religar resposta automática</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-[10px] text-muted-foreground">
-                A resposta automática será pausada para este contato pelo tempo definido abaixo.
+                {(config.acao || "desligar") === "religar"
+                  ? "A resposta automática será reativada para este contato."
+                  : "A resposta automática será pausada para este contato pelo tempo definido abaixo."}
+              </p>
+            </div>
+            {(config.acao || "desligar") === "desligar" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Formato</Label>
+                  <Select value={config.formato || "hms"} onValueChange={(v) => updateConfig("formato", v)}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hms">⏱️ Horas : Min : Seg</SelectItem>
+                      <SelectItem value="dias">📅 Dias</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(config.formato || "hms") === "hms" ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">Horas</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={config.horas ?? 0}
+                        onChange={(e) => updateConfig("horas", parseInt(e.target.value) || 0)}
+                        className="h-8 text-sm text-center"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">Minutos</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={config.minutos ?? 5}
+                        onChange={(e) => updateConfig("minutos", parseInt(e.target.value) || 0)}
+                        className="h-8 text-sm text-center"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">Segundos</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={config.segundos ?? 0}
+                        onChange={(e) => updateConfig("segundos", parseInt(e.target.value) || 0)}
+                        className="h-8 text-sm text-center"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Quantidade de dias</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={config.dias ?? 1}
+                      onChange={(e) => updateConfig("dias", parseInt(e.target.value) || 1)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {nodeType === "gerenciar_conversa" && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Ação</Label>
+              <Select value={config.acao || "fechar"} onValueChange={(v) => updateConfig("acao", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fechar">🔒 Fechar conversa</SelectItem>
+                  <SelectItem value="abrir">🔓 Abrir conversa</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {config.acao === "abrir"
+                  ? "A conversa será reaberta no módulo Conversas."
+                  : "A conversa será marcada como fechada no módulo Conversas."}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Formato</Label>
-              <Select value={config.formato || "hms"} onValueChange={(v) => updateConfig("formato", v)}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hms">⏱️ Horas : Min : Seg</SelectItem>
-                  <SelectItem value="dias">📅 Dias</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Motivo (opcional)</Label>
+              <Textarea
+                value={config.motivo || ""}
+                onChange={(e) => updateConfig("motivo", e.target.value)}
+                placeholder="Ex: Atendimento finalizado com sucesso"
+                className="text-sm min-h-[60px]"
+              />
             </div>
-            {(config.formato || "hms") === "hms" ? (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Horas</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={config.horas ?? 0}
-                    onChange={(e) => updateConfig("horas", parseInt(e.target.value) || 0)}
-                    className="h-8 text-sm text-center"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Minutos</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={59}
-                    value={config.minutos ?? 5}
-                    onChange={(e) => updateConfig("minutos", parseInt(e.target.value) || 0)}
-                    className="h-8 text-sm text-center"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">Segundos</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={59}
-                    value={config.segundos ?? 0}
-                    onChange={(e) => updateConfig("segundos", parseInt(e.target.value) || 0)}
-                    className="h-8 text-sm text-center"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <Label className="text-[10px] text-muted-foreground">Quantidade de dias</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={config.dias ?? 1}
-                  onChange={(e) => updateConfig("dias", parseInt(e.target.value) || 1)}
-                  className="h-8 text-sm"
-                />
-              </div>
-            )}
           </>
         )}
 

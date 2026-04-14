@@ -215,12 +215,15 @@ function getPreview(data: FlowNodeData): string {
     case "menu":
       return cfg.pergunta ? cfg.pergunta.substring(0, 40) : "Pergunta do menu...";
     case "auto_off": {
+      if (cfg.acao === "religar") return "⚡ Religar auto";
       if ((cfg.formato || "hms") === "dias") return cfg.dias ? `${cfg.dias} dia(s)` : "1 dia";
       const h = String(cfg.horas ?? 0).padStart(2, "0");
       const m = String(cfg.minutos ?? 5).padStart(2, "0");
       const s = String(cfg.segundos ?? 0).padStart(2, "0");
       return `${h}:${m}:${s}`;
     }
+    case "gerenciar_conversa":
+      return cfg.acao === "abrir" ? "🔓 Abrir conversa" : "🔒 Fechar conversa";
     case "triagem_ia": {
       const setores = (cfg.setores as Array<{nome: string}>) || [];
       if (setores.length > 0) return setores.map(s => s.nome).join(", ");

@@ -21,6 +21,7 @@ function FlowNode({ id, data, selected }: NodeProps) {
   const isCondicional = nodeData.nodeType === "condicional";
   const isGatilho = nodeData.nodeType === "gatilho";
   const isMenu = nodeData.nodeType === "menu";
+  const isAssistenteIA = nodeData.nodeType === "assistente_ia";
   const opcoes: string[] = (nodeData.config?.opcoes as string[]) || [];
 
   return (

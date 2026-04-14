@@ -1,11 +1,14 @@
 import { type Node } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
-import { X, Plus, Trash2, Upload, FileAudio, FileVideo, Image as ImageIcon } from "lucide-react";
+import { X, Plus, Trash2, Upload, FileAudio, FileVideo, Image as ImageIcon, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { NODE_TYPE_CONFIG, type FlowNodeType } from "./nodeTypes";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -259,13 +262,201 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
 
         {nodeType === "assistente_ia" && (
           <>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Prompt</Label>
-              <Textarea value={config.prompt || ""} onChange={(e) => updateConfig("prompt", e.target.value)} placeholder="Instruções para o assistente..." className="text-sm min-h-[80px]" />
+            {/* Bloco 1 — Mensagem Inicial */}
+            <div className="space-y-2 border rounded-md p-2.5 bg-muted/30">
+              <p className="text-[11px] font-semibold text-foreground uppercase tracking-wide">Mensagem Inicial</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Destinatário</Label>
+                <Select value={config.msg_inicial_tipo || "contato"} onValueChange={(v) => updateConfig("msg_inicial_tipo", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contato">Para o Contato</SelectItem>
+                    <SelectItem value="ia">Para a IA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Mensagem</Label>
+                <Textarea
+                  value={config.msg_inicial || ""}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 1000) updateConfig("msg_inicial", e.target.value);
+                  }}
+                  placeholder="Use {{nome}}, {{plano}} para variáveis..."
+                  className="text-sm min-h-[60px]"
+                />
+                <p className="text-[10px] text-muted-foreground text-right">{(config.msg_inicial || "").length}/1000</p>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Máximo de turnos</Label>
-              <Input type="number" value={config.max_turnos || ""} onChange={(e) => updateConfig("max_turnos", e.target.value)} placeholder="5" className="h-8 text-sm" />
+
+            {/* Bloco 2 — Personalidade */}
+            <div className="space-y-2 border rounded-md p-2.5 bg-muted/30">
+              <p className="text-[11px] font-semibold text-foreground uppercase tracking-wide">Personalidade</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Idioma</Label>
+                <Select value={config.idioma || "pt"} onValueChange={(v) => updateConfig("idioma", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pt">Português</SelectItem>
+                    <SelectItem value="en">Inglês</SelectItem>
+                    <SelectItem value="es">Espanhol</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Temperatura: {config.temperatura ?? 1}</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[200px] text-xs">
+                        0 = respostas precisas e repetíveis. 2 = respostas criativas e variadas.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Slider
+                  value={[config.temperatura ?? 1]}
+                  onValueChange={([v]) => updateConfig("temperatura", v)}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  className="py-1"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Instruções do assistente</Label>
+                <Textarea
+                  value={config.instrucoes || ""}
+                  onChange={(e) => updateConfig("instrucoes", e.target.value)}
+                  placeholder="Você é um assistente de vendas da loja X. Seja educado e objetivo..."
+                  className="text-sm min-h-[80px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Instruções individuais (contexto por contato)</Label>
+                <Textarea
+                  value={config.instrucoes_individuais || ""}
+                  onChange={(e) => updateConfig("instrucoes_individuais", e.target.value)}
+                  placeholder="Nome: {{nome}}&#10;Plano: {{plano}}&#10;Saldo: {{saldo_giftback}}"
+                  className="text-sm min-h-[60px] font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Bloco 3 — Comportamento */}
+            <div className="space-y-2 border rounded-md p-2.5 bg-muted/30">
+              <p className="text-[11px] font-semibold text-foreground uppercase tracking-wide">Comportamento</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Modelo</Label>
+                <Select value={config.modelo || "google/gemini-2.5-flash"} onValueChange={(v) => updateConfig("modelo", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                    <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                    <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
+                    <SelectItem value="openai/gpt-5">GPT-5</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Mensagem de erro personalizada</Label>
+                <Textarea
+                  value={config.msg_erro || ""}
+                  onChange={(e) => updateConfig("msg_erro", e.target.value)}
+                  placeholder="Desculpe, não consegui processar sua mensagem. Tente novamente."
+                  className="text-sm min-h-[50px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Contexto geral (informações da empresa)</Label>
+                <Textarea
+                  value={config.contexto_geral || ""}
+                  onChange={(e) => updateConfig("contexto_geral", e.target.value)}
+                  placeholder="Nossa empresa vende roupas femininas. Horário de atendimento: 9h às 18h..."
+                  className="text-sm min-h-[60px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Agrupar mensagens do contato</Label>
+                  <Switch
+                    checked={config.agrupar_msgs || false}
+                    onCheckedChange={(v) => updateConfig("agrupar_msgs", v)}
+                  />
+                </div>
+                {config.agrupar_msgs && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={config.agrupar_tempo || ""}
+                      onChange={(e) => updateConfig("agrupar_tempo", Number(e.target.value))}
+                      placeholder="10"
+                      className="h-8 text-sm w-20"
+                    />
+                    <span className="text-xs text-muted-foreground">segundos</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bloco 4 — Condições de Saída */}
+            <div className="space-y-2 border rounded-md p-2.5 bg-muted/30">
+              <p className="text-[11px] font-semibold text-foreground uppercase tracking-wide">Condições de Saída</p>
+              <div className="space-y-1">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Sucesso do assistente
+                </Label>
+                <Textarea
+                  value={config.sucesso_descricao || ""}
+                  onChange={(e) => updateConfig("sucesso_descricao", e.target.value)}
+                  placeholder="Quando a dúvida do cliente for resolvida ou agendamento confirmado."
+                  className="text-sm min-h-[50px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Interrupção do assistente
+                </Label>
+                <Textarea
+                  value={config.interrupcao_descricao || ""}
+                  onChange={(e) => updateConfig("interrupcao_descricao", e.target.value)}
+                  placeholder="Quando o cliente pedir para falar com um humano ou insistir no problema."
+                  className="text-sm min-h-[50px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Parar IA por inatividade</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={config.inatividade_tempo || ""}
+                    onChange={(e) => updateConfig("inatividade_tempo", Number(e.target.value))}
+                    placeholder="30"
+                    className="h-8 text-sm w-20"
+                  />
+                  <Select value={config.inatividade_unidade || "min"} onValueChange={(v) => updateConfig("inatividade_unidade", v)}>
+                    <SelectTrigger className="h-8 text-sm w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="min">Minutos</SelectItem>
+                      <SelectItem value="hora">Horas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Salvar resumo da interação em</Label>
+                <Select value={config.salvar_resumo_campo || ""} onValueChange={(v) => updateConfig("salvar_resumo_campo", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="notas">Notas do contato</SelectItem>
+                    <SelectItem value="campo_personalizado">Campo personalizado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </>
         )}

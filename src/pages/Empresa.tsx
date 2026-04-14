@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight } from "lucide-react";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
 import DepartamentosConfig from "@/components/empresa/DepartamentosConfig";
@@ -25,9 +25,10 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function Empresa() {
-  const { profile, user, hasRole } = useAuth();
+  const { profile, user, hasRole, tenants, switchTenant } = useAuth();
   const { toast } = useToast();
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
+  const isMaster = hasRole("admin_master");
 
   // Dados da Empresa
   const [tenantData, setTenantData] = useState({ nome: "", cnpj: "", telefone_empresa: "" });

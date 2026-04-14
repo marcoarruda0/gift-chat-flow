@@ -1,59 +1,50 @@
 
 
-# Fix: Sincronização WhatsApp — Endpoint errado + Paginação de chats
+# Fix: 1 Conversa por Contato — Mesclar Duplicadas e Bloquear Novas
 
-## Problemas identificados
+## Problema raiz
 
-### 1. Endpoint de mensagens errado (causa principal dos NOT_FOUND)
-O código usa `load-messages-chat-phone/{phone}` — este endpoint **não existe** no Z-API. O correto é `chat-messages/{phone}`.
+Há **3 locais** no código que criam conversas filtrando apenas por `status = "aberta"`. Se a conversa foi fechada (por fluxo, manualmente, etc.), esses locais criam uma NOVA conversa em vez de reabrir a existente. O webhook e o sync já foram corrigidos, mas faltam dois pontos no frontend.
 
-Todos os logs de console mostram `NOT_FOUND` com mensagem "Unable to find matching target resource method" porque a rota simplesmente não existe.
+Dados atuais: 6 contatos com conversas duplicadas (um contato tem 6 conversas).
 
-### 2. Chats limitados a ~10 (falta paginação)
-A API `GET /chats` do Z-API suporta paginação via query params `page` e `pageSize`. Sem eles, retorna apenas a primeira página (default pequeno). O código precisa paginar para buscar todos os chats.
+## Solução em 3 partes
 
-### 3. Z-API proxy não suporta query params
-O `zapi-proxy` monta a URL como `.../{endpoint}` fixo. Para passar `page` e `pageSize`, precisa suportar query params na URL.
+### 1. Corrigir criação de conversas no frontend (2 arquivos)
 
-## Mudanças
+**`src/pages/Conversas.tsx` — `criarConversa`** (linha 196-202):
+Remover `.eq("status", "aberta")`. Buscar a conversa mais recente do contato (qualquer status). Se encontrar fechada, reabrir.
 
-### `src/components/conversas/SincronizarWhatsappDialog.tsx`
+**`src/pages/Contatos.tsx` — `startConversa`** (linha 154-161):
+Mesma correção: remover filtro de status, buscar mais recente, reabrir se fechada.
 
-**A. Corrigir endpoint de mensagens:**
-```typescript
-// ANTES
-`load-messages-chat-phone/${phone}`
+### 2. Mesclar conversas duplicadas existentes (migration SQL)
 
-// DEPOIS
-`chat-messages/${phone}`
+Script SQL que para cada contato com múltiplas conversas:
+1. Identifica a conversa mais recente (a "principal")
+2. Move todas as mensagens das conversas duplicadas para a principal (`UPDATE mensagens SET conversa_id = ...`)
+3. Move registros de `fluxo_sessoes` e `conversa_transferencias`
+4. Deleta as conversas duplicadas
+5. Atualiza `ultimo_texto` e `ultima_msg_at` da conversa principal
+
+### 3. Adicionar constraint única no banco (migration SQL)
+
+```sql
+CREATE UNIQUE INDEX conversas_tenant_contato_unique 
+ON conversas(tenant_id, contato_id);
 ```
 
-**B. Paginar busca de chats:**
-Em vez de uma única chamada `chats`, fazer loop com `page=1,2,3...` e `pageSize=100` até receber array vazio ou menor que `pageSize`.
-
-**C. Passar query params no endpoint string:**
-```typescript
-// Chats com paginação
-`chats?page=${page}&pageSize=100`
-```
-
-### `supabase/functions/zapi-proxy/index.ts`
-
-**Suportar query params no endpoint:**
-O endpoint já é concatenado diretamente na URL, então query params como `chats?page=1&pageSize=100` já funcionam — nenhuma mudança necessária no proxy.
-
-### Mensagens em batch (otimização)
-Atualmente insere mensagens uma a uma (N+1 queries). Agrupar em batches de 50-100 para reduzir tempo de sync.
+Isso impede que o banco aceite duas conversas para o mesmo contato no mesmo tenant, servindo como proteção final.
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/conversas/SincronizarWhatsappDialog.tsx` | Corrigir endpoint `chat-messages/{phone}`, paginar chats com `page`/`pageSize`, batch insert mensagens |
+| `src/pages/Conversas.tsx` | `criarConversa`: buscar qualquer status, reabrir se fechada |
+| `src/pages/Contatos.tsx` | `startConversa`: buscar qualquer status, reabrir se fechada |
+| Migration SQL | Mesclar duplicadas existentes + unique index |
 
 ## Resultado esperado
 
-- Todos os chats são buscados (não só 10)
-- Mensagens de cada chat são recuperadas corretamente (sem NOT_FOUND)
-- Novas mensagens enviadas do celular aparecem na próxima sincronização
+Cada contato terá exatamente 1 conversa. Todas as mensagens estarão consolidadas. O banco rejeita duplicatas futuras.
 

@@ -150,17 +150,24 @@ export default function Contatos() {
 
   const startConversa = async (contatoId: string) => {
     if (!profile?.tenant_id) return;
-    // Check existing open conversation
+    // Check for ANY existing conversation (regardless of status)
     const { data: existing } = await supabase
       .from("conversas")
-      .select("id")
+      .select("id, status")
       .eq("tenant_id", profile.tenant_id)
       .eq("contato_id", contatoId)
-      .eq("status", "aberta")
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (existing) {
+      // Reopen if closed
+      if (existing.status !== "aberta") {
+        await supabase
+          .from("conversas")
+          .update({ status: "aberta" })
+          .eq("id", existing.id);
+      }
       navigate(`/conversas?id=${existing.id}`);
       return;
     }

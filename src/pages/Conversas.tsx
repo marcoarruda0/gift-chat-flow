@@ -193,22 +193,29 @@ export default function Conversas() {
   const criarConversa = async (contatoId: string) => {
     if (!tenantId) return;
 
-    // Check for existing open conversation
+    // Check for ANY existing conversation (regardless of status)
     const { data: existing } = await supabase
       .from("conversas")
-      .select("id")
+      .select("id, status")
       .eq("tenant_id", tenantId)
       .eq("contato_id", contatoId)
-      .eq("status", "aberta")
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (existing) {
+      // Reopen if closed
+      if (existing.status !== "aberta") {
+        await supabase
+          .from("conversas")
+          .update({ status: "aberta" })
+          .eq("id", existing.id);
+      }
       setSelectedId(existing.id);
       return;
     }
 
-    // Create new conversation
+    // Create new conversation only if none exists
     const { data: nova, error } = await supabase
       .from("conversas")
       .insert({

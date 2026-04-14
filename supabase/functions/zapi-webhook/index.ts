@@ -439,26 +439,34 @@ async function handleFluxoEngine(
               artigos.map((a: any, i: number) => `[${i + 1}] ${a.titulo} (${a.categoria})\n${a.conteudo}`).join("\n---\n");
           }
 
-          // Build exit conditions instructions
-          let exitInstructions = "";
-          if (sucessoDescricao || interrupcaoDescricao) {
-            exitInstructions = "\n\nCONDIÇÕES DE SAÍDA (IMPORTANTE):";
-            if (sucessoDescricao) {
-              exitInstructions += `\n- Se a condição de SUCESSO for atendida (${sucessoDescricao}), comece sua resposta EXATAMENTE com o prefixo [SUCESSO] seguido da mensagem.`;
-            }
-            if (interrupcaoDescricao) {
-              exitInstructions += `\n- Se detectar INTERRUPÇÃO (${interrupcaoDescricao}), comece sua resposta EXATAMENTE com o prefixo [INTERRUPCAO] seguido da mensagem.`;
-            }
-            exitInstructions += "\n- Caso contrário, responda normalmente SEM nenhum prefixo.";
-          }
+          // Build exit conditions with smart defaults
+          const finalSucessoDesc = sucessoDescricao || "A dúvida ou solicitação do usuário foi respondida/resolvida satisfatoriamente, o usuário agradeceu, se despediu, ou disse que não precisa de mais nada";
+          const finalInterrupcaoDesc = interrupcaoDescricao || "O usuário pede para falar com um humano, atendente, ou muda de assunto para algo completamente fora do escopo das instruções";
 
-          // Build system prompt
+          const exitInstructions = `
+REGRAS DE SAÍDA (PRIORIDADE MÁXIMA — SIGA RIGOROSAMENTE):
+Você DEVE avaliar CADA resposta para verificar se uma condição de saída foi atingida.
+
+1. SUCESSO: ${finalSucessoDesc}
+   → Quando isso acontecer, sua resposta DEVE começar EXATAMENTE com [SUCESSO] (sem asteriscos, sem espaços antes).
+   Exemplo: [SUCESSO] De nada! Qualquer coisa é só chamar.
+   Exemplo: [SUCESSO] Fico feliz em ter ajudado!
+
+2. INTERRUPÇÃO: ${finalInterrupcaoDesc}
+   → Quando isso acontecer, sua resposta DEVE começar EXATAMENTE com [INTERRUPCAO] (sem asteriscos, sem espaços antes).
+   Exemplo: [INTERRUPCAO] Vou transferir você para um atendente humano.
+
+3. Se NENHUMA condição de saída foi atingida, responda normalmente SEM nenhum prefixo entre colchetes.
+
+IMPORTANTE: Não use markdown (**, ##) nos prefixos. O prefixo deve ser LITERAL: [SUCESSO] ou [INTERRUPCAO].`;
+
+          // Build system prompt — exit instructions FIRST for priority
           const contato = await getContato(supabase, contatoId);
-          let systemPrompt = replaceVariables(instrucoes, contato);
+          let systemPrompt = exitInstructions + "\n\n";
+          systemPrompt += replaceVariables(instrucoes, contato);
           if (contextoGeral) systemPrompt += "\n\n" + replaceVariables(contextoGeral, contato);
           if (instrucoesIndividuais) systemPrompt += "\n\n" + replaceVariables(instrucoesIndividuais, contato);
           systemPrompt += knowledgeContext;
-          systemPrompt += exitInstructions;
           systemPrompt += "\n\nResponda em português brasileiro. Seja direto e útil.";
 
           // Build messages array
@@ -494,14 +502,27 @@ async function handleFluxoEngine(
 
           // Check for exit conditions
           let exitHandle: string | null = null;
-          if (resposta.startsWith("[SUCESSO]")) {
-            resposta = resposta.replace("[SUCESSO]", "").trim();
+          // Robust exit detection with regex (handles markdown, spaces, colons)
+          const sucessoMatch = resposta.match(/^\s*\*{0,2}\[SUCESSO\]\*{0,2}:?\s*/i);
+          const interrupcaoMatch = !sucessoMatch ? resposta.match(/^\s*\*{0,2}\[INTERRUPCAO\]\*{0,2}:?\s*/i) : null;
+
+          if (sucessoMatch) {
+            resposta = resposta.slice(sucessoMatch[0].length).trim();
             exitHandle = "sim";
-            console.log("Assistente IA: SUCESSO detected");
-          } else if (resposta.startsWith("[INTERRUPCAO]")) {
-            resposta = resposta.replace("[INTERRUPCAO]", "").trim();
+            console.log("Assistente IA: SUCESSO detected via regex");
+          } else if (interrupcaoMatch) {
+            resposta = resposta.slice(interrupcaoMatch[0].length).trim();
             exitHandle = "interrupcao";
-            console.log("Assistente IA: INTERRUPCAO detected");
+            console.log("Assistente IA: INTERRUPCAO detected via regex");
+          } else if (resposta.includes("[SUCESSO]")) {
+            // Fallback: prefix somewhere in the response
+            resposta = resposta.replace(/\*{0,2}\[SUCESSO\]\*{0,2}:?\s*/i, "").trim();
+            exitHandle = "sim";
+            console.log("Assistente IA: SUCESSO detected via includes fallback");
+          } else if (resposta.includes("[INTERRUPCAO]")) {
+            resposta = resposta.replace(/\*{0,2}\[INTERRUPCAO\]\*{0,2}:?\s*/i, "").trim();
+            exitHandle = "interrupcao";
+            console.log("Assistente IA: INTERRUPCAO detected via includes fallback");
           }
 
           // Send response to contact
@@ -903,20 +924,30 @@ async function executeFlowFrom(
 
       case "auto_off": {
         const acaoAutoOff = config.acao || "desligar";
+        
+        // Fetch current session data to merge (preserve historico_ia etc.)
+        let currentDados: any = {};
+        if (sessaoId) {
+          const { data: currentSessao } = await supabase
+            .from("fluxo_sessoes")
+            .select("dados")
+            .eq("id", sessaoId)
+            .single();
+          currentDados = currentSessao?.dados || {};
+        }
+
         if (acaoAutoOff === "religar") {
-          // Clear auto_off_ate to re-enable automatic responses
           if (sessaoId) {
             await supabase
               .from("fluxo_sessoes")
               .update({
-                dados: { auto_off_ate: null },
+                dados: { ...currentDados, auto_off_ate: null },
                 updated_at: new Date().toISOString(),
               })
               .eq("id", sessaoId);
           }
           console.log("Auto-off: religar — automatic responses re-enabled");
         } else {
-          // Calculate duration in seconds
           let durationSecs = 0;
           if ((config.formato || "hms") === "dias") {
             durationSecs = (config.dias || 1) * 86400;
@@ -925,12 +956,11 @@ async function executeFlowFrom(
           }
           const autoOffAte = new Date(Date.now() + durationSecs * 1000).toISOString();
 
-          // Store auto_off_ate in session dados
           if (sessaoId) {
             await supabase
               .from("fluxo_sessoes")
               .update({
-                dados: { auto_off_ate: autoOffAte },
+                dados: { ...currentDados, auto_off_ate: autoOffAte },
                 updated_at: new Date().toISOString(),
               })
               .eq("id", sessaoId);

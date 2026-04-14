@@ -664,6 +664,60 @@ export default function Empresa() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Nova Empresa */}
+      <Dialog open={showNewTenant} onOpenChange={setShowNewTenant}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nova Empresa</DialogTitle>
+            <DialogDescription>Crie uma nova empresa no sistema</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nome da Empresa</Label>
+              <Input
+                value={newTenantName}
+                onChange={(e) => setNewTenantName(e.target.value)}
+                placeholder="Nome da empresa"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewTenant(false)}>Cancelar</Button>
+            <Button
+              onClick={async () => {
+                if (!newTenantName.trim() || !user) return;
+                setCreatingTenant(true);
+                const { data: newTenant, error } = await supabase
+                  .from("tenants")
+                  .insert({ nome: newTenantName.trim() } as any)
+                  .select("id")
+                  .single();
+                if (error) {
+                  toast({ title: "Erro ao criar empresa", description: error.message, variant: "destructive" });
+                  setCreatingTenant(false);
+                  return;
+                }
+                // Add user to new tenant
+                await supabase.from("user_tenants").insert({
+                  user_id: user.id,
+                  tenant_id: newTenant.id,
+                } as any);
+                toast({ title: "Empresa criada com sucesso!" });
+                setShowNewTenant(false);
+                setNewTenantName("");
+                setCreatingTenant(false);
+                // Reload tenants
+                window.location.reload();
+              }}
+              disabled={creatingTenant || !newTenantName.trim()}
+            >
+              {creatingTenant ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Criar Empresa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

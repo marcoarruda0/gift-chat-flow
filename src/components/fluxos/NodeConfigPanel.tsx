@@ -594,8 +594,8 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
               <Select value={config.tipo_menu || "lista"} onValueChange={(v) => {
                 updateConfig("tipo_menu", v);
                 // If switching to buttons and more than 3 options, trim
-                if (v === "botoes" && (config.opcoes || []).length > 3) {
-                  updateConfig("opcoes", (config.opcoes || []).slice(0, 3));
+                if (v === "botoes" && (config.opcoes || []).length > 4) {
+                  updateConfig("opcoes", (config.opcoes || []).slice(0, 4));
                 }
               }}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -605,7 +605,7 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                 </SelectContent>
               </Select>
               {(config.tipo_menu === "botoes") && (
-                <p className="text-[10px] text-muted-foreground">Máximo 3 opções (limite do WhatsApp)</p>
+                <p className="text-[10px] text-muted-foreground">Máximo 4 opções</p>
               )}
             </div>
             <div className="space-y-1.5">
@@ -646,7 +646,7 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                     </Button>
                   </div>
                 ))}
-                {(config.opcoes || []).length < (config.tipo_menu === "botoes" ? 3 : 10) && (
+                {(config.opcoes || []).length < (config.tipo_menu === "botoes" ? 4 : 10) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -668,6 +668,76 @@ export function NodeConfigPanel({ node, onUpdate, onClose }: NodeConfigPanelProp
                 className="text-sm min-h-[60px]"
               />
             </div>
+          </>
+        )}
+
+        {nodeType === "auto_off" && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Desligar resposta padrão por</Label>
+              <p className="text-[10px] text-muted-foreground">
+                A resposta automática será pausada para este contato pelo tempo definido abaixo.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Formato</Label>
+              <Select value={config.formato || "hms"} onValueChange={(v) => updateConfig("formato", v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hms">⏱️ Horas : Min : Seg</SelectItem>
+                  <SelectItem value="dias">📅 Dias</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(config.formato || "hms") === "hms" ? (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Horas</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={config.horas ?? 0}
+                    onChange={(e) => updateConfig("horas", parseInt(e.target.value) || 0)}
+                    className="h-8 text-sm text-center"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Minutos</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={config.minutos ?? 5}
+                    onChange={(e) => updateConfig("minutos", parseInt(e.target.value) || 0)}
+                    className="h-8 text-sm text-center"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Segundos</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={config.segundos ?? 0}
+                    onChange={(e) => updateConfig("segundos", parseInt(e.target.value) || 0)}
+                    className="h-8 text-sm text-center"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">Quantidade de dias</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={config.dias ?? 1}
+                  onChange={(e) => updateConfig("dias", parseInt(e.target.value) || 1)}
+                  className="h-8 text-sm"
+                />
+              </div>
+            )}
           </>
         )}
       </div>

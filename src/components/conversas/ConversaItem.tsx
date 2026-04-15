@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { UserRound, MessageCircle, CheckCircle2, UserCheck } from "lucide-react";
@@ -15,6 +15,7 @@ interface ConversaItemProps {
   aguardandoHumano?: boolean;
   marcadaNaoLida?: boolean;
   atendenteId?: string | null;
+  createdAt?: string | null;
   selected: boolean;
   onClick: () => void;
 }
@@ -27,9 +28,10 @@ function formatTime(dateStr: string | null) {
   return format(d, "dd/MM", { locale: ptBR });
 }
 
-export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, atendenteId, selected, onClick }: ConversaItemProps) {
+export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, atendenteId, createdAt, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const hasUnread = naoLidas > 0;
+  const isWaiting = status === "aberta" && !atendenteId && createdAt;
 
   return (
     <button
@@ -63,7 +65,12 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{ultimoTexto || "Sem mensagens"}</span>
+          <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">
+            {isWaiting && (
+              <span className="text-amber-500 font-medium mr-1">⏱ {formatDistanceToNow(new Date(createdAt), { locale: ptBR, addSuffix: false })}</span>
+            )}
+            {ultimoTexto || "Sem mensagens"}
+          </span>
           {hasUnread ? (
             <span className="shrink-0 h-[20px] min-w-[20px] flex items-center justify-center rounded-full text-[11px] font-bold bg-[#25D366] text-white px-1.5">
               {naoLidas}

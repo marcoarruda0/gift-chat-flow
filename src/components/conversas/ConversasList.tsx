@@ -109,6 +109,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               status={c.status}
               aguardandoHumano={c.aguardando_humano}
               marcadaNaoLida={c.marcada_nao_lida}
+              atendenteId={c.atendente_id}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

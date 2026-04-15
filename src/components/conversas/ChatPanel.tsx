@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User, HandMetal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface Mensagem {
@@ -31,6 +31,8 @@ interface ChatPanelProps {
   onTransfer?: () => void;
   onMarkUnread?: () => void;
   loading: boolean;
+  isAssignedToMe?: boolean;
+  onPull?: () => void;
 }
 
 export function ChatPanelEmpty() {
@@ -43,7 +45,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -118,7 +120,21 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
         <div ref={bottomRef} />
       </ScrollArea>
 
-      <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+      {isAssignedToMe ? (
+        <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+      ) : (
+        <div className="px-4 py-4 border-t border-border bg-muted/50">
+          <div className="flex flex-col items-center gap-3 py-2">
+            <p className="text-sm text-muted-foreground text-center">
+              Você precisa puxar esta conversa para poder responder
+            </p>
+            <Button onClick={onPull} className="gap-2">
+              <HandMetal className="h-4 w-4" />
+              Puxar Conversa
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

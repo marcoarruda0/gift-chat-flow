@@ -1,50 +1,63 @@
 
 
-# Fix: 1 Conversa por Contato — Mesclar Duplicadas e Bloquear Novas
+# Plano: "Puxar Conversa" — Atendente só responde se a conversa estiver com ele
 
-## Problema raiz
+## Conceito
 
-Há **3 locais** no código que criam conversas filtrando apenas por `status = "aberta"`. Se a conversa foi fechada (por fluxo, manualmente, etc.), esses locais criam uma NOVA conversa em vez de reabrir a existente. O webhook e o sync já foram corrigidos, mas faltam dois pontos no frontend.
+Hoje qualquer atendente pode enviar mensagens em qualquer conversa. A mudança cria um fluxo onde o atendente precisa **"puxar"** (assumir) a conversa antes de poder responder. Isso permite medir tempo de atendimento (início = puxou, fim = fechou).
 
-Dados atuais: 6 contatos com conversas duplicadas (um contato tem 6 conversas).
+## Mudanças
 
-## Solução em 3 partes
+### 1. Banco de dados — Campos de controle de tempo
 
-### 1. Corrigir criação de conversas no frontend (2 arquivos)
+**Migration SQL:**
+- Adicionar coluna `atendimento_iniciado_at` (timestamptz, nullable) na tabela `conversas` — registra quando o atendente puxou a conversa
+- Adicionar coluna `atendimento_encerrado_at` (timestamptz, nullable) — registra quando foi fechada
 
-**`src/pages/Conversas.tsx` — `criarConversa`** (linha 196-202):
-Remover `.eq("status", "aberta")`. Buscar a conversa mais recente do contato (qualquer status). Se encontrar fechada, reabrir.
+Quando o atendente "puxa", `atendente_id` é setado e `atendimento_iniciado_at = now()`. Quando fecha, `atendimento_encerrado_at = now()`.
 
-**`src/pages/Contatos.tsx` — `startConversa`** (linha 154-161):
-Mesma correção: remover filtro de status, buscar mais recente, reabrir se fechada.
+### 2. ChatPanel — Botão "Puxar Conversa" e bloqueio do input
 
-### 2. Mesclar conversas duplicadas existentes (migration SQL)
+**`src/components/conversas/ChatPanel.tsx`:**
+- Receber nova prop `isAssignedToMe: boolean` e callback `onPull: () => void`
+- Se `isAssignedToMe === false`: esconder o `ChatInput` e mostrar um banner com botão **"Puxar Conversa"**
+- Se `isAssignedToMe === true`: mostrar o `ChatInput` normalmente (comportamento atual)
+- O banner mostra: "Você precisa puxar esta conversa para poder responder" + botão azul "Puxar Conversa"
 
-Script SQL que para cada contato com múltiplas conversas:
-1. Identifica a conversa mais recente (a "principal")
-2. Move todas as mensagens das conversas duplicadas para a principal (`UPDATE mensagens SET conversa_id = ...`)
-3. Move registros de `fluxo_sessoes` e `conversa_transferencias`
-4. Deleta as conversas duplicadas
-5. Atualiza `ultimo_texto` e `ultima_msg_at` da conversa principal
+### 3. Conversas.tsx — Lógica de puxar e controle
 
-### 3. Adicionar constraint única no banco (migration SQL)
+**`src/pages/Conversas.tsx`:**
+- Calcular `isAssignedToMe = selected?.atendente_id === user?.id`
+- Nova função `handlePull`:
+  - `UPDATE conversas SET atendente_id = user.id, atendimento_iniciado_at = now() WHERE id = selectedId`
+  - Insere mensagem de sistema: "Conversa assumida por {nome}"
+  - Atualiza estado local
+- Ao fechar (`handleClose`): adicionar `atendimento_encerrado_at = now()` no update
+- Passar `isAssignedToMe` e `onPull` para o `ChatPanel`
 
-```sql
-CREATE UNIQUE INDEX conversas_tenant_contato_unique 
-ON conversas(tenant_id, contato_id);
+### 4. ConversasList — Indicador visual
+
+**`src/components/conversas/ConversasList.tsx` / `ConversaItem.tsx`:**
+- Mostrar um ícone ou badge sutil quando a conversa já tem atendente (ex: ícone de pessoa ao lado do nome)
+- Diferenciar visualmente conversas "livres" (sem atendente) das "assumidas"
+
+## Fluxo do usuário
+
+```text
+1. Conversa chega (via WhatsApp/webhook) → sem atendente_id
+2. Atendente clica na conversa → vê mensagens mas NÃO pode responder
+3. Clica "Puxar Conversa" → atendente_id = seu id, atendimento_iniciado_at = now()
+4. Agora pode responder normalmente
+5. Fecha conversa → atendimento_encerrado_at = now()
+   Tempo de atendimento = encerrado - iniciado
 ```
-
-Isso impede que o banco aceite duas conversas para o mesmo contato no mesmo tenant, servindo como proteção final.
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/Conversas.tsx` | `criarConversa`: buscar qualquer status, reabrir se fechada |
-| `src/pages/Contatos.tsx` | `startConversa`: buscar qualquer status, reabrir se fechada |
-| Migration SQL | Mesclar duplicadas existentes + unique index |
-
-## Resultado esperado
-
-Cada contato terá exatamente 1 conversa. Todas as mensagens estarão consolidadas. O banco rejeita duplicatas futuras.
+| Migration SQL | `atendimento_iniciado_at`, `atendimento_encerrado_at` em `conversas` |
+| `src/components/conversas/ChatPanel.tsx` | Props `isAssignedToMe` + `onPull`, banner de puxar, esconder input |
+| `src/pages/Conversas.tsx` | `handlePull`, `isAssignedToMe`, timestamp no close |
+| `src/components/conversas/ConversaItem.tsx` | Indicador visual de conversa assumida |
 

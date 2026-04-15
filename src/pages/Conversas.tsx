@@ -24,6 +24,7 @@ interface ConversaRow {
   atendente_id: string | null;
   departamento_id: string | null;
   marcada_nao_lida: boolean;
+  created_at: string | null;
 }
 
 interface MensagemRow {
@@ -36,7 +37,7 @@ interface MensagemRow {
 }
 
 export default function Conversas() {
-  const { user, profile } = useAuth();
+  const { user, profile, hasRole } = useAuth();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversas, setConversas] = useState<ConversaRow[]>([]);
@@ -70,7 +71,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, marcada_nao_lida, contato_id, contatos(nome, telefone, avatar_url)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, marcada_nao_lida, created_at, contato_id, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -89,6 +90,7 @@ export default function Conversas() {
       atendente_id: c.atendente_id || null,
       departamento_id: c.departamento_id || null,
       marcada_nao_lida: c.marcada_nao_lida ?? false,
+      created_at: c.created_at || null,
     }));
     setConversas(mapped);
     setLoadingConversas(false);
@@ -497,6 +499,7 @@ export default function Conversas() {
   const selected = conversas.find(c => c.id === selectedId);
   const showList = !isMobile || !selectedId;
   const showChat = !isMobile || !!selectedId;
+  const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
 
   return (
     <div className="flex h-full w-full">
@@ -513,6 +516,7 @@ export default function Conversas() {
             loading={loadingConversas}
             currentUserId={user?.id || null}
             userDepartamentoId={(profile as any)?.departamento_id || null}
+            isAdmin={isAdmin}
           />
         </div>
       )}

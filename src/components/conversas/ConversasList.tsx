@@ -17,6 +17,7 @@ interface Conversa {
   marcada_nao_lida?: boolean;
   atendente_id?: string | null;
   departamento_id?: string | null;
+  created_at?: string | null;
 }
 
 interface ConversasListProps {
@@ -30,13 +31,19 @@ interface ConversasListProps {
   loading: boolean;
   currentUserId?: string | null;
   userDepartamentoId?: string | null;
+  isAdmin?: boolean;
 }
 
-const FILTROS = ["Todas", "Abertas", "Minhas", "Meu Depto", "Fechadas"] as const;
+const BASE_FILTROS = ["Todas", "Abertas", "Minhas", "Meu Depto", "Fechadas"] as const;
+const ADMIN_FILTROS = [...BASE_FILTROS, "Sem Atendente"] as const;
 
-export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId }: ConversasListProps) {
+type Filtro = (typeof ADMIN_FILTROS)[number];
+
+export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId, isAdmin }: ConversasListProps) {
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<typeof FILTROS[number]>("Todas");
+  const [filtro, setFiltro] = useState<Filtro>("Todas");
+
+  const filtros = isAdmin ? ADMIN_FILTROS : BASE_FILTROS;
 
   const filtered = conversas.filter(c => {
     if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
@@ -44,6 +51,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     if (filtro === "Minhas") return c.atendente_id === currentUserId;
     if (filtro === "Meu Depto") return userDepartamentoId && c.departamento_id === userDepartamentoId;
     if (filtro === "Fechadas") return c.status === "fechada";
+    if (filtro === "Sem Atendente") return c.status === "aberta" && !c.atendente_id;
     return true;
   });
 
@@ -73,8 +81,8 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
             className="pl-9 h-9"
           />
         </div>
-        <div className="flex gap-1">
-          {FILTROS.map(f => (
+        <div className="flex gap-1 flex-wrap">
+          {filtros.map(f => (
             <button
               key={f}
               onClick={() => setFiltro(f)}
@@ -110,6 +118,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               aguardandoHumano={c.aguardando_humano}
               marcadaNaoLida={c.marcada_nao_lida}
               atendenteId={c.atendente_id}
+              createdAt={c.created_at}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

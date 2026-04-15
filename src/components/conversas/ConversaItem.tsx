@@ -14,6 +14,7 @@ interface ConversaItemProps {
   status: string;
   aguardandoHumano?: boolean;
   marcadaNaoLida?: boolean;
+  atendenteId?: string | null;
   selected: boolean;
   onClick: () => void;
 }
@@ -26,7 +27,7 @@ function formatTime(dateStr: string | null) {
   return format(d, "dd/MM", { locale: ptBR });
 }
 
-export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, selected, onClick }: ConversaItemProps) {
+export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, atendenteId, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const hasUnread = naoLidas > 0;
 
@@ -51,6 +52,7 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
               <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
             )}
             {aguardandoHumano && <UserRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+            {atendenteId && <UserCheck className="h-3.5 w-3.5 shrink-0 text-primary" />}
             {nomeContato}
           </span>
           <span className={cn(

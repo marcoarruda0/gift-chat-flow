@@ -376,6 +376,8 @@ export type Database = {
         Row: {
           aguardando_humano: boolean
           atendente_id: string | null
+          atendimento_encerrado_at: string | null
+          atendimento_iniciado_at: string | null
           contato_id: string
           created_at: string
           departamento_id: string | null
@@ -390,6 +392,8 @@ export type Database = {
         Insert: {
           aguardando_humano?: boolean
           atendente_id?: string | null
+          atendimento_encerrado_at?: string | null
+          atendimento_iniciado_at?: string | null
           contato_id: string
           created_at?: string
           departamento_id?: string | null
@@ -404,6 +408,8 @@ export type Database = {
         Update: {
           aguardando_humano?: boolean
           atendente_id?: string | null
+          atendimento_encerrado_at?: string | null
+          atendimento_iniciado_at?: string | null
           contato_id?: string
           created_at?: string
           departamento_id?: string | null

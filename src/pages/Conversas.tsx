@@ -367,9 +367,34 @@ export default function Conversas() {
 
   const handleClose = async () => {
     if (!selectedId) return;
-    await supabase.from("conversas").update({ status: "fechada" }).eq("id", selectedId);
+    await supabase.from("conversas").update({
+      status: "fechada",
+      atendimento_encerrado_at: new Date().toISOString(),
+    } as any).eq("id", selectedId);
     setSelectedId(null);
     fetchConversas();
+  };
+
+  const handlePull = async () => {
+    if (!selectedId || !tenantId || !user || !profile) return;
+    const senderName = profile.mostrar_apelido && profile.apelido ? profile.apelido : (profile.nome || "Atendente");
+    await supabase.from("conversas").update({
+      atendente_id: user.id,
+      atendimento_iniciado_at: new Date().toISOString(),
+      status: "aberta",
+    } as any).eq("id", selectedId);
+
+    await supabase.from("mensagens").insert({
+      conversa_id: selectedId,
+      tenant_id: tenantId,
+      conteudo: `Conversa assumida por ${senderName}`,
+      remetente: "sistema" as any,
+      tipo: "texto" as any,
+    });
+
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, atendente_id: user.id } : c));
+    fetchConversas();
+    toast.success("Conversa puxada com sucesso!");
   };
 
   const handleMarkUnread = async () => {
@@ -508,6 +533,8 @@ export default function Conversas() {
             onTransfer={() => setTransferDialogOpen(true)}
             onMarkUnread={handleMarkUnread}
             loading={loadingMsgs}
+            isAssignedToMe={selected.atendente_id === user?.id}
+            onPull={handlePull}
           />
         ) : (
           !isMobile && <ChatPanelEmpty />

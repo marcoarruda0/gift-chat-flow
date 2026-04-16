@@ -21,6 +21,7 @@ import Conhecimento from "@/pages/Conhecimento";
 import IAConfig from "@/pages/IAConfig";
 import Empresa from "@/pages/Empresa";
 import PecaRara from "@/pages/PecaRara";
+import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -53,6 +54,7 @@ function AppRoutes() {
       <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />
       <Route path="/peca-rara" element={<ProtectedRoute><PecaRara /></ProtectedRoute>} />
+      <Route path="/relatorios/atendimento" element={<ProtectedRoute><RelatorioAtendimento /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Placeholder title="Admin Master" /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>

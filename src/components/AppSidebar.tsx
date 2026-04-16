@@ -12,6 +12,7 @@ import {
   Building2,
   ShoppingBag,
   ChevronsUpDown,
+  BarChart3,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -122,6 +123,20 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {(hasRole("admin_tenant") || hasRole("admin_master")) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/relatorios")}>
+                    <NavLink
+                      to="/relatorios/atendimento"
+                      className="hover:bg-sidebar-accent"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                      {!collapsed && <span>Relatórios</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {hasRole("admin_master") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/admin")}>

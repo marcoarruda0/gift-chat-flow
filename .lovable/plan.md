@@ -1,32 +1,56 @@
 
 
-# Filtro "Sem Atendente" + Tempo de Espera na Lista de Conversas
+# Plano: Relatório de Tempo de Atendimento + Fix Gráfico Dashboard
 
-## Resumo
+## Parte 1 — Corrigir gráfico "Mensagens por Dia" no Dashboard
 
-Adicionar um filtro "Sem Atendente" na lista de conversas (visível para admins) e mostrar há quanto tempo cada conversa sem atendente está esperando.
+**Problema atual** (`src/pages/Index.tsx`): O gráfico usa `mockChartData` com valores aleatórios (`Math.random()`). Não consulta o banco.
 
-## Mudanças
+**Correção**:
+- Adicionar `useQuery` que busca da tabela `mensagens` os últimos 30 dias filtrando por `tenant_id`
+- Agrupar no client por dia (`created_at` → `YYYY-MM-DD`)
+- Gerar série completa de 30 dias (preenchendo dias sem mensagens com 0)
+- Substituir `mockChartData` pelos dados reais
+- Também tornar reais os outros cards: "Conversas Ativas" (count de `conversas` status=aberta), "Mensagens (mês)" (count mensagens do mês corrente), "Giftback Emitido" (sum de `giftback_movimentos` tipo=credito)
 
-### 1. `src/components/conversas/ConversasList.tsx`
+## Parte 2 — Novo painel "Relatório de Atendimento"
 
-- Adicionar filtro **"Sem Atendente"** ao array `FILTROS` (condicional: só aparece se `isAdmin === true`)
-- Receber nova prop `isAdmin: boolean`
-- Filtro: `c.status === "aberta" && !c.atendente_id`
-- Receber `created_at` no tipo `Conversa` para calcular tempo de espera
+**Nova página**: `src/pages/RelatorioAtendimento.tsx`
 
-### 2. `src/components/conversas/ConversaItem.tsx`
+**Métricas (cards no topo)**:
+- Tempo médio de atendimento (média de `atendimento_encerrado_at - atendimento_iniciado_at`)
+- Tempo médio de espera (média de `atendimento_iniciado_at - created_at`)
+- Total de atendimentos finalizados no período
+- Atendimentos em andamento (iniciado mas não encerrado)
 
-- Receber nova prop opcional `createdAt: string | null`
-- Quando `atendenteId` é null e status é aberta: mostrar badge com tempo de espera (ex: "⏱ 2h", "⏱ 3d") em vermelho/amber abaixo do nome ou no lugar do preview
-- Usar `formatDistanceToNow` do date-fns para calcular
+**Filtros**:
+- Período (últimos 7d, 30d, 90d, customizado)
+- Atendente (select com membros do tenant)
 
-### 3. `src/pages/Conversas.tsx`
+**Tabela detalhada**:
+- Colunas: Contato, Atendente, Iniciado em, Encerrado em, Duração, Tempo de espera
+- Ordenada por encerramento desc
 
-- Passar `isAdmin` (derivado de `hasRole('admin_tenant') || hasRole('admin_master')`) para `ConversasList`
-- Incluir `created_at` nos dados da conversa passados à lista
+**Gráfico**:
+- Barras: tempo médio de atendimento por atendente (top 10)
+
+**Acesso**: Apenas admins (`admin_tenant` ou `admin_master`).
+
+## Parte 3 — Roteamento e navegação
+
+- Adicionar rota `/relatorios/atendimento` em `src/App.tsx`
+- Adicionar item no `AppSidebar.tsx` (visível só para admins) com ícone `BarChart3`, label "Relatórios" → "Atendimento"
+
+## Arquivos afetados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Index.tsx` | Substituir mock por queries reais (mensagens, conversas, giftback) |
+| `src/pages/RelatorioAtendimento.tsx` | **Novo** — painel completo com métricas, filtros, tabela e gráfico |
+| `src/App.tsx` | Nova rota `/relatorios/atendimento` |
+| `src/components/AppSidebar.tsx` | Novo item de menu "Relatórios" (admin-only) |
 
 ## Resultado esperado
 
-Admins veem um filtro extra "Sem Atendente" que lista apenas conversas abertas sem atendente designado. Cada item mostra há quanto tempo a conversa está esperando atendimento.
+Dashboard mostra dados reais de mensagens dos últimos 30 dias. Admins têm acesso a um relatório dedicado mostrando tempo médio de atendimento, espera, e ranking por atendente — usando os campos `atendimento_iniciado_at` e `atendimento_encerrado_at` já existentes.
 

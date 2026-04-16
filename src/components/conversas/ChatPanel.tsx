@@ -93,9 +93,11 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
             <MailOpen className="h-4 w-4" />
           </Button>
         )}
-        <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700" onClick={onClose} title="Encerrar conversa">
-          <CheckCircle2 className="h-4 w-4" />
-        </Button>
+        {isAssignedToMe && (
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700" onClick={onClose} title="Encerrar conversa">
+            <CheckCircle2 className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <ScrollArea className="flex-1 px-4 py-3">

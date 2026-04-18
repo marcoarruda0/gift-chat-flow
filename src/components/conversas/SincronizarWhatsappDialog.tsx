@@ -170,13 +170,44 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
           imported++;
         }
 
-        // Import messages using correct endpoint
+        // Import messages — try newer endpoint first, fallback gracefully
         try {
-          const msgRes = await callZapi(`chat-messages/${phone}`, "GET");
+          const msgRes = await callZapi(`chat-messages/${phone}?limit=200`, "GET");
           const rawMsgs = await msgRes.json();
 
           if (rawMsgs?.error || !Array.isArray(rawMsgs)) {
-            console.warn(`Skipping messages for ${phone}:`, rawMsgs?.error || "invalid response");
+            const errMsg = rawMsgs?.error || "invalid response";
+            // Multi-device WhatsApp doesn't support historical message fetch via this endpoint
+            if (typeof errMsg === "string" && errMsg.includes("multi device")) {
+              console.info(`Chat ${phone}: histórico não disponível (multi-device). Apenas última mensagem foi importada via lastMessage.`);
+            } else {
+              console.warn(`Skipping messages for ${phone}:`, errMsg);
+            }
+            // Still import the last message from the chat list payload as fallback
+            if (chat.lastMessage?.content) {
+              const fallbackTs = chat.lastMessage.timestamp;
+              if (fallbackTs && fallbackTs >= startTs && fallbackTs <= endTs) {
+                const zapiId = `last_${phone}_${fallbackTs}`;
+                const { data: existing } = await supabase
+                  .from("mensagens")
+                  .select("id")
+                  .eq("conversa_id", convId)
+                  .or(`metadata->>messageId.eq.${zapiId},metadata->>zapi_message_id.eq.${zapiId}`)
+                  .maybeSingle();
+                if (!existing) {
+                  await supabase.from("mensagens").insert({
+                    conversa_id: convId,
+                    tenant_id: tenantId,
+                    conteudo: chat.lastMessage.content,
+                    remetente: (chat.lastMessage.fromMe ? "atendente" : "contato") as any,
+                    tipo: "texto" as any,
+                    metadata: { messageId: zapiId, fallback: true },
+                    created_at: new Date(fallbackTs * 1000).toISOString(),
+                  });
+                  msgsImported++;
+                }
+              }
+            }
             continue;
           }
 

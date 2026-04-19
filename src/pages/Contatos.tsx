@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Upload, Download, Pencil, Trash2, MessageSquarePlus } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import CamposDinamicos, { campoKey } from "@/components/contatos/CamposDinamicos";
+import RfvBadge from "@/components/giftback/RfvBadge";
 
 interface ContatoForm {
   nome: string;
@@ -297,6 +298,7 @@ export default function Contatos() {
               <TableHead className="hidden sm:table-cell">Telefone</TableHead>
               <TableHead className="hidden md:table-cell">CPF</TableHead>
               <TableHead className="hidden lg:table-cell">Tags</TableHead>
+              <TableHead>RFV</TableHead>
               <TableHead>Saldo GB</TableHead>
               <TableHead className="w-20">Ações</TableHead>
             </TableRow>
@@ -305,14 +307,14 @@ export default function Contatos() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((_, j) => (
+                  {Array.from({ length: 7 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : !contatos?.length ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   Nenhum contato encontrado. Clique em "Novo Contato" para começar.
                 </TableCell>
               </TableRow>
@@ -329,6 +331,7 @@ export default function Contatos() {
                       ))}
                     </div>
                   </TableCell>
+                  <TableCell><RfvBadge r={(c as any).rfv_recencia} f={(c as any).rfv_frequencia} v={(c as any).rfv_valor} /></TableCell>
                   <TableCell>R$ {Number(c.saldo_giftback || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">

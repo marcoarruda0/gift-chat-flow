@@ -9,10 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { CreditCard, Settings } from "lucide-react";
+import { CreditCard, Settings, Target } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import RfvTab from "@/components/giftback/RfvTab";
 
 export default function GiftbackConfig() {
   const { profile } = useAuth();
@@ -112,8 +113,13 @@ export default function GiftbackConfig() {
       <Tabs defaultValue="config">
         <TabsList>
           <TabsTrigger value="config"><Settings className="h-4 w-4 mr-1" /> Configuração</TabsTrigger>
+          <TabsTrigger value="rfv"><Target className="h-4 w-4 mr-1" /> RFV</TabsTrigger>
           <TabsTrigger value="relatorio">Relatório</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="rfv" className="mt-4">
+          <RfvTab />
+        </TabsContent>
 
         <TabsContent value="config" className="mt-4">
           <Card>

@@ -331,7 +331,7 @@ export default function Contatos() {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell><RfvBadge r={(c as any).rfv_recencia} f={(c as any).rfv_frequencia} v={(c as any).rfv_valor} /></TableCell>
+                  <TableCell className="max-w-[180px]"><RfvBadge r={(c as any).rfv_recencia} f={(c as any).rfv_frequencia} v={(c as any).rfv_valor} className="max-w-full truncate" /></TableCell>
                   <TableCell>R$ {Number(c.saldo_giftback || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">

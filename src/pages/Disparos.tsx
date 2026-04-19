@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X } from "lucide-react";
 import { format } from "date-fns";
+import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 
@@ -102,6 +103,7 @@ export default function Disparos() {
   const [rfvMinR, setRfvMinR] = useState("0");
   const [rfvMinF, setRfvMinF] = useState("0");
   const [rfvMinV, setRfvMinV] = useState("0");
+  const [rfvSegmento, setRfvSegmento] = useState<"custom" | SegmentoKey>("custom");
 
   const tenantId = profile?.tenant_id;
 
@@ -116,6 +118,13 @@ export default function Disparos() {
     if (tipoFiltro === "tag") return contatos.filter((c) => c.telefone && c.tags?.some((t) => tagsSelecionadas.includes(t)));
     if (tipoFiltro === "manual") return contatos.filter((c) => c.telefone && contatosSelecionados.includes(c.id));
     if (tipoFiltro === "rfv") {
+      if (rfvSegmento !== "custom") {
+        return contatos.filter(
+          (c) =>
+            c.telefone &&
+            getSegmentoBySoma(c.rfv_recencia, c.rfv_frequencia, c.rfv_valor).key === rfvSegmento,
+        );
+      }
       const minR = parseInt(rfvMinR);
       const minF = parseInt(rfvMinF);
       const minV = parseInt(rfvMinV);
@@ -127,7 +136,7 @@ export default function Disparos() {
       );
     }
     return [];
-  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV]);
+  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV, rfvSegmento]);
 
   useEffect(() => {
     if (tenantId) {
@@ -212,7 +221,14 @@ export default function Disparos() {
           nome: nome.trim(),
           mensagem: mensagem.trim(),
           tipo_filtro: tipoFiltro as any,
-          filtro_valor: tipoFiltro === "tag" ? tagsSelecionadas : tipoFiltro === "rfv" ? [`r:${rfvMinR}`, `f:${rfvMinF}`, `v:${rfvMinV}`] : [],
+          filtro_valor:
+            tipoFiltro === "tag"
+              ? tagsSelecionadas
+              : tipoFiltro === "rfv"
+                ? rfvSegmento !== "custom"
+                  ? [`seg:${rfvSegmento}`]
+                  : [`r:${rfvMinR}`, `f:${rfvMinF}`, `v:${rfvMinV}`]
+                : [],
           status: status as any,
           agendada_para: agendar && agendarPara ? new Date(agendarPara).toISOString() : null,
           total_destinatarios: alvos.length,
@@ -290,6 +306,7 @@ export default function Disparos() {
     setRfvMinR("0");
     setRfvMinF("0");
     setRfvMinV("0");
+    setRfvSegmento("custom");
   }
 
   function toggleTag(tag: string) {
@@ -498,37 +515,58 @@ export default function Disparos() {
             </div>
 
             {tipoFiltro === "rfv" && (
-              <div className="grid grid-cols-3 gap-2 p-3 border rounded bg-muted/30">
+              <div className="space-y-2 p-3 border rounded bg-muted/30">
                 <div>
-                  <Label className="text-xs">R mínimo</Label>
-                  <Select value={rfvMinR} onValueChange={setRfvMinR}>
+                  <Label className="text-xs">Segmento</Label>
+                  <Select value={rfvSegmento} onValueChange={(v) => setRfvSegmento(v as "custom" | SegmentoKey)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Qualquer</SelectItem>
-                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                      <SelectItem value="custom">Personalizado (R/F/V)</SelectItem>
+                      {SEGMENTOS_ORDENADOS.filter((s) => s.key !== "sem_dados").map((s) => (
+                        <SelectItem key={s.key} value={s.key}>
+                          <span className="inline-flex items-center gap-2">
+                            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.cor }} />
+                            {s.nome} — {s.descricao.split("—")[0].trim()}
+                          </span>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label className="text-xs">F mínimo</Label>
-                  <Select value={rfvMinF} onValueChange={setRfvMinF}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Qualquer</SelectItem>
-                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">V mínimo</Label>
-                  <Select value={rfvMinV} onValueChange={setRfvMinV}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Qualquer</SelectItem>
-                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {rfvSegmento === "custom" && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div>
+                      <Label className="text-xs">R mínimo</Label>
+                      <Select value={rfvMinR} onValueChange={setRfvMinR}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">F mínimo</Label>
+                      <Select value={rfvMinF} onValueChange={setRfvMinF}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">V mínimo</Label>
+                      <Select value={rfvMinV} onValueChange={setRfvMinV}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

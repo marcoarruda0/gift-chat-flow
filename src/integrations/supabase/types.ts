@@ -277,6 +277,10 @@ export type Database = {
           id: string
           nome: string
           notas: string | null
+          rfv_calculado_em: string | null
+          rfv_frequencia: number | null
+          rfv_recencia: number | null
+          rfv_valor: number | null
           saldo_giftback: number | null
           tags: string[] | null
           telefone: string | null
@@ -294,6 +298,10 @@ export type Database = {
           id?: string
           nome: string
           notas?: string | null
+          rfv_calculado_em?: string | null
+          rfv_frequencia?: number | null
+          rfv_recencia?: number | null
+          rfv_valor?: number | null
           saldo_giftback?: number | null
           tags?: string[] | null
           telefone?: string | null
@@ -311,6 +319,10 @@ export type Database = {
           id?: string
           nome?: string
           notas?: string | null
+          rfv_calculado_em?: string | null
+          rfv_frequencia?: number | null
+          rfv_recencia?: number | null
+          rfv_valor?: number | null
           saldo_giftback?: number | null
           tags?: string[] | null
           telefone?: string | null
@@ -1274,7 +1286,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
-      campanha_filtro: "todos" | "tag" | "manual"
+      campanha_filtro: "todos" | "tag" | "manual" | "rfv"
       campanha_status:
         | "rascunho"
         | "agendada"
@@ -1416,7 +1428,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin_master", "admin_tenant", "atendente", "caixa"],
-      campanha_filtro: ["todos", "tag", "manual"],
+      campanha_filtro: ["todos", "tag", "manual", "rfv"],
       campanha_status: [
         "rascunho",
         "agendada",

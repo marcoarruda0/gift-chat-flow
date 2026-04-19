@@ -212,7 +212,7 @@ export default function Disparos() {
           nome: nome.trim(),
           mensagem: mensagem.trim(),
           tipo_filtro: tipoFiltro as any,
-          filtro_valor: tipoFiltro === "tag" ? tagsSelecionadas : [],
+          filtro_valor: tipoFiltro === "tag" ? tagsSelecionadas : tipoFiltro === "rfv" ? [`r:${rfvMinR}`, `f:${rfvMinF}`, `v:${rfvMinV}`] : [],
           status: status as any,
           agendada_para: agendar && agendarPara ? new Date(agendarPara).toISOString() : null,
           total_destinatarios: alvos.length,
@@ -287,6 +287,9 @@ export default function Disparos() {
     setMidiaUrl(null);
     setMidiaFileName(null);
     setAtrasoTipo("medio");
+    setRfvMinR("0");
+    setRfvMinF("0");
+    setRfvMinV("0");
   }
 
   function toggleTag(tag: string) {
@@ -488,10 +491,46 @@ export default function Disparos() {
                 <SelectContent>
                   <SelectItem value="todos">Todos com telefone</SelectItem>
                   <SelectItem value="tag">Por tag</SelectItem>
+                  <SelectItem value="rfv">Por RFV</SelectItem>
                   <SelectItem value="manual">Seleção manual</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {tipoFiltro === "rfv" && (
+              <div className="grid grid-cols-3 gap-2 p-3 border rounded bg-muted/30">
+                <div>
+                  <Label className="text-xs">R mínimo</Label>
+                  <Select value={rfvMinR} onValueChange={setRfvMinR}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Qualquer</SelectItem>
+                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">F mínimo</Label>
+                  <Select value={rfvMinF} onValueChange={setRfvMinF}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Qualquer</SelectItem>
+                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">V mínimo</Label>
+                  <Select value={rfvMinV} onValueChange={setRfvMinV}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Qualquer</SelectItem>
+                      {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             {tipoFiltro === "tag" && (
               <div>

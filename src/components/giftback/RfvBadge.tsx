@@ -1,30 +1,32 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getSegmentoBySoma } from "@/lib/rfv-segments";
 
 interface RfvBadgeProps {
   r: number | null | undefined;
   f: number | null | undefined;
   v: number | null | undefined;
   className?: string;
+  /** Se true, mostra apenas as notas (R-F-V) sem o nome do segmento */
+  compacto?: boolean;
 }
 
-export function rfvScoreColor(media: number): string {
-  // Verde (alto), amarelo (médio), vermelho (baixo) — usando tokens semânticos
-  if (media >= 4) return "bg-green-600 text-white hover:bg-green-700";
-  if (media >= 2.5) return "bg-yellow-500 text-white hover:bg-yellow-600";
-  return "bg-red-600 text-white hover:bg-red-700";
-}
-
-export default function RfvBadge({ r, f, v, className }: RfvBadgeProps) {
+export default function RfvBadge({ r, f, v, className, compacto = false }: RfvBadgeProps) {
   if (r == null && f == null && v == null) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
   const partes = [r ?? "-", f ?? "-", v ?? "-"];
-  const nums = [r, f, v].filter((n): n is number => typeof n === "number");
-  const media = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+  const segmento = getSegmentoBySoma(r, f, v);
+  const titulo = `R=${r ?? "-"} F=${f ?? "-"} V=${v ?? "-"} · ${segmento.nome}`;
+
   return (
-    <Badge className={cn("font-mono", rfvScoreColor(media), className)} title={`R=${r ?? "-"} F=${f ?? "-"} V=${v ?? "-"}`}>
-      {partes.join("-")}
+    <Badge
+      className={cn("font-mono border-transparent", segmento.textClass, className)}
+      style={{ backgroundColor: segmento.cor }}
+      title={titulo}
+    >
+      <span>{partes.join("-")}</span>
+      {!compacto && <span className="ml-1.5 font-sans font-medium">· {segmento.nome}</span>}
     </Badge>
   );
 }

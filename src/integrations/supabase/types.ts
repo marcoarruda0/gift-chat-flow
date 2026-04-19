@@ -73,8 +73,12 @@ export type Database = {
         Row: {
           agendada_para: string | null
           atraso_tipo: string
+          canal: string
           created_at: string
           criado_por: string
+          email_assunto: string | null
+          email_html: string | null
+          email_preview: string | null
           filtro_valor: string[] | null
           id: string
           mensagem: string
@@ -92,8 +96,12 @@ export type Database = {
         Insert: {
           agendada_para?: string | null
           atraso_tipo?: string
+          canal?: string
           created_at?: string
           criado_por: string
+          email_assunto?: string | null
+          email_html?: string | null
+          email_preview?: string | null
           filtro_valor?: string[] | null
           id?: string
           mensagem: string
@@ -111,8 +119,12 @@ export type Database = {
         Update: {
           agendada_para?: string | null
           atraso_tipo?: string
+          canal?: string
           created_at?: string
           criado_por?: string
+          email_assunto?: string | null
+          email_html?: string | null
+          email_preview?: string | null
           filtro_valor?: string[] | null
           id?: string
           mensagem?: string

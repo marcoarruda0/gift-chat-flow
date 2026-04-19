@@ -10,12 +10,18 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X } from "lucide-react";
+import {
+  Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
+  MessageSquare, Mail,
+} from "lucide-react";
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
+import { EmailEditor } from "@/components/campanhas/EmailEditor";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
+type Canal = "whatsapp" | "email";
 
 const atrasoConfig: Record<AtrasoTipo, { label: string; desc: string }> = {
   muito_curto: { label: "Muito Curto", desc: "1s a 5s" },
@@ -40,12 +46,17 @@ type Campanha = {
   tipo_midia: string;
   midia_url: string | null;
   atraso_tipo: AtrasoTipo;
+  canal: Canal;
+  email_assunto: string | null;
+  email_html: string | null;
+  email_preview: string | null;
 };
 
 type Contato = {
   id: string;
   nome: string;
   telefone: string | null;
+  email: string | null;
   tags: string[] | null;
   rfv_recencia: number | null;
   rfv_frequencia: number | null;
@@ -75,7 +86,7 @@ const midiaAccept: Record<string, string> = {
   documento: ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv",
 };
 
-export default function Disparos() {
+export default function Campanhas() {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
@@ -83,11 +94,16 @@ export default function Disparos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialog, setDetailDialog] = useState<string | null>(null);
   const [destinatariosDetail, setDestinatariosDetail] = useState<any[]>([]);
+  const [filtroCanal, setFiltroCanal] = useState<"todas" | Canal>("todas");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
+  const [canal, setCanal] = useState<Canal>("whatsapp");
   const [nome, setNome] = useState("");
   const [mensagem, setMensagem] = useState("");
+  const [emailAssunto, setEmailAssunto] = useState("");
+  const [emailPreview, setEmailPreview] = useState("");
+  const [emailHtml, setEmailHtml] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<string>("todos");
   const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
   const [agendarPara, setAgendarPara] = useState("");
@@ -113,15 +129,17 @@ export default function Disparos() {
     return Array.from(set).sort();
   }, [contatos]);
 
+  const hasContact = (c: Contato) => (canal === "email" ? !!c.email : !!c.telefone);
+
   const contatosFiltrados = useMemo(() => {
-    if (tipoFiltro === "todos") return contatos.filter((c) => c.telefone);
-    if (tipoFiltro === "tag") return contatos.filter((c) => c.telefone && c.tags?.some((t) => tagsSelecionadas.includes(t)));
-    if (tipoFiltro === "manual") return contatos.filter((c) => c.telefone && contatosSelecionados.includes(c.id));
+    if (tipoFiltro === "todos") return contatos.filter(hasContact);
+    if (tipoFiltro === "tag") return contatos.filter((c) => hasContact(c) && c.tags?.some((t) => tagsSelecionadas.includes(t)));
+    if (tipoFiltro === "manual") return contatos.filter((c) => hasContact(c) && contatosSelecionados.includes(c.id));
     if (tipoFiltro === "rfv") {
       if (rfvSegmento !== "custom") {
         return contatos.filter(
           (c) =>
-            c.telefone &&
+            hasContact(c) &&
             getSegmentoBySoma(c.rfv_recencia, c.rfv_frequencia, c.rfv_valor).key === rfvSegmento,
         );
       }
@@ -129,14 +147,26 @@ export default function Disparos() {
       const minF = parseInt(rfvMinF);
       const minV = parseInt(rfvMinV);
       return contatos.filter((c) =>
-        c.telefone &&
+        hasContact(c) &&
         (minR === 0 || (c.rfv_recencia ?? 0) >= minR) &&
         (minF === 0 || (c.rfv_frequencia ?? 0) >= minF) &&
         (minV === 0 || (c.rfv_valor ?? 0) >= minV)
       );
     }
     return [];
-  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV, rfvSegmento]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV, rfvSegmento, canal]);
+
+  const totalContatosCanal = useMemo(
+    () => contatos.filter(hasContact).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [contatos, canal],
+  );
+
+  const campanhasFiltradas = useMemo(() => {
+    if (filtroCanal === "todas") return campanhas;
+    return campanhas.filter((c) => (c.canal || "whatsapp") === filtroCanal);
+  }, [campanhas, filtroCanal]);
 
   useEffect(() => {
     if (tenantId) {
@@ -156,7 +186,9 @@ export default function Disparos() {
   }
 
   async function fetchContatos() {
-    const { data } = await supabase.from("contatos").select("id, nome, telefone, tags, rfv_recencia, rfv_frequencia, rfv_valor");
+    const { data } = await supabase
+      .from("contatos")
+      .select("id, nome, telefone, email, tags, rfv_recencia, rfv_frequencia, rfv_valor");
     setContatos((data as Contato[]) || []);
   }
 
@@ -194,19 +226,34 @@ export default function Disparos() {
       return;
     }
 
-    if (tipoMidia === "texto" && !mensagem.trim()) {
-      toast({ title: "Preencha a mensagem", variant: "destructive" });
-      return;
-    }
-
-    if (tipoMidia !== "texto" && !midiaUrl) {
-      toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
-      return;
+    if (canal === "whatsapp") {
+      if (tipoMidia === "texto" && !mensagem.trim()) {
+        toast({ title: "Preencha a mensagem", variant: "destructive" });
+        return;
+      }
+      if (tipoMidia !== "texto" && !midiaUrl) {
+        toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!emailAssunto.trim()) {
+        toast({ title: "Preencha o assunto do e-mail", variant: "destructive" });
+        return;
+      }
+      if (!emailHtml.trim() || emailHtml === "<p></p>") {
+        toast({ title: "Escreva o conteúdo do e-mail", variant: "destructive" });
+        return;
+      }
     }
 
     const alvos = contatosFiltrados;
     if (alvos.length === 0) {
-      toast({ title: "Nenhum contato com telefone encontrado para o filtro selecionado", variant: "destructive" });
+      toast({
+        title: canal === "email"
+          ? "Nenhum contato com e-mail encontrado para o filtro selecionado"
+          : "Nenhum contato com telefone encontrado para o filtro selecionado",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -219,7 +266,7 @@ export default function Disparos() {
         .insert({
           tenant_id: tenantId,
           nome: nome.trim(),
-          mensagem: mensagem.trim(),
+          mensagem: canal === "whatsapp" ? mensagem.trim() : (emailAssunto.trim() || ""),
           tipo_filtro: tipoFiltro as any,
           filtro_valor:
             tipoFiltro === "tag"
@@ -233,9 +280,13 @@ export default function Disparos() {
           agendada_para: agendar && agendarPara ? new Date(agendarPara).toISOString() : null,
           total_destinatarios: alvos.length,
           criado_por: profile?.id || "",
-          tipo_midia: tipoMidia,
-          midia_url: midiaUrl,
+          tipo_midia: canal === "whatsapp" ? tipoMidia : "texto",
+          midia_url: canal === "whatsapp" ? midiaUrl : null,
           atraso_tipo: atrasoTipo,
+          canal,
+          email_assunto: canal === "email" ? emailAssunto.trim() : null,
+          email_html: canal === "email" ? emailHtml : null,
+          email_preview: canal === "email" ? emailPreview.trim() : null,
         } as any)
         .select()
         .single();
@@ -245,7 +296,7 @@ export default function Disparos() {
       const destinatarios = alvos.map((c) => ({
         campanha_id: (campanha as any).id,
         contato_id: c.id,
-        telefone: c.telefone!,
+        telefone: canal === "email" ? (c.email || "") : (c.telefone || ""),
         tenant_id: tenantId,
       }));
 
@@ -263,9 +314,17 @@ export default function Disparos() {
     }
   }
 
-  async function enviarCampanha(campanhaId: string) {
+  async function enviarCampanha(campanhaId: string, campanhaCanal: Canal) {
     try {
-      const { data, error } = await supabase.functions.invoke("enviar-campanha", {
+      if (campanhaCanal === "email") {
+        toast({
+          title: "Envio de e-mail ainda não está disponível",
+          description: "Configure o domínio de e-mail nas configurações para habilitar campanhas por e-mail.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const { error } = await supabase.functions.invoke("enviar-campanha", {
         body: { campanha_id: campanhaId },
       });
       if (error) throw error;
@@ -292,8 +351,12 @@ export default function Disparos() {
   }
 
   function resetForm() {
+    setCanal("whatsapp");
     setNome("");
     setMensagem("");
+    setEmailAssunto("");
+    setEmailPreview("");
+    setEmailHtml("");
     setTipoFiltro("todos");
     setTagsSelecionadas([]);
     setContatosSelecionados([]);
@@ -332,22 +395,34 @@ export default function Disparos() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Megaphone className="h-6 w-6" /> Disparos
+            <Megaphone className="h-6 w-6" /> Campanhas
           </h1>
-          <p className="text-muted-foreground text-sm">Campanhas de mensagens em massa via WhatsApp</p>
+          <p className="text-muted-foreground text-sm">Envios em massa por WhatsApp ou E-mail</p>
         </div>
         <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-1" /> Nova Campanha
         </Button>
       </div>
 
+      <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
+        <TabsList>
+          <TabsTrigger value="todas">Todas</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="gap-1">
+            <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="email" className="gap-1">
+            <Mail className="h-3.5 w-3.5" /> E-mail
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {loading ? (
         <p className="text-muted-foreground">Carregando...</p>
-      ) : campanhas.length === 0 ? (
+      ) : campanhasFiltradas.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Megaphone className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Nenhuma campanha criada ainda</p>
+            <p className="text-muted-foreground">Nenhuma campanha encontrada</p>
           </CardContent>
         </Card>
       ) : (
@@ -357,6 +432,7 @@ export default function Disparos() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>
+                  <TableHead>Canal</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Atraso</TableHead>
                   <TableHead>Status</TableHead>
@@ -368,15 +444,27 @@ export default function Disparos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {campanhas.map((c) => {
+                {campanhasFiltradas.map((c) => {
                   const sc = statusConfig[c.status] || { label: c.status, variant: "outline" as const };
                   const tm = c.tipo_midia || "texto";
+                  const cn = (c.canal || "whatsapp") as Canal;
                   return (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.nome}</TableCell>
                       <TableCell>
+                        {cn === "email" ? (
+                          <Badge variant="outline" className="gap-1">
+                            <Mail className="h-3 w-3" /> E-mail
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1">
+                            <MessageSquare className="h-3 w-3" /> WhatsApp
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <span className="flex items-center gap-1 text-muted-foreground capitalize">
-                          {midiaIcon[tm]} {tm}
+                          {cn === "email" ? <FileText className="h-4 w-4" /> : midiaIcon[tm]} {cn === "email" ? "html" : tm}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -399,7 +487,7 @@ export default function Disparos() {
                             <Eye className="h-4 w-4" />
                           </Button>
                           {(c.status === "rascunho" || c.status === "agendada") && (
-                            <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id)}>
+                            <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)}>
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
@@ -421,97 +509,159 @@ export default function Disparos() {
 
       {/* New Campaign Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nova Campanha</DialogTitle>
-            <DialogDescription>Configure e envie uma campanha de mensagens em massa.</DialogDescription>
+            <DialogDescription>Escolha o canal e configure sua campanha.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            <div>
+              <Label className="mb-2 block">Canal de envio</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCanal("whatsapp")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "whatsapp" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <MessageSquare className={`h-6 w-6 mb-2 ${canal === "whatsapp" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium">WhatsApp</div>
+                  <div className="text-xs text-muted-foreground">Texto, imagem, vídeo, áudio ou documento</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCanal("email")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "email" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <Mail className={`h-6 w-6 mb-2 ${canal === "email" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium">E-mail</div>
+                  <div className="text-xs text-muted-foreground">Editor rich-text com assunto, links e imagens</div>
+                </button>
+              </div>
+            </div>
+
             <div>
               <Label>Nome da campanha</Label>
               <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Promoção de Inverno" />
             </div>
 
-            <div>
-              <Label>Tipo de mídia</Label>
-              <Select value={tipoMidia} onValueChange={(v) => { setTipoMidia(v); removeMidia(); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="texto">📝 Texto</SelectItem>
-                  <SelectItem value="imagem">🖼️ Imagem</SelectItem>
-                  <SelectItem value="audio">🎵 Áudio</SelectItem>
-                  <SelectItem value="video">🎬 Vídeo</SelectItem>
-                  <SelectItem value="documento">📄 Documento</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {canal === "whatsapp" && (
+              <>
+                <div>
+                  <Label>Tipo de mídia</Label>
+                  <Select value={tipoMidia} onValueChange={(v) => { setTipoMidia(v); removeMidia(); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="texto">📝 Texto</SelectItem>
+                      <SelectItem value="imagem">🖼️ Imagem</SelectItem>
+                      <SelectItem value="audio">🎵 Áudio</SelectItem>
+                      <SelectItem value="video">🎬 Vídeo</SelectItem>
+                      <SelectItem value="documento">📄 Documento</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {tipoMidia !== "texto" && (
-              <div>
-                <Label>Arquivo de mídia</Label>
-                {midiaUrl ? (
-                  <div className="flex items-center gap-2 mt-1 p-2 border rounded bg-muted/30">
-                    {midiaIcon[tipoMidia]}
-                    <span className="text-sm truncate flex-1">{midiaFileName}</span>
-                    <Button size="sm" variant="ghost" onClick={removeMidia}><X className="h-4 w-4" /></Button>
+                {tipoMidia !== "texto" && (
+                  <div>
+                    <Label>Arquivo de mídia</Label>
+                    {midiaUrl ? (
+                      <div className="flex items-center gap-2 mt-1 p-2 border rounded bg-muted/30">
+                        {midiaIcon[tipoMidia]}
+                        <span className="text-sm truncate flex-1">{midiaFileName}</span>
+                        <Button size="sm" variant="ghost" onClick={removeMidia}><X className="h-4 w-4" /></Button>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept={midiaAccept[tipoMidia]}
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploading}
+                        >
+                          <Upload className="h-4 w-4 mr-2" />
+                          {uploading ? "Enviando..." : "Selecionar arquivo"}
+                        </Button>
+                      </div>
+                    )}
+                    {midiaUrl && tipoMidia === "imagem" && (
+                      <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+                    )}
+                    {midiaUrl && tipoMidia === "video" && (
+                      <video src={midiaUrl} controls className="mt-2 rounded max-h-40 w-full" />
+                    )}
+                    {midiaUrl && tipoMidia === "audio" && (
+                      <audio src={midiaUrl} controls className="mt-2 w-full" />
+                    )}
                   </div>
-                ) : (
-                  <div className="mt-1">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept={midiaAccept[tipoMidia]}
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      {uploading ? "Enviando..." : "Selecionar arquivo"}
-                    </Button>
-                  </div>
                 )}
-                {midiaUrl && tipoMidia === "imagem" && (
-                  <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
-                )}
-                {midiaUrl && tipoMidia === "video" && (
-                  <video src={midiaUrl} controls className="mt-2 rounded max-h-40 w-full" />
-                )}
-                {midiaUrl && tipoMidia === "audio" && (
-                  <audio src={midiaUrl} controls className="mt-2 w-full" />
-                )}
-              </div>
+
+                <div>
+                  <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                  <Textarea
+                    value={mensagem}
+                    onChange={(e) => setMensagem(e.target.value)}
+                    placeholder="Olá {nome}, temos uma oferta especial..."
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>
+                  </p>
+                </div>
+              </>
             )}
 
-            <div>
-              <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
-              <Textarea
-                value={mensagem}
-                onChange={(e) => setMensagem(e.target.value)}
-                placeholder="Olá {nome}, temos uma oferta especial..."
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>
-              </p>
-            </div>
+            {canal === "email" && (
+              <>
+                <div>
+                  <Label>Assunto</Label>
+                  <Input
+                    value={emailAssunto}
+                    onChange={(e) => setEmailAssunto(e.target.value)}
+                    placeholder="Ex: Olá {nome}, novidades para você"
+                  />
+                </div>
+                <div>
+                  <Label>Pré-visualização (preview text)</Label>
+                  <Input
+                    value={emailPreview}
+                    onChange={(e) => setEmailPreview(e.target.value)}
+                    placeholder="Texto curto exibido na caixa de entrada antes de abrir o e-mail"
+                  />
+                </div>
+                <div>
+                  <Label>Conteúdo do e-mail</Label>
+                  <EmailEditor value={emailHtml} onChange={setEmailHtml} />
+                </div>
+              </>
+            )}
 
             <div>
               <Label>Filtro de contatos</Label>
               <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">Todos com telefone</SelectItem>
+                  <SelectItem value="todos">Todos com {canal === "email" ? "e-mail" : "telefone"}</SelectItem>
                   <SelectItem value="tag">Por tag</SelectItem>
                   <SelectItem value="rfv">Por RFV</SelectItem>
                   <SelectItem value="manual">Seleção manual</SelectItem>
                 </SelectContent>
               </Select>
+              {canal === "email" && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {totalContatosCanal} de {contatos.length} contato(s) têm e-mail cadastrado
+                </p>
+              )}
             </div>
 
             {tipoFiltro === "rfv" && (
@@ -594,35 +744,37 @@ export default function Disparos() {
 
             {tipoFiltro === "manual" && (
               <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
-                {contatos.filter((c) => c.telefone).map((c) => (
+                {contatos.filter(hasContact).map((c) => (
                   <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
                     <input
                       type="checkbox"
                       checked={contatosSelecionados.includes(c.id)}
                       onChange={() => toggleContato(c.id)}
                     />
-                    {c.nome} — {c.telefone}
+                    {c.nome} — {canal === "email" ? c.email : c.telefone}
                   </label>
                 ))}
               </div>
             )}
 
-            <div>
-              <Label>Atraso Inteligente</Label>
-              <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(Object.entries(atrasoConfig) as [AtrasoTipo, { label: string; desc: string }][]).map(([key, cfg]) => (
-                    <SelectItem key={key} value={key}>
-                      ⏱️ {cfg.label} ({cfg.desc})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Intervalo aleatório entre cada envio para reduzir risco de banimento
-              </p>
-            </div>
+            {canal === "whatsapp" && (
+              <div>
+                <Label>Atraso Inteligente</Label>
+                <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(atrasoConfig) as [AtrasoTipo, { label: string; desc: string }][]).map(([key, cfg]) => (
+                      <SelectItem key={key} value={key}>
+                        ⏱️ {cfg.label} ({cfg.desc})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Intervalo aleatório entre cada envio para reduzir risco de banimento
+                </p>
+              </div>
+            )}
 
             <div className="bg-muted/50 rounded p-3 text-sm">
               <strong>{contatosFiltrados.length}</strong> contato(s) serão atingidos
@@ -666,7 +818,7 @@ export default function Disparos() {
             <TableHeader>
               <TableRow>
                 <TableHead>Contato</TableHead>
-                <TableHead>Telefone</TableHead>
+                <TableHead>Destino</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data/Hora</TableHead>
               </TableRow>

@@ -43,7 +43,7 @@ const mainItems = [
   { title: "Contatos", url: "/contatos", icon: Users },
   { title: "Conversas", url: "/conversas", icon: MessageSquare },
   { title: "Fluxos", url: "/fluxos", icon: GitBranch },
-  { title: "Disparos", url: "/disparos", icon: Send },
+  { title: "Campanhas", url: "/campanhas", icon: Send },
   { title: "Giftback", url: "/giftback", icon: Gift },
   { title: "Base de Conhecimento", url: "/conhecimento", icon: BookOpen },
   { title: "Peça Rara", url: "/peca-rara", icon: ShoppingBag },

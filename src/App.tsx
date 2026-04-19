@@ -13,7 +13,7 @@ import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
 import Configuracoes from "@/pages/Configuracoes";
-import Disparos from "@/pages/Disparos";
+import Campanhas from "@/pages/Campanhas";
 import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
 import ZapiConfig from "@/pages/ZapiConfig";
@@ -45,7 +45,8 @@ function AppRoutes() {
       <Route path="/conversas" element={<ProtectedRoute noPadding><Conversas /></ProtectedRoute>} />
       <Route path="/fluxos" element={<ProtectedRoute><Fluxos /></ProtectedRoute>} />
       <Route path="/fluxos/:id" element={<ProtectedRoute><FluxoEditor /></ProtectedRoute>} />
-      <Route path="/disparos" element={<ProtectedRoute><Disparos /></ProtectedRoute>} />
+      <Route path="/campanhas" element={<ProtectedRoute><Campanhas /></ProtectedRoute>} />
+      <Route path="/disparos" element={<Navigate to="/campanhas" replace />} />
       <Route path="/giftback" element={<ProtectedRoute><GiftbackConfig /></ProtectedRoute>} />
       <Route path="/giftback/caixa" element={<ProtectedRoute><GiftbackCaixa /></ProtectedRoute>} />
       <Route path="/conhecimento" element={<ProtectedRoute><Conhecimento /></ProtectedRoute>} />

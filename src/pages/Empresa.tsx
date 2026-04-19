@@ -593,14 +593,71 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
             <RespostasRapidasConfig />
           </TabsContent>
         )}
+        {/* ── E-mail (remetente por empresa) ── */}
+        {isAdmin && (
+          <TabsContent value="email">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração de E-mail</CardTitle>
+                <CardDescription>
+                  Personalize como os e-mails enviados pela sua empresa aparecerão para os destinatários.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 max-w-xl">
+                <div className="space-y-2">
+                  <Label>Nome do Remetente</Label>
+                  <Input
+                    value={emailConfig.email_remetente_nome}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, email_remetente_nome: e.target.value })}
+                    placeholder="Ex: Loja XYZ"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Nome que aparecerá no campo "De" da caixa de entrada.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Endereço Local</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={emailConfig.email_remetente_local}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, email_remetente_local: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })}
+                      placeholder="contato"
+                      className="max-w-[180px]"
+                    />
+                    <span className="text-sm text-muted-foreground">@seudominio.com</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Parte antes do @ no endereço de envio (ex: contato, ola, marketing).
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Assinatura (HTML opcional)</Label>
+                  <textarea
+                    className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                    value={emailConfig.email_assinatura}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, email_assinatura: e.target.value })}
+                    placeholder={'<strong>Loja XYZ</strong><br/>(11) 99999-9999<br/><a href="https://lojaxyz.com">lojaxyz.com</a>'}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Aparece no rodapé de todas as campanhas de e-mail desta empresa.
+                  </p>
+                </div>
+                <Button onClick={saveEmailConfig} disabled={savingEmail}>
+                  {savingEmail ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Salvando...</> : "Salvar"}
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
         {/* ── Empresas (multi-tenant) ── */}
-        {isMaster && (
+        {isAdmin && (
           <TabsContent value="empresas" className="space-y-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Empresas</CardTitle>
-                  <CardDescription>Gerencie e alterne entre empresas</CardDescription>
+                  <CardDescription>Gerencie e alterne entre suas empresas</CardDescription>
                 </div>
                 <Button size="sm" onClick={() => setShowNewTenant(true)}>
                   <Plus className="h-4 w-4 mr-1" /> Nova Empresa

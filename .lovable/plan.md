@@ -1,79 +1,55 @@
 
 
-# Plano: Módulo RFV (Recência, Frequência, Valor) na página Giftback
+# Plano: Segmentação RFV por Soma (R+F+V)
 
-## Conceito
+## Mudança de critério
 
-Adicionar uma nova aba **"RFV"** dentro da página Giftback que classifica clientes em 3 dimensões com nota 1-5, baseado nas compras dos últimos 12 meses (tabela `compras`). Critérios fixos como no print.
+Em vez de avaliar R, F e V individualmente, classificar pela **soma** dos três (mín 3, máx 15).
 
-## Critérios fixos (do print)
+### Nova tabela de segmentos (por soma)
 
-**Recência** (data da última compra):
-- 5: últimos 15 dias | 4: 15-30 dias | 3: 1-3 meses | 2: 3-6 meses | 1: > 6 meses
+| Segmento | Soma R+F+V | Cor |
+|---|---|---|
+| Campeões | > 12 (13–15) | verde |
+| Leais | 10–12 | azul |
+| Potenciais | 8–9 | ciano |
+| Atenção | 6–7 | amarelo |
+| Em Risco | 4–5 | laranja |
+| Perdidos | 3 | vermelho |
+| Sem dados | algum valor null | cinza |
 
-**Frequência** (nº de compras nos últimos 12 meses):
-- 5: > 4 | 4: 4 | 3: 3 | 2: 2 | 1: 1
+## Coluna soma no banco
 
-**Valor** (ticket médio nos últimos 12 meses):
-- 5: > R$400 | 4: R$300-400 | 3: R$200-300 | 2: R$100-200 | 1: até R$100
+Adicionar coluna **gerada (computed)** em `contatos`:
+```sql
+ALTER TABLE contatos
+  ADD COLUMN rfv_soma smallint
+  GENERATED ALWAYS AS (
+    COALESCE(rfv_recencia,0) + COALESCE(rfv_frequencia,0) + COALESCE(rfv_valor,0)
+  ) STORED;
+CREATE INDEX idx_contatos_rfv_soma ON contatos(tenant_id, rfv_soma DESC);
+```
 
-## Mudanças
+Vantagem: sempre sincronizada automaticamente, permite ordenar/filtrar por soma direto no SQL sem alterar a edge function `calcular-rfv`.
 
-### 1. Banco de dados (migration)
-
-Adicionar 4 colunas em `contatos`:
-- `rfv_recencia` smallint (1-5)
-- `rfv_frequencia` smallint (1-5)
-- `rfv_valor` smallint (1-5)
-- `rfv_calculado_em` timestamptz
-
-Habilitar `pg_cron` + `pg_net` para o job diário.
-
-### 2. Edge function `calcular-rfv`
-
-- Para cada tenant, busca contatos que tiveram compras nos últimos 12 meses
-- Calcula R, F, V conforme tabela fixa
-- Para contatos sem compra no período: R=1, F=0 (deixa null), V=null
-- Faz `UPDATE` em massa nos contatos
-- Retorna `{ tenant_id, contatos_atualizados }`
-
-### 3. Cron job (1x ao dia, 03:00 BRT)
-
-Via `pg_cron` chamando a edge function. SQL rodado pelo tool de insert (não migration, pois contém URL/chave).
-
-### 4. Nova aba "RFV" em `GiftbackConfig.tsx`
-
-- Adicionar `<TabsTrigger value="rfv">RFV</TabsTrigger>`
-- 3 cards lado-a-lado mostrando a tabela fixa de critérios (Recência, Frequência, Valor) — exatamente como o print
-- Botão "Atualizar agora" que invoca a edge function manualmente
-- Texto: "Última atualização: {rfv_calculado_em mais recente}"
-- Tabela: Top contatos com nome, R, F, V, nota composta (ex: "5-4-3"), saldo giftback. Filtros por R/F/V.
-
-### 5. Badge no contato (`Contatos.tsx`)
-
-- Coluna "RFV" mostrando badge "5-4-3" colorido (verde alto, amarelo médio, vermelho baixo)
-
-### 6. Filtro em Disparos (`Disparos.tsx`)
-
-- Adicionar opção `rfv` ao `tipo_filtro` da campanha
-- UI: selector de notas R/F/V (ex: enviar apenas para R≥4 E F≥3)
-- Migration: estender enum `campanha_filtro` com `'rfv'`
-- Backend de envio (`enviar-campanha`): respeitar o novo filtro
-
-## Arquivos afetados
+## Mudanças nos arquivos
 
 | Arquivo | Mudança |
-|---------|---------|
-| Migration SQL | 4 colunas RFV em `contatos`; estender enum `campanha_filtro` |
-| `supabase/functions/calcular-rfv/index.ts` | **Novo** — calcula RFV e atualiza contatos |
-| `supabase/config.toml` | Registrar nova função |
-| Insert SQL (cron) | `pg_cron` schedule diário 03:00 |
-| `src/pages/GiftbackConfig.tsx` | Nova aba "RFV" com critérios + tabela + botão atualizar |
-| `src/pages/Contatos.tsx` | Coluna/badge RFV |
-| `src/pages/Disparos.tsx` | Filtro de campanha por RFV |
-| `supabase/functions/enviar-campanha/index.ts` | Suportar filtro `rfv` |
+|---|---|
+| Migration | Adiciona coluna gerada `rfv_soma` + índice |
+| `src/lib/rfv-segments.ts` | **Novo** — `getSegmento(r,f,v)` baseado em soma; lista de segmentos com cores |
+| `src/components/giftback/RfvBadge.tsx` | Usa `getSegmento`; mostra `"5-4-3 · Campeão"`; cor vem do segmento |
+| `src/components/giftback/RfvTab.tsx` | Adicionar query separada agregando contagem por segmento; gráfico de pizza (Recharts); filtro por segmento; coluna "Segmento" na tabela; botão "Exportar CSV" respeitando filtros |
+| `src/integrations/supabase/types.ts` | Auto-regenerado com `rfv_soma` |
+
+## Detalhes UI (RfvTab)
+
+- **Card "Distribuição por Segmento"** acima da tabela: pizza à esquerda + lista com contagem/percentual à direita
+- **Filtro Segmento** ao lado de R/F/V (client-side após query)
+- **Coluna "Segmento"** na tabela ranqueada com badge colorido
+- **Botão "Exportar CSV"** no header do card de clientes — gera CSV (Nome, Telefone, R, F, V, Soma, Segmento, Saldo GB) sem o limit de 200, respeita filtros ativos, download via Blob
 
 ## Resultado
 
-Admin abre Giftback → aba RFV → vê os critérios fixos (igual ao print) + tabela de clientes ranqueados. Job diário recalcula automaticamente. Notas aparecem nos contatos e podem segmentar disparos.
+Classificação simplificada e mais intuitiva (uma soma única em vez de 3 critérios combinados). Coluna `rfv_soma` permite queries/ordenação eficientes. Aba RFV ganha gráfico de distribuição, filtro por segmento e exportação CSV.
 

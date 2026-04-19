@@ -1181,23 +1181,39 @@ function parseMessageContent(payload: any) {
 }
 
 async function findOrCreateContact(supabase: any, tenantId: string, phone: string, name: string) {
-  let { data: contato } = await supabase
+  // 1) Lookup atômico — usa maybeSingle para tolerar 0 resultados sem erro
+  const { data: existing } = await supabase
     .from("contatos")
     .select("id")
     .eq("tenant_id", tenantId)
     .eq("telefone", phone)
-    .single();
+    .maybeSingle();
 
-  if (!contato) {
-    const { data: newContato } = await supabase
+  if (existing) return existing;
+
+  // 2) Insert; se outra requisição paralela criou primeiro (UNIQUE constraint),
+  //    relê o registro existente
+  const { data: inserted, error: insertErr } = await supabase
+    .from("contatos")
+    .insert({ tenant_id: tenantId, nome: name, telefone: phone })
+    .select("id")
+    .maybeSingle();
+
+  if (inserted) return inserted;
+
+  // Race: já existe — buscar de novo
+  if (insertErr && (insertErr.code === "23505" || /duplicate|unique/i.test(insertErr.message || ""))) {
+    const { data: retry } = await supabase
       .from("contatos")
-      .insert({ tenant_id: tenantId, nome: name, telefone: phone })
       .select("id")
-      .single();
-    contato = newContato;
+      .eq("tenant_id", tenantId)
+      .eq("telefone", phone)
+      .maybeSingle();
+    if (retry) return retry;
   }
 
-  return contato;
+  console.error("findOrCreateContact failed:", insertErr);
+  return null;
 }
 
 async function findOrCreateConversa(supabase: any, tenantId: string, contatoId: string) {

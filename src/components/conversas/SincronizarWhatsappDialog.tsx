@@ -104,7 +104,7 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
         setProgress(Math.round(((i + 1) / totalChats) * 100));
         setStatusText(`Importando chat ${i + 1}/${totalChats}: ${chatName.slice(0, 30)}...`);
 
-        // Find or create contact
+        // Find or create contact (tolerante a race / UNIQUE constraint)
         let { data: contato } = await supabase
           .from("contatos")
           .select("id")
@@ -113,7 +113,7 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
           .maybeSingle();
 
         if (!contato) {
-          const { data: novo } = await supabase
+          const { data: novo, error: insertErr } = await supabase
             .from("contatos")
             .insert({
               tenant_id: tenantId,
@@ -122,8 +122,15 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
               avatar_url: chat.profilePicture || null,
             })
             .select("id")
-            .single();
-          contato = novo;
+            .maybeSingle();
+          if (novo) {
+            contato = novo;
+          } else if (insertErr && (insertErr.code === "23505" || /duplicate|unique/i.test(insertErr.message || ""))) {
+            const { data: retry } = await supabase
+              .from("contatos").select("id")
+              .eq("tenant_id", tenantId).eq("telefone", phone).maybeSingle();
+            contato = retry;
+          }
         } else {
           const updateData: any = {};
           if (chat.profilePicture) updateData.avatar_url = chat.profilePicture;

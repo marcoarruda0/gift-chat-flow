@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
 
     const { telefone, mensagens } = parsed;
 
-    // Find or create contato
+    // Find or create contato (tolerante a race / UNIQUE constraint)
     let { data: contato } = await adminClient
       .from("contatos").select("id, nome").eq("tenant_id", tenantId).eq("telefone", telefone).maybeSingle();
 
@@ -220,11 +220,16 @@ Deno.serve(async (req) => {
       } else {
         const nomeFromFile = filename?.replace(/\.html?$/i, "").replace(/[_+]/g, " ").trim() || telefone;
         const { data: newContato, error: createErr } = await adminClient
-          .from("contatos").insert({ tenant_id: tenantId, nome: nomeFromFile, telefone }).select("id, nome").single();
-        if (createErr) {
+          .from("contatos").insert({ tenant_id: tenantId, nome: nomeFromFile, telefone }).select("id, nome").maybeSingle();
+        if (newContato) {
+          contato = newContato;
+        } else if (createErr && (createErr.code === "23505" || /duplicate|unique/i.test(createErr.message || ""))) {
+          const { data: retry } = await adminClient
+            .from("contatos").select("id, nome").eq("tenant_id", tenantId).eq("telefone", telefone).maybeSingle();
+          contato = retry;
+        } else if (createErr) {
           return new Response(JSON.stringify({ error: "Erro ao criar contato: " + createErr.message }), { status: 500, headers: corsHeaders });
         }
-        contato = newContato;
       }
     }
 

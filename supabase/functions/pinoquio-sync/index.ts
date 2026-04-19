@@ -110,22 +110,28 @@ async function registerInConversas(
   cadastramentoId: number
 ) {
   try {
-    // 1. Find or create contact
+    // 1. Find or create contact (atômico, tolerante a duplicatas/race)
     let { data: contato } = await client
       .from("contatos")
       .select("id")
       .eq("tenant_id", tenantId)
       .eq("telefone", phone)
-      .limit(1)
-      .single();
+      .maybeSingle();
 
     if (!contato) {
-      const { data: novo } = await client
+      const { data: novo, error: insertErr } = await client
         .from("contatos")
         .insert({ tenant_id: tenantId, telefone: phone, nome: nome || "Fornecedor" })
         .select("id")
-        .single();
-      contato = novo;
+        .maybeSingle();
+      if (novo) {
+        contato = novo;
+      } else if (insertErr && (insertErr.code === "23505" || /duplicate|unique/i.test(insertErr.message || ""))) {
+        const { data: retry } = await client
+          .from("contatos").select("id")
+          .eq("tenant_id", tenantId).eq("telefone", phone).maybeSingle();
+        contato = retry;
+      }
     }
     if (!contato) return;
 

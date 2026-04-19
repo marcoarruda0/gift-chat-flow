@@ -1,44 +1,99 @@
 
 
-# Plano: Filtro por Segmento em Disparos + Nome do Segmento em Contatos
+# Plano: Eliminar contatos duplicados (raiz + limpeza)
 
-## 1. Disparos — novo filtro "Segmento RFV"
+## Diagnóstico
 
-Hoje a aba RFV em Disparos só permite filtrar por nota mínima R/F/V individual. Vou adicionar um **seletor de Segmento** no topo do bloco RFV que, quando escolhido, filtra contatos pela faixa de soma daquele segmento (Campeões 13-15, Leais 10-12, etc.) — uma seleção só, mais intuitiva que mexer nos 3 sliders.
+**Conversas duplicadas: NÃO existem no banco** (query `GROUP BY tenant_id, contato_id HAVING COUNT>1` retornou vazio). A `findOrCreateConversa` no webhook está correta. Se você estava enxergando "conversas duplicadas" na UI, era na verdade reflexo dos contatos duplicados (mesmo telefone aparecendo em N "contatos" diferentes, cada um com sua conversa visível em listas que fazem JOIN).
 
-**Comportamento:**
-- Novo `Select` "Segmento" com opções: "Personalizado (R/F/V)" + os 6 segmentos nomeados (de `SEGMENTOS_ORDENADOS`, exceto "Sem dados")
-- Se "Personalizado" → mostra os 3 selects R/F/V atuais (comportamento de hoje)
-- Se um segmento → oculta os selects R/F/V e filtra contatos cuja `getSegmentoBySoma(r,f,v).key` bate com o escolhido
-- `filtro_valor` salvo na campanha:
-  - Personalizado: `["r:X", "f:Y", "v:Z"]` (igual hoje)
-  - Segmento: `["seg:campeoes"]` (novo formato)
+**Contatos duplicados: SIM, problema sério**. 8 telefones têm duplicatas, sendo o pior caso `5511975471989` com **105 cópias** do mesmo contato (todas com o mesmo nome, mesmo tenant, criadas ao longo de vários dias). Total: 451 contatos no banco, mas só 188 telefones únicos → ~263 linhas órfãs.
 
-**Mudança no `contatosFiltrados`:** quando segmento selecionado, usa `getSegmentoBySoma` para classificar e comparar com a key escolhida.
+## Causa-raiz (3 bugs cumulativos)
 
-**Tipo `Contato`:** adicionar opcionalmente `rfv_soma` no select (não é estritamente necessário — calculamos client-side via `getSegmentoBySoma`, que já cobre nulls).
+### Bug 1 — `findOrCreateContact` no webhook usa `.single()` em vez de `.maybeSingle()`
 
-## 2. Backend `enviar-campanha` — suportar novo formato
+`supabase/functions/zapi-webhook/index.ts:1184-1198`:
+```ts
+let { data: contato } = await supabase
+  .from("contatos").select("id")
+  .eq("tenant_id", tenantId).eq("telefone", phone)
+  .single();   // ← lança erro quando há 0 OU >1 resultados
+if (!contato) { ...insert... }
+```
+Com `.single()`, **se já existem 2+ contatos** com aquele telefone, a chamada retorna erro e `contato` fica `null` → o webhook insere mais um. Cada mensagem recebida de um número já duplicado cria outra duplicata. Loop infinito.
 
-Edge function precisa entender `filtro_valor: ["seg:campeoes"]`:
-- Detecta prefixo `seg:` → busca contatos do tenant cujo `rfv_soma` está na faixa do segmento
-- Faixas: campeoes ≥13, leais 10-12, potenciais 8-9, atencao 6-7, em_risco 4-5, perdidos =3
-- Mantém compatibilidade com formato atual `r:`/`f:`/`v:`
+Pior: como não há **race protection**, mesmo na primeira vez 2 mensagens quase simultâneas (Z-API entrega histórico em rajada) podem fazer 2 INSERTs em paralelo. Foi o que iniciou o problema (veja os timestamps colados: `15:19:39.761` e `15:19:39.828` — 67ms de diferença).
 
-## 3. Contatos — mostrar nome do segmento no badge
+### Bug 2 — Sem constraint de unicidade no banco
 
-Hoje `RfvBadge` na lista de Contatos usa `compacto` (só "5-4-3"). Mudar para versão completa que já existe no componente: "5-4-3 · Campeões" com a cor do segmento. Em viewports pequenos pode ficar largo, então aplicar `max-w` + truncate no container da célula RFV.
+A tabela `contatos` não tem `UNIQUE(tenant_id, telefone)`. Sem isso, qualquer race condition resulta em duplicata permanente.
+
+### Bug 3 — Mesmo padrão repetido em outros lugares
+
+`SincronizarWhatsappDialog.tsx`, `pinoquio-sync`, `importar-conversas`, `importar-conversas-html` — todos fazem find-then-insert sem proteção. Já que vamos resolver, vamos resolver para todos.
+
+## Solução (4 partes)
+
+### Parte 1 — Limpar duplicatas existentes (script SQL)
+
+Para cada `(tenant_id, telefone)` duplicado, **manter o contato mais antigo** e:
+1. Repointar `conversas.contato_id`, `compras.contato_id`, `giftback_movimentos.contato_id`, `campanha_destinatarios.contato_id` para o "canônico"
+2. Somar `saldo_giftback` no canônico
+3. Mesclar `tags` (union) e `campos_personalizados` (preferindo o canônico)
+4. Deletar os duplicados
+5. Deduplicar conversas resultantes (se 2 contatos duplicados tinham conversas separadas, agora ambas apontam para o mesmo contato — fundir mantendo a com `ultima_msg_at` mais recente, repointar mensagens)
+
+### Parte 2 — Adicionar UNIQUE constraint (migration)
+
+```sql
+-- Após limpeza
+ALTER TABLE contatos
+  ADD CONSTRAINT contatos_tenant_telefone_unique
+  UNIQUE (tenant_id, telefone);
+```
+Isso garante que **mesmo com bug futuro, o banco rejeita duplicata**. Também cria índice que acelera lookups.
+
+### Parte 3 — Corrigir `findOrCreateContact` no webhook
+
+Trocar para padrão atômico via `upsert`:
+```ts
+const { data: contato } = await supabase
+  .from("contatos")
+  .upsert(
+    { tenant_id: tenantId, telefone: phone, nome: name },
+    { onConflict: "tenant_id,telefone", ignoreDuplicates: false }
+  )
+  .select("id")
+  .single();
+```
+`upsert` com a nova UNIQUE constraint é atômico — duas chamadas paralelas = 1 insert + 1 update, nunca 2 inserts.
+
+Detalhe: para não sobrescrever `nome` toda hora, vou usar lookup `.maybeSingle()` primeiro e só fazer upsert se não existir; se a constraint pegar (race), faço re-select.
+
+### Parte 4 — Mesmo fix nos outros 4 lugares
+
+- `SincronizarWhatsappDialog.tsx` — trocar `.single()` por `.maybeSingle()` (já usa) + tratar erro de unique
+- `pinoquio-sync/index.ts` — idem
+- `importar-conversas/index.ts` e `importar-conversas-html/index.ts` — idem
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---|---|
-| `src/pages/Disparos.tsx` | Novo Select "Segmento"; lógica condicional R/F/V vs segmento; `filtro_valor` com prefixo `seg:` |
-| `supabase/functions/enviar-campanha/index.ts` | Suportar `filtro_valor` com `seg:<key>` filtrando por faixa de `rfv_soma` |
-| `src/pages/Contatos.tsx` | Remover prop `compacto` do `RfvBadge` (mostrar nome do segmento) |
+| Migration #1 (SQL grande) | Mescla duplicatas: repointa FKs, soma saldos, dedup conversas, deleta órfãos |
+| Migration #2 | `ALTER TABLE contatos ADD UNIQUE(tenant_id, telefone)` |
+| `supabase/functions/zapi-webhook/index.ts` | `findOrCreateContact` atômico com `.maybeSingle()` + retry/upsert |
+| `supabase/functions/pinoquio-sync/index.ts` | Mesmo padrão |
+| `supabase/functions/importar-conversas/index.ts` | Mesmo padrão |
+| `supabase/functions/importar-conversas-html/index.ts` | Mesmo padrão |
+| `src/components/conversas/SincronizarWhatsappDialog.tsx` | Tratar erro de UNIQUE como "buscar de novo" |
 
 ## Resultado
 
-- **Disparos**: admin escolhe "Campeões" no dropdown → campanha envia só para clientes top, sem precisar configurar 3 sliders. Modo "Personalizado" continua disponível.
-- **Contatos**: lista mostra "5-4-3 · Campeões" com cor do segmento, dando contexto imediato sem hover.
+- Banco: 451 → ~188 contatos (sem duplicatas, dados consolidados — saldos somados, conversas mescladas, mensagens preservadas)
+- Constraint UNIQUE bloqueia futuras duplicatas no nível do banco
+- Webhook e demais entradas usam padrão atômico
+- Conversas continuam corretas (já estavam)
+
+⚠️ Antes de executar, vou listar quantas linhas serão mescladas em cada tabela e confirmar com você antes do `DELETE` final, já que isso é destrutivo.
 

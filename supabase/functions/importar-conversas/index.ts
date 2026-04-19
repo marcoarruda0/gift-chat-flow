@@ -177,17 +177,23 @@ Deno.serve(async (req) => {
       if (partialMatch) {
         contato = partialMatch;
       } else {
-        // Create new contact
+        // Create new contact (tolerante a race / UNIQUE constraint)
         const nomeFromFile = filename?.replace(/\.txt$/i, "").replace(/_/g, " ") || telefone;
         const { data: newContato, error: createErr } = await adminClient
           .from("contatos")
           .insert({ tenant_id: tenantId, nome: nomeFromFile, telefone })
           .select("id, nome")
-          .single();
-        if (createErr) {
+          .maybeSingle();
+        if (newContato) {
+          contato = newContato;
+        } else if (createErr && (createErr.code === "23505" || /duplicate|unique/i.test(createErr.message || ""))) {
+          const { data: retry } = await adminClient
+            .from("contatos").select("id, nome")
+            .eq("tenant_id", tenantId).eq("telefone", telefone).maybeSingle();
+          contato = retry;
+        } else if (createErr) {
           return new Response(JSON.stringify({ error: "Erro ao criar contato: " + createErr.message }), { status: 500, headers: corsHeaders });
         }
-        contato = newContato;
       }
     }
 

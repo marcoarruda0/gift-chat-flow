@@ -1,0 +1,854 @@
+import { useState, useEffect, useMemo, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
+  MessageSquare, Mail,
+} from "lucide-react";
+import { format } from "date-fns";
+import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
+import { EmailEditor } from "@/components/campanhas/EmailEditor";
+
+type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
+type Canal = "whatsapp" | "email";
+
+const atrasoConfig: Record<AtrasoTipo, { label: string; desc: string }> = {
+  muito_curto: { label: "Muito Curto", desc: "1s a 5s" },
+  curto: { label: "Curto", desc: "5s a 20s" },
+  medio: { label: "Médio", desc: "20s a 60s" },
+  longo: { label: "Longo", desc: "60s a 180s" },
+  muito_longo: { label: "Muito Longo", desc: "180s a 300s" },
+};
+
+type Campanha = {
+  id: string;
+  nome: string;
+  mensagem: string;
+  tipo_filtro: string;
+  filtro_valor: string[];
+  status: string;
+  agendada_para: string | null;
+  total_destinatarios: number;
+  total_enviados: number;
+  total_falhas: number;
+  created_at: string;
+  tipo_midia: string;
+  midia_url: string | null;
+  atraso_tipo: AtrasoTipo;
+  canal: Canal;
+  email_assunto: string | null;
+  email_html: string | null;
+  email_preview: string | null;
+};
+
+type Contato = {
+  id: string;
+  nome: string;
+  telefone: string | null;
+  email: string | null;
+  tags: string[] | null;
+  rfv_recencia: number | null;
+  rfv_frequencia: number | null;
+  rfv_valor: number | null;
+};
+
+const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  rascunho: { label: "Rascunho", variant: "secondary" },
+  agendada: { label: "Agendada", variant: "outline" },
+  enviando: { label: "Enviando...", variant: "default" },
+  concluida: { label: "Concluída", variant: "secondary" },
+  cancelada: { label: "Cancelada", variant: "destructive" },
+};
+
+const midiaIcon: Record<string, React.ReactNode> = {
+  texto: null,
+  imagem: <Image className="h-4 w-4" />,
+  audio: <Mic className="h-4 w-4" />,
+  video: <Video className="h-4 w-4" />,
+  documento: <FileText className="h-4 w-4" />,
+};
+
+const midiaAccept: Record<string, string> = {
+  imagem: "image/*",
+  audio: "audio/*",
+  video: "video/*",
+  documento: ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv",
+};
+
+export default function Campanhas() {
+  const { profile } = useAuth();
+  const { toast } = useToast();
+  const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailDialog, setDetailDialog] = useState<string | null>(null);
+  const [destinatariosDetail, setDestinatariosDetail] = useState<any[]>([]);
+  const [filtroCanal, setFiltroCanal] = useState<"todas" | Canal>("todas");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Form state
+  const [canal, setCanal] = useState<Canal>("whatsapp");
+  const [nome, setNome] = useState("");
+  const [mensagem, setMensagem] = useState("");
+  const [emailAssunto, setEmailAssunto] = useState("");
+  const [emailPreview, setEmailPreview] = useState("");
+  const [emailHtml, setEmailHtml] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState<string>("todos");
+  const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
+  const [agendarPara, setAgendarPara] = useState("");
+  const [agendar, setAgendar] = useState(false);
+  const [contatos, setContatos] = useState<Contato[]>([]);
+  const [contatosSelecionados, setContatosSelecionados] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [tipoMidia, setTipoMidia] = useState("texto");
+  const [midiaUrl, setMidiaUrl] = useState<string | null>(null);
+  const [midiaFileName, setMidiaFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [atrasoTipo, setAtrasoTipo] = useState<AtrasoTipo>("medio");
+  const [rfvMinR, setRfvMinR] = useState("0");
+  const [rfvMinF, setRfvMinF] = useState("0");
+  const [rfvMinV, setRfvMinV] = useState("0");
+  const [rfvSegmento, setRfvSegmento] = useState<"custom" | SegmentoKey>("custom");
+
+  const tenantId = profile?.tenant_id;
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    contatos.forEach((c) => c.tags?.forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [contatos]);
+
+  const hasContact = (c: Contato) => (canal === "email" ? !!c.email : !!c.telefone);
+
+  const contatosFiltrados = useMemo(() => {
+    if (tipoFiltro === "todos") return contatos.filter(hasContact);
+    if (tipoFiltro === "tag") return contatos.filter((c) => hasContact(c) && c.tags?.some((t) => tagsSelecionadas.includes(t)));
+    if (tipoFiltro === "manual") return contatos.filter((c) => hasContact(c) && contatosSelecionados.includes(c.id));
+    if (tipoFiltro === "rfv") {
+      if (rfvSegmento !== "custom") {
+        return contatos.filter(
+          (c) =>
+            hasContact(c) &&
+            getSegmentoBySoma(c.rfv_recencia, c.rfv_frequencia, c.rfv_valor).key === rfvSegmento,
+        );
+      }
+      const minR = parseInt(rfvMinR);
+      const minF = parseInt(rfvMinF);
+      const minV = parseInt(rfvMinV);
+      return contatos.filter((c) =>
+        hasContact(c) &&
+        (minR === 0 || (c.rfv_recencia ?? 0) >= minR) &&
+        (minF === 0 || (c.rfv_frequencia ?? 0) >= minF) &&
+        (minV === 0 || (c.rfv_valor ?? 0) >= minV)
+      );
+    }
+    return [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV, rfvSegmento, canal]);
+
+  const totalContatosCanal = useMemo(
+    () => contatos.filter(hasContact).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [contatos, canal],
+  );
+
+  const campanhasFiltradas = useMemo(() => {
+    if (filtroCanal === "todas") return campanhas;
+    return campanhas.filter((c) => (c.canal || "whatsapp") === filtroCanal);
+  }, [campanhas, filtroCanal]);
+
+  useEffect(() => {
+    if (tenantId) {
+      fetchCampanhas();
+      fetchContatos();
+    }
+  }, [tenantId]);
+
+  async function fetchCampanhas() {
+    setLoading(true);
+    const { data } = await supabase
+      .from("campanhas")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setCampanhas((data as any[]) || []);
+    setLoading(false);
+  }
+
+  async function fetchContatos() {
+    const { data } = await supabase
+      .from("contatos")
+      .select("id, nome, telefone, email, tags, rfv_recencia, rfv_frequencia, rfv_valor");
+    setContatos((data as Contato[]) || []);
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !tenantId) return;
+
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "bin";
+      const path = `campanhas/${tenantId}/${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage.from("chat-media").upload(path, file);
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(path);
+      setMidiaUrl(urlData.publicUrl);
+      setMidiaFileName(file.name);
+    } catch (err: any) {
+      toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeMidia() {
+    setMidiaUrl(null);
+    setMidiaFileName(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function criarCampanha() {
+    if (!tenantId || !nome.trim()) {
+      toast({ title: "Preencha o nome da campanha", variant: "destructive" });
+      return;
+    }
+
+    if (canal === "whatsapp") {
+      if (tipoMidia === "texto" && !mensagem.trim()) {
+        toast({ title: "Preencha a mensagem", variant: "destructive" });
+        return;
+      }
+      if (tipoMidia !== "texto" && !midiaUrl) {
+        toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!emailAssunto.trim()) {
+        toast({ title: "Preencha o assunto do e-mail", variant: "destructive" });
+        return;
+      }
+      if (!emailHtml.trim() || emailHtml === "<p></p>") {
+        toast({ title: "Escreva o conteúdo do e-mail", variant: "destructive" });
+        return;
+      }
+    }
+
+    const alvos = contatosFiltrados;
+    if (alvos.length === 0) {
+      toast({
+        title: canal === "email"
+          ? "Nenhum contato com e-mail encontrado para o filtro selecionado"
+          : "Nenhum contato com telefone encontrado para o filtro selecionado",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const status = agendar && agendarPara ? "agendada" : "rascunho";
+
+      const { data: campanha, error } = await supabase
+        .from("campanhas")
+        .insert({
+          tenant_id: tenantId,
+          nome: nome.trim(),
+          mensagem: canal === "whatsapp" ? mensagem.trim() : (emailAssunto.trim() || ""),
+          tipo_filtro: tipoFiltro as any,
+          filtro_valor:
+            tipoFiltro === "tag"
+              ? tagsSelecionadas
+              : tipoFiltro === "rfv"
+                ? rfvSegmento !== "custom"
+                  ? [`seg:${rfvSegmento}`]
+                  : [`r:${rfvMinR}`, `f:${rfvMinF}`, `v:${rfvMinV}`]
+                : [],
+          status: status as any,
+          agendada_para: agendar && agendarPara ? new Date(agendarPara).toISOString() : null,
+          total_destinatarios: alvos.length,
+          criado_por: profile?.id || "",
+          tipo_midia: canal === "whatsapp" ? tipoMidia : "texto",
+          midia_url: canal === "whatsapp" ? midiaUrl : null,
+          atraso_tipo: atrasoTipo,
+          canal,
+          email_assunto: canal === "email" ? emailAssunto.trim() : null,
+          email_html: canal === "email" ? emailHtml : null,
+          email_preview: canal === "email" ? emailPreview.trim() : null,
+        } as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const destinatarios = alvos.map((c) => ({
+        campanha_id: (campanha as any).id,
+        contato_id: c.id,
+        telefone: canal === "email" ? (c.email || "") : (c.telefone || ""),
+        tenant_id: tenantId,
+      }));
+
+      const { error: destError } = await supabase.from("campanha_destinatarios").insert(destinatarios as any);
+      if (destError) throw destError;
+
+      toast({ title: `Campanha criada com ${alvos.length} destinatários` });
+      resetForm();
+      setDialogOpen(false);
+      fetchCampanhas();
+    } catch (err: any) {
+      toast({ title: "Erro ao criar campanha", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function enviarCampanha(campanhaId: string, campanhaCanal: Canal) {
+    try {
+      if (campanhaCanal === "email") {
+        toast({
+          title: "Envio de e-mail ainda não está disponível",
+          description: "Configure o domínio de e-mail nas configurações para habilitar campanhas por e-mail.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const { error } = await supabase.functions.invoke("enviar-campanha", {
+        body: { campanha_id: campanhaId },
+      });
+      if (error) throw error;
+      toast({ title: "Envio iniciado!" });
+      setTimeout(fetchCampanhas, 2000);
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+    }
+  }
+
+  async function cancelarCampanha(campanhaId: string) {
+    await supabase.from("campanhas").update({ status: "cancelada" as any }).eq("id", campanhaId);
+    toast({ title: "Campanha cancelada" });
+    fetchCampanhas();
+  }
+
+  async function openDetail(campanhaId: string) {
+    setDetailDialog(campanhaId);
+    const { data } = await supabase
+      .from("campanha_destinatarios")
+      .select("*, contatos:contato_id(nome)")
+      .eq("campanha_id", campanhaId);
+    setDestinatariosDetail((data as any[]) || []);
+  }
+
+  function resetForm() {
+    setCanal("whatsapp");
+    setNome("");
+    setMensagem("");
+    setEmailAssunto("");
+    setEmailPreview("");
+    setEmailHtml("");
+    setTipoFiltro("todos");
+    setTagsSelecionadas([]);
+    setContatosSelecionados([]);
+    setAgendar(false);
+    setAgendarPara("");
+    setTipoMidia("texto");
+    setMidiaUrl(null);
+    setMidiaFileName(null);
+    setAtrasoTipo("medio");
+    setRfvMinR("0");
+    setRfvMinF("0");
+    setRfvMinV("0");
+    setRfvSegmento("custom");
+  }
+
+  function toggleTag(tag: string) {
+    setTagsSelecionadas((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }
+
+  function toggleContato(id: string) {
+    setContatosSelecionados((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
+    );
+  }
+
+  const destStatusBadge: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+    pendente: { label: "Pendente", variant: "secondary" },
+    enviado: { label: "Enviado", variant: "default" },
+    falha: { label: "Falha", variant: "destructive" },
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Megaphone className="h-6 w-6" /> Campanhas
+          </h1>
+          <p className="text-muted-foreground text-sm">Envios em massa por WhatsApp ou E-mail</p>
+        </div>
+        <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+          <Plus className="h-4 w-4 mr-1" /> Nova Campanha
+        </Button>
+      </div>
+
+      <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
+        <TabsList>
+          <TabsTrigger value="todas">Todas</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="gap-1">
+            <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="email" className="gap-1">
+            <Mail className="h-3.5 w-3.5" /> E-mail
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {loading ? (
+        <p className="text-muted-foreground">Carregando...</p>
+      ) : campanhasFiltradas.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Megaphone className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Nenhuma campanha encontrada</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Canal</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Atraso</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Dest.</TableHead>
+                  <TableHead className="text-center">Enviados</TableHead>
+                  <TableHead className="text-center">Falhas</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {campanhasFiltradas.map((c) => {
+                  const sc = statusConfig[c.status] || { label: c.status, variant: "outline" as const };
+                  const tm = c.tipo_midia || "texto";
+                  const cn = (c.canal || "whatsapp") as Canal;
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.nome}</TableCell>
+                      <TableCell>
+                        {cn === "email" ? (
+                          <Badge variant="outline" className="gap-1">
+                            <Mail className="h-3 w-3" /> E-mail
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1">
+                            <MessageSquare className="h-3 w-3" /> WhatsApp
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1 text-muted-foreground capitalize">
+                          {cn === "email" ? <FileText className="h-4 w-4" /> : midiaIcon[tm]} {cn === "email" ? "html" : tm}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {atrasoConfig[(c.atraso_tipo || "medio") as AtrasoTipo]?.label || "Médio"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={sc.variant}>{sc.label}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">{c.total_destinatarios}</TableCell>
+                      <TableCell className="text-center">{c.total_enviados}</TableCell>
+                      <TableCell className="text-center">{c.total_falhas}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {format(new Date(c.created_at), "dd/MM/yy HH:mm")}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => openDetail(c.id)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {(c.status === "rascunho" || c.status === "agendada") && (
+                            <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)}>
+                              <Send className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {c.status === "enviando" && (
+                            <Button size="sm" variant="ghost" onClick={() => cancelarCampanha(c.id)}>
+                              <Ban className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* New Campaign Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nova Campanha</DialogTitle>
+            <DialogDescription>Escolha o canal e configure sua campanha.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="mb-2 block">Canal de envio</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCanal("whatsapp")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "whatsapp" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <MessageSquare className={`h-6 w-6 mb-2 ${canal === "whatsapp" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium">WhatsApp</div>
+                  <div className="text-xs text-muted-foreground">Texto, imagem, vídeo, áudio ou documento</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCanal("email")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "email" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <Mail className={`h-6 w-6 mb-2 ${canal === "email" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium">E-mail</div>
+                  <div className="text-xs text-muted-foreground">Editor rich-text com assunto, links e imagens</div>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <Label>Nome da campanha</Label>
+              <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Promoção de Inverno" />
+            </div>
+
+            {canal === "whatsapp" && (
+              <>
+                <div>
+                  <Label>Tipo de mídia</Label>
+                  <Select value={tipoMidia} onValueChange={(v) => { setTipoMidia(v); removeMidia(); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="texto">📝 Texto</SelectItem>
+                      <SelectItem value="imagem">🖼️ Imagem</SelectItem>
+                      <SelectItem value="audio">🎵 Áudio</SelectItem>
+                      <SelectItem value="video">🎬 Vídeo</SelectItem>
+                      <SelectItem value="documento">📄 Documento</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {tipoMidia !== "texto" && (
+                  <div>
+                    <Label>Arquivo de mídia</Label>
+                    {midiaUrl ? (
+                      <div className="flex items-center gap-2 mt-1 p-2 border rounded bg-muted/30">
+                        {midiaIcon[tipoMidia]}
+                        <span className="text-sm truncate flex-1">{midiaFileName}</span>
+                        <Button size="sm" variant="ghost" onClick={removeMidia}><X className="h-4 w-4" /></Button>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept={midiaAccept[tipoMidia]}
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploading}
+                        >
+                          <Upload className="h-4 w-4 mr-2" />
+                          {uploading ? "Enviando..." : "Selecionar arquivo"}
+                        </Button>
+                      </div>
+                    )}
+                    {midiaUrl && tipoMidia === "imagem" && (
+                      <img src={midiaUrl} alt="Preview" className="mt-2 rounded max-h-40 object-contain" />
+                    )}
+                    {midiaUrl && tipoMidia === "video" && (
+                      <video src={midiaUrl} controls className="mt-2 rounded max-h-40 w-full" />
+                    )}
+                    {midiaUrl && tipoMidia === "audio" && (
+                      <audio src={midiaUrl} controls className="mt-2 w-full" />
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                  <Textarea
+                    value={mensagem}
+                    onChange={(e) => setMensagem(e.target.value)}
+                    placeholder="Olá {nome}, temos uma oferta especial..."
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>
+                  </p>
+                </div>
+              </>
+            )}
+
+            {canal === "email" && (
+              <>
+                <div>
+                  <Label>Assunto</Label>
+                  <Input
+                    value={emailAssunto}
+                    onChange={(e) => setEmailAssunto(e.target.value)}
+                    placeholder="Ex: Olá {nome}, novidades para você"
+                  />
+                </div>
+                <div>
+                  <Label>Pré-visualização (preview text)</Label>
+                  <Input
+                    value={emailPreview}
+                    onChange={(e) => setEmailPreview(e.target.value)}
+                    placeholder="Texto curto exibido na caixa de entrada antes de abrir o e-mail"
+                  />
+                </div>
+                <div>
+                  <Label>Conteúdo do e-mail</Label>
+                  <EmailEditor value={emailHtml} onChange={setEmailHtml} />
+                </div>
+              </>
+            )}
+
+            <div>
+              <Label>Filtro de contatos</Label>
+              <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos com {canal === "email" ? "e-mail" : "telefone"}</SelectItem>
+                  <SelectItem value="tag">Por tag</SelectItem>
+                  <SelectItem value="rfv">Por RFV</SelectItem>
+                  <SelectItem value="manual">Seleção manual</SelectItem>
+                </SelectContent>
+              </Select>
+              {canal === "email" && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {totalContatosCanal} de {contatos.length} contato(s) têm e-mail cadastrado
+                </p>
+              )}
+            </div>
+
+            {tipoFiltro === "rfv" && (
+              <div className="space-y-2 p-3 border rounded bg-muted/30">
+                <div>
+                  <Label className="text-xs">Segmento</Label>
+                  <Select value={rfvSegmento} onValueChange={(v) => setRfvSegmento(v as "custom" | SegmentoKey)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">Personalizado (R/F/V)</SelectItem>
+                      {SEGMENTOS_ORDENADOS.filter((s) => s.key !== "sem_dados").map((s) => (
+                        <SelectItem key={s.key} value={s.key}>
+                          <span className="inline-flex items-center gap-2">
+                            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.cor }} />
+                            {s.nome} — {s.descricao.split("—")[0].trim()}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {rfvSegmento === "custom" && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div>
+                      <Label className="text-xs">R mínimo</Label>
+                      <Select value={rfvMinR} onValueChange={setRfvMinR}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">F mínimo</Label>
+                      <Select value={rfvMinF} onValueChange={setRfvMinF}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">V mínimo</Label>
+                      <Select value={rfvMinV} onValueChange={setRfvMinV}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Qualquer</SelectItem>
+                          {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={n.toString()}>≥ {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tipoFiltro === "tag" && (
+              <div>
+                <Label>Tags</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {allTags.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhuma tag encontrada nos contatos</p>
+                  ) : (
+                    allTags.map((tag) => (
+                      <Badge
+                        key={tag}
+                        variant={tagsSelecionadas.includes(tag) ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => toggleTag(tag)}
+                      >
+                        {tag}
+                      </Badge>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tipoFiltro === "manual" && (
+              <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
+                {contatos.filter(hasContact).map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={contatosSelecionados.includes(c.id)}
+                      onChange={() => toggleContato(c.id)}
+                    />
+                    {c.nome} — {canal === "email" ? c.email : c.telefone}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {canal === "whatsapp" && (
+              <div>
+                <Label>Atraso Inteligente</Label>
+                <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(atrasoConfig) as [AtrasoTipo, { label: string; desc: string }][]).map(([key, cfg]) => (
+                      <SelectItem key={key} value={key}>
+                        ⏱️ {cfg.label} ({cfg.desc})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Intervalo aleatório entre cada envio para reduzir risco de banimento
+                </p>
+              </div>
+            )}
+
+            <div className="bg-muted/50 rounded p-3 text-sm">
+              <strong>{contatosFiltrados.length}</strong> contato(s) serão atingidos
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="agendar"
+                checked={agendar}
+                onChange={(e) => setAgendar(e.target.checked)}
+              />
+              <Label htmlFor="agendar" className="cursor-pointer">Agendar envio</Label>
+            </div>
+
+            {agendar && (
+              <div>
+                <Label>Data e hora</Label>
+                <Input type="datetime-local" value={agendarPara} onChange={(e) => setAgendarPara(e.target.value)} />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={criarCampanha} disabled={submitting}>
+              {agendar ? <><Clock className="h-4 w-4 mr-1" /> Agendar</> : <><Send className="h-4 w-4 mr-1" /> Criar Campanha</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog */}
+      <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Destinatários da Campanha</DialogTitle>
+            <DialogDescription>Status individual de cada destinatário.</DialogDescription>
+          </DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Contato</TableHead>
+                <TableHead>Destino</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Data/Hora</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {destinatariosDetail.map((d) => {
+                const ds = destStatusBadge[d.status] || { label: d.status, variant: "secondary" as const };
+                return (
+                  <TableRow key={d.id}>
+                    <TableCell>{(d.contatos as any)?.nome || "—"}</TableCell>
+                    <TableCell className="text-sm">{d.telefone}</TableCell>
+                    <TableCell>
+                      <Badge variant={ds.variant}>{ds.label}</Badge>
+                      {d.erro && <p className="text-xs text-destructive mt-1">{d.erro}</p>}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {d.enviado_at ? new Date(d.enviado_at).toLocaleString("pt-BR") : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {destinatariosDetail.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

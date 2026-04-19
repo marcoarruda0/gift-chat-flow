@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight, Mail } from "lucide-react";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
 import DepartamentosConfig from "@/components/empresa/DepartamentosConfig";
@@ -24,7 +24,11 @@ const roleLabels: Record<string, string> = {
   caixa: "Caixa",
 };
 
-export default function Empresa() {
+interface EmpresaProps {
+  initialTab?: string;
+}
+
+export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const { profile, user, hasRole, tenants, switchTenant } = useAuth();
   const { toast } = useToast();
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
@@ -33,6 +37,14 @@ export default function Empresa() {
   // Dados da Empresa
   const [tenantData, setTenantData] = useState({ nome: "", cnpj: "", telefone_empresa: "" });
   const [savingTenant, setSavingTenant] = useState(false);
+
+  // E-mail config (per tenant)
+  const [emailConfig, setEmailConfig] = useState({
+    email_remetente_nome: "",
+    email_remetente_local: "contato",
+    email_assinatura: "",
+  });
+  const [savingEmail, setSavingEmail] = useState(false);
 
   // Equipe
   const [team, setTeam] = useState<any[]>([]);
@@ -77,14 +89,21 @@ export default function Empresa() {
   const loadTenantData = async () => {
     const { data } = await supabase
       .from("tenants")
-      .select("nome, cnpj, telefone_empresa")
+      .select("nome, cnpj, telefone_empresa, email_remetente_nome, email_remetente_local, email_assinatura")
       .eq("id", tenantId!)
       .single();
-    if (data) setTenantData({
-      nome: data.nome || "",
-      cnpj: (data as any).cnpj || "",
-      telefone_empresa: (data as any).telefone_empresa || "",
-    });
+    if (data) {
+      setTenantData({
+        nome: data.nome || "",
+        cnpj: (data as any).cnpj || "",
+        telefone_empresa: (data as any).telefone_empresa || "",
+      });
+      setEmailConfig({
+        email_remetente_nome: (data as any).email_remetente_nome || "",
+        email_remetente_local: (data as any).email_remetente_local || "contato",
+        email_assinatura: (data as any).email_assinatura || "",
+      });
+    }
   };
 
   const saveTenantData = async () => {
@@ -98,6 +117,20 @@ export default function Empresa() {
       toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Dados salvos com sucesso!" });
+    }
+  };
+
+  const saveEmailConfig = async () => {
+    setSavingEmail(true);
+    const { error } = await supabase
+      .from("tenants")
+      .update(emailConfig as any)
+      .eq("id", tenantId!);
+    setSavingEmail(false);
+    if (error) {
+      toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Configuração de e-mail salva!" });
     }
   };
 

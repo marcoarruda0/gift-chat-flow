@@ -54,6 +54,7 @@ function AppRoutes() {
       <Route path="/configuracoes/zapi" element={<ProtectedRoute><ZapiConfig /></ProtectedRoute>} />
       <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />
+      <Route path="/empresas" element={<ProtectedRoute><Empresa initialTab="empresas" /></ProtectedRoute>} />
       <Route path="/peca-rara" element={<ProtectedRoute><PecaRara /></ProtectedRoute>} />
       <Route path="/relatorios/atendimento" element={<ProtectedRoute><RelatorioAtendimento /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><Placeholder title="Admin Master" /></ProtectedRoute>} />

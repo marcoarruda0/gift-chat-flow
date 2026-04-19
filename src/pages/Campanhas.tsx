@@ -121,7 +121,32 @@ export default function Campanhas() {
   const [rfvMinV, setRfvMinV] = useState("0");
   const [rfvSegmento, setRfvSegmento] = useState<"custom" | SegmentoKey>("custom");
 
+  // Tenant email config (for live preview in EmailEditor)
+  const [tenantEmail, setTenantEmail] = useState<{
+    nome: string | null;
+    fromName: string | null;
+    signature: string | null;
+  }>({ nome: null, fromName: null, signature: null });
+
   const tenantId = profile?.tenant_id;
+
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase
+      .from("tenants")
+      .select("nome, email_remetente_nome, email_assinatura")
+      .eq("id", tenantId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setTenantEmail({
+            nome: data.nome,
+            fromName: (data as any).email_remetente_nome || data.nome,
+            signature: (data as any).email_assinatura || null,
+          });
+        }
+      });
+  }, [tenantId]);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -641,7 +666,14 @@ export default function Campanhas() {
                 </div>
                 <div>
                   <Label>Conteúdo do e-mail</Label>
-                  <EmailEditor value={emailHtml} onChange={setEmailHtml} />
+                  <EmailEditor
+                    value={emailHtml}
+                    onChange={setEmailHtml}
+                    subject={emailAssunto}
+                    previewText={emailPreview}
+                    signatureHtml={tenantEmail.signature}
+                    fromName={tenantEmail.fromName}
+                  />
                 </div>
               </>
             )}

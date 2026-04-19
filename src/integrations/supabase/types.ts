@@ -1163,6 +1163,9 @@ export type Database = {
         Row: {
           cnpj: string | null
           created_at: string
+          email_assinatura: string | null
+          email_remetente_local: string | null
+          email_remetente_nome: string | null
           id: string
           nome: string
           plano: string | null
@@ -1172,6 +1175,9 @@ export type Database = {
         Insert: {
           cnpj?: string | null
           created_at?: string
+          email_assinatura?: string | null
+          email_remetente_local?: string | null
+          email_remetente_nome?: string | null
           id?: string
           nome: string
           plano?: string | null
@@ -1181,6 +1187,9 @@ export type Database = {
         Update: {
           cnpj?: string | null
           created_at?: string
+          email_assinatura?: string | null
+          email_remetente_local?: string | null
+          email_remetente_nome?: string | null
           id?: string
           nome?: string
           plano?: string | null

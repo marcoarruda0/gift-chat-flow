@@ -280,6 +280,7 @@ export type Database = {
           rfv_calculado_em: string | null
           rfv_frequencia: number | null
           rfv_recencia: number | null
+          rfv_soma: number | null
           rfv_valor: number | null
           saldo_giftback: number | null
           tags: string[] | null
@@ -301,6 +302,7 @@ export type Database = {
           rfv_calculado_em?: string | null
           rfv_frequencia?: number | null
           rfv_recencia?: number | null
+          rfv_soma?: number | null
           rfv_valor?: number | null
           saldo_giftback?: number | null
           tags?: string[] | null
@@ -322,6 +324,7 @@ export type Database = {
           rfv_calculado_em?: string | null
           rfv_frequencia?: number | null
           rfv_recencia?: number | null
+          rfv_soma?: number | null
           rfv_valor?: number | null
           saldo_giftback?: number | null
           tags?: string[] | null

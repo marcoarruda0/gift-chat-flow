@@ -270,7 +270,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
         <p className="text-muted-foreground">Gerencie os dados da empresa, equipe e instâncias</p>
       </div>
 
-      <Tabs defaultValue="dados">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="dados" className="gap-2">
             <Building2 className="h-4 w-4" /> Dados
@@ -281,6 +281,11 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
           <TabsTrigger value="instancias" className="gap-2">
             <Wifi className="h-4 w-4" /> Instâncias
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="email" className="gap-2">
+              <Mail className="h-4 w-4" /> E-mail
+            </TabsTrigger>
+          )}
           {isAdmin && (
             <TabsTrigger value="campos" className="gap-2">
               <Settings2 className="h-4 w-4" /> Campos
@@ -296,7 +301,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
               <Settings2 className="h-4 w-4" /> Respostas
             </TabsTrigger>
           )}
-          {isMaster && (
+          {isAdmin && (
             <TabsTrigger value="empresas" className="gap-2">
               <ArrowLeftRight className="h-4 w-4" /> Empresas
             </TabsTrigger>

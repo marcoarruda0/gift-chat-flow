@@ -46,6 +46,9 @@ type Contato = {
   nome: string;
   telefone: string | null;
   tags: string[] | null;
+  rfv_recencia: number | null;
+  rfv_frequencia: number | null;
+  rfv_valor: number | null;
 };
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -96,6 +99,9 @@ export default function Disparos() {
   const [midiaFileName, setMidiaFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [atrasoTipo, setAtrasoTipo] = useState<AtrasoTipo>("medio");
+  const [rfvMinR, setRfvMinR] = useState("0");
+  const [rfvMinF, setRfvMinF] = useState("0");
+  const [rfvMinV, setRfvMinV] = useState("0");
 
   const tenantId = profile?.tenant_id;
 
@@ -109,8 +115,19 @@ export default function Disparos() {
     if (tipoFiltro === "todos") return contatos.filter((c) => c.telefone);
     if (tipoFiltro === "tag") return contatos.filter((c) => c.telefone && c.tags?.some((t) => tagsSelecionadas.includes(t)));
     if (tipoFiltro === "manual") return contatos.filter((c) => c.telefone && contatosSelecionados.includes(c.id));
+    if (tipoFiltro === "rfv") {
+      const minR = parseInt(rfvMinR);
+      const minF = parseInt(rfvMinF);
+      const minV = parseInt(rfvMinV);
+      return contatos.filter((c) =>
+        c.telefone &&
+        (minR === 0 || (c.rfv_recencia ?? 0) >= minR) &&
+        (minF === 0 || (c.rfv_frequencia ?? 0) >= minF) &&
+        (minV === 0 || (c.rfv_valor ?? 0) >= minV)
+      );
+    }
     return [];
-  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados]);
+  }, [contatos, tipoFiltro, tagsSelecionadas, contatosSelecionados, rfvMinR, rfvMinF, rfvMinV]);
 
   useEffect(() => {
     if (tenantId) {
@@ -130,7 +147,7 @@ export default function Disparos() {
   }
 
   async function fetchContatos() {
-    const { data } = await supabase.from("contatos").select("id, nome, telefone, tags");
+    const { data } = await supabase.from("contatos").select("id, nome, telefone, tags, rfv_recencia, rfv_frequencia, rfv_valor");
     setContatos((data as Contato[]) || []);
   }
 

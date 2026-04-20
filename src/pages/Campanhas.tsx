@@ -656,16 +656,21 @@ export default function Campanhas() {
                 )}
 
                 <div>
-                  <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                    <InsertVariableButton
+                      onInsert={(token) =>
+                        insertAtCursor(mensagemRef.current, token, mensagem, setMensagem)
+                      }
+                    />
+                  </div>
                   <Textarea
+                    ref={mensagemRef}
                     value={mensagem}
                     onChange={(e) => setMensagem(e.target.value)}
                     placeholder="Olá {nome}, temos uma oferta especial..."
                     rows={3}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>
-                  </p>
                 </div>
               </>
             )}

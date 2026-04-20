@@ -1166,6 +1166,7 @@ export type Database = {
           email_assinatura: string | null
           email_remetente_local: string | null
           email_remetente_nome: string | null
+          email_reply_to: string | null
           id: string
           nome: string
           plano: string | null
@@ -1178,6 +1179,7 @@ export type Database = {
           email_assinatura?: string | null
           email_remetente_local?: string | null
           email_remetente_nome?: string | null
+          email_reply_to?: string | null
           id?: string
           nome: string
           plano?: string | null
@@ -1190,6 +1192,7 @@ export type Database = {
           email_assinatura?: string | null
           email_remetente_local?: string | null
           email_remetente_nome?: string | null
+          email_reply_to?: string | null
           id?: string
           nome?: string
           plano?: string | null

@@ -31,6 +31,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { InsertVariableButton } from "./InsertVariableButton";
 
 interface EmailEditorProps {
   value: string;

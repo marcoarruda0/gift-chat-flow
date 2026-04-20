@@ -42,6 +42,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const [emailConfig, setEmailConfig] = useState({
     email_remetente_nome: "",
     email_remetente_local: "contato",
+    email_reply_to: "",
     email_assinatura: "",
   });
   const [savingEmail, setSavingEmail] = useState(false);
@@ -89,7 +90,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const loadTenantData = async () => {
     const { data } = await supabase
       .from("tenants")
-      .select("nome, cnpj, telefone_empresa, email_remetente_nome, email_remetente_local, email_assinatura")
+      .select("nome, cnpj, telefone_empresa, email_remetente_nome, email_remetente_local, email_reply_to, email_assinatura")
       .eq("id", tenantId!)
       .single();
     if (data) {
@@ -101,6 +102,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
       setEmailConfig({
         email_remetente_nome: (data as any).email_remetente_nome || "",
         email_remetente_local: (data as any).email_remetente_local || "contato",
+        email_reply_to: (data as any).email_reply_to || "",
         email_assinatura: (data as any).email_assinatura || "",
       });
     }
@@ -628,6 +630,18 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Parte antes do @ no endereço de envio (ex: contato, ola, marketing).
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>E-mail para resposta (Reply-To)</Label>
+                  <Input
+                    type="email"
+                    value={emailConfig.email_reply_to}
+                    onChange={(e) => setEmailConfig({ ...emailConfig, email_reply_to: e.target.value })}
+                    placeholder="seuemail@gmail.com"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Quando seus contatos responderem ao e-mail enviado pela campanha, a resposta vai pra esse endereço. Pode ser seu Gmail/Outlook normal. Deixe em branco para usar o e-mail do remetente.
                   </p>
                 </div>
                 <div className="space-y-2">

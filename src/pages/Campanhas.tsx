@@ -19,6 +19,7 @@ import {
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
+import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "email";

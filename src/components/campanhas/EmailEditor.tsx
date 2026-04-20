@@ -125,6 +125,15 @@ function Toolbar({ editor }: { editor: Editor | null }) {
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
+      <Separator orientation="vertical" className="h-6 mx-1" />
+
+      <InsertVariableButton
+        variant="toolbar"
+        onInsert={(token) => editor.chain().focus().insertContent(token).run()}
+      />
+
+      <Separator orientation="vertical" className="h-6 mx-1" />
+
       <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => editor.chain().focus().undo().run()}>
         <Undo className="h-4 w-4" />
       </Button>

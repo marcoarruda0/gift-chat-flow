@@ -31,6 +31,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { InsertVariableButton } from "./InsertVariableButton";
 
 interface EmailEditorProps {
   value: string;
@@ -121,6 +122,15 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={setColor}>
         <Palette className="h-4 w-4" />
       </Button>
+
+      <Separator orientation="vertical" className="h-6 mx-1" />
+
+      <Separator orientation="vertical" className="h-6 mx-1" />
+
+      <InsertVariableButton
+        variant="toolbar"
+        onInsert={(token) => editor.chain().focus().insertContent(token).run()}
+      />
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
@@ -231,10 +241,6 @@ export function EmailEditor({
     <div>
       <Toolbar editor={editor} />
       <EditorContent editor={editor} />
-      <p className="text-xs text-muted-foreground mt-1">
-        Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code>{" "}
-        <code className="bg-muted px-1 rounded">{"{email}"}</code>
-      </p>
     </div>
   );
 

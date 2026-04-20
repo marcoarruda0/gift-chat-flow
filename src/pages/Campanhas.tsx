@@ -19,6 +19,7 @@ import {
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
+import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "email";
@@ -96,6 +97,29 @@ export default function Campanhas() {
   const [destinatariosDetail, setDestinatariosDetail] = useState<any[]>([]);
   const [filtroCanal, setFiltroCanal] = useState<"todas" | Canal>("todas");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emailAssuntoRef = useRef<HTMLInputElement>(null);
+  const mensagemRef = useRef<HTMLTextAreaElement>(null);
+
+  function insertAtCursor(
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    token: string,
+    current: string,
+    setter: (v: string) => void,
+  ) {
+    if (!el) {
+      setter(current + token);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    setter(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   // Form state
   const [canal, setCanal] = useState<Canal>("whatsapp");
@@ -632,16 +656,21 @@ export default function Campanhas() {
                 )}
 
                 <div>
-                  <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>{tipoMidia === "texto" ? "Mensagem" : "Legenda (opcional)"}</Label>
+                    <InsertVariableButton
+                      onInsert={(token) =>
+                        insertAtCursor(mensagemRef.current, token, mensagem, setMensagem)
+                      }
+                    />
+                  </div>
                   <Textarea
+                    ref={mensagemRef}
                     value={mensagem}
                     onChange={(e) => setMensagem(e.target.value)}
                     placeholder="Olá {nome}, temos uma oferta especial..."
                     rows={3}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code> <code className="bg-muted px-1 rounded">{"{telefone}"}</code>
-                  </p>
                 </div>
               </>
             )}
@@ -649,8 +678,16 @@ export default function Campanhas() {
             {canal === "email" && (
               <>
                 <div>
-                  <Label>Assunto</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Assunto</Label>
+                    <InsertVariableButton
+                      onInsert={(token) =>
+                        insertAtCursor(emailAssuntoRef.current, token, emailAssunto, setEmailAssunto)
+                      }
+                    />
+                  </div>
                   <Input
+                    ref={emailAssuntoRef}
                     value={emailAssunto}
                     onChange={(e) => setEmailAssunto(e.target.value)}
                     placeholder="Ex: Olá {nome}, novidades para você"

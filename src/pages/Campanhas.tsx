@@ -673,8 +673,16 @@ export default function Campanhas() {
             {canal === "email" && (
               <>
                 <div>
-                  <Label>Assunto</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Assunto</Label>
+                    <InsertVariableButton
+                      onInsert={(token) =>
+                        insertAtCursor(emailAssuntoRef.current, token, emailAssunto, setEmailAssunto)
+                      }
+                    />
+                  </div>
                   <Input
+                    ref={emailAssuntoRef}
                     value={emailAssunto}
                     onChange={(e) => setEmailAssunto(e.target.value)}
                     placeholder="Ex: Olá {nome}, novidades para você"

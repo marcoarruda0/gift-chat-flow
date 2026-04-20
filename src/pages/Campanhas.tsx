@@ -97,6 +97,29 @@ export default function Campanhas() {
   const [destinatariosDetail, setDestinatariosDetail] = useState<any[]>([]);
   const [filtroCanal, setFiltroCanal] = useState<"todas" | Canal>("todas");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emailAssuntoRef = useRef<HTMLInputElement>(null);
+  const mensagemRef = useRef<HTMLTextAreaElement>(null);
+
+  function insertAtCursor(
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    token: string,
+    current: string,
+    setter: (v: string) => void,
+  ) {
+    if (!el) {
+      setter(current + token);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    setter(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   // Form state
   const [canal, setCanal] = useState<Canal>("whatsapp");

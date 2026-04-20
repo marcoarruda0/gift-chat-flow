@@ -1,106 +1,104 @@
 
 
-# Plano: Habilitar envio real de e-mail + Botão "Inserir variável"
+# Plano: Reply-To por empresa + Setup de domínio Lovable + Envio real de e-mail
 
-## Pré-requisito: Configurar domínio de e-mail
+## Parte 1 — Reply-To por empresa
 
-Ainda não há domínio de e-mail configurado no projeto. Esse é o **primeiro passo** — sem ele a edge function de envio não funciona. Após você configurar o domínio (link abaixo), continuo automaticamente com o resto.
+### Migration
+Adicionar uma coluna em `tenants`:
+```sql
+ALTER TABLE public.tenants
+  ADD COLUMN IF NOT EXISTS email_reply_to text;
+```
 
-## Parte 1 — Infra de e-mail e edge function `enviar-campanha-email`
+### UI — `src/pages/Empresa.tsx` (aba E-mail)
+Adicionar um novo campo entre "Endereço Local" e "Assinatura":
 
-### Passos automáticos após o domínio estar configurado
+- **Label**: "E-mail para resposta (Reply-To)"
+- **Input** type=email, placeholder `pecarara.santoandre@gmail.com`
+- **Helper text**: "Quando seus contatos responderem ao e-mail enviado pela campanha, a resposta vai pra esse endereço. Pode ser seu Gmail/Outlook normal."
+- Atualizar `emailConfig` state + `loadTenantData` + `saveEmailConfig` para incluir `email_reply_to`
 
-1. **Setup de infra de e-mail** (cria filas pgmq, tabelas de log/supressão, cron)
-2. **Scaffold de transactional email** (cria `send-transactional-email`, `handle-email-unsubscribe`, `handle-email-suppression`)
-3. **Criar template `campaign-broadcast`** em `supabase/functions/_shared/transactional-email-templates/campaign-broadcast.tsx`:
-   - Recebe `subject`, `html` (HTML do editor), `signature` (assinatura HTML do tenant), `fromName` como props
-   - Renderiza com React Email mantendo wrapper de marca (Body branco, Container 600px)
-   - Injeta `html` via componente React (não com `dangerouslySetInnerHTML`)
-   - Registra no `registry.ts` com `previewData` realista
-4. **Criar página de unsubscribe** em `src/pages/EmailUnsubscribe.tsx` + rota `/unsubscribe` em `App.tsx` (valida token via GET, confirma via POST, segue padrão da plataforma)
+## Parte 2 — Setup do domínio Lovable
 
-### Edge function `enviar-campanha-email` (nova)
+Como ainda não há domínio configurado no projeto, vou abrir o setup dialog. Após você concluir, eu sigo automaticamente com:
 
-Cria `supabase/functions/enviar-campanha-email/index.ts` seguindo o mesmo padrão chunked/fire-and-forget de `enviar-campanha`:
+1. **`setup_email_infra`** — cria filas pgmq, log de envios, supressão, cron
+2. **`scaffold_transactional_email`** — cria `send-transactional-email`, `handle-email-unsubscribe`, `handle-email-suppression`
+
+## Parte 3 — Template + edge function de envio de e-mail
+
+### Template `campaign-broadcast.tsx`
+Em `supabase/functions/_shared/transactional-email-templates/campaign-broadcast.tsx`:
+- Props: `subject`, `bodyHtml`, `signatureHtml`, `fromName`, `name?`
+- Wrapper React Email: Body branco, Container 600px, padding, Arial
+- Renderiza `bodyHtml` via `<Section dangerouslySetInnerHTML>` ⚠️ (exceção justificada: o conteúdo vem do editor do próprio dono do tenant, não de input de terceiros — é o equivalente a "rich text próprio")
+- Rodapé com `signatureHtml` separado por `<Hr>`
+- Registra em `registry.ts` com `previewData` realista
+
+### Página de unsubscribe
+`src/pages/EmailUnsubscribe.tsx` + rota `/unsubscribe` em `App.tsx` (padrão branded da plataforma — valida token via GET, confirma via POST).
+
+### Edge function `enviar-campanha-email`
+`supabase/functions/enviar-campanha-email/index.ts` — segue mesmo padrão chunked do `enviar-campanha`:
 
 - Recebe `{ campanha_id, internal?, remaining_delay_ms? }`
-- Auth: chamada externa via JWT do usuário; chamadas internas via service role
-- Busca campanha + tenant (`email_remetente_nome`, `email_remetente_local`, `email_assinatura`)
+- Auth: JWT externo / service role interno
+- Busca campanha + tenant (`email_remetente_nome`, `email_remetente_local`, `email_assinatura`, **`email_reply_to`**)
 - Para cada destinatário pendente (1 por invocação):
-  - Substitui variáveis em `email_html` e `email_assunto`: `{nome}`, `{email}`, `{telefone}`
-  - Invoca `send-transactional-email` com:
+  - Substitui `{nome}`, `{email}`, `{telefone}`, `{empresa}` em `email_html` e `email_assunto`
+  - Invoca `send-transactional-email`:
     ```
     templateName: 'campaign-broadcast'
-    recipientEmail: dest.telefone (que guarda o email para canal=email)
+    recipientEmail: dest.telefone (que armazena o email)
     idempotencyKey: `campanha-${campanha_id}-${dest.id}`
-    templateData: { subject, html, signature, fromName, name }
+    replyTo: tenant.email_reply_to ?? null
+    fromName: tenant.email_remetente_nome
+    fromLocal: tenant.email_remetente_local
+    templateData: { subject, bodyHtml, signatureHtml, fromName, name }
     ```
-  - Marca `enviado` ou `falha` em `campanha_destinatarios`
-  - Atualiza contadores em `campanhas`
-- Aplica delay (`atraso_tipo`) entre envios igual ao WhatsApp
-- Encadeia próxima invocação se houver mais pendentes; marca `concluida` quando acabar
+  - Marca `enviado`/`falha` em `campanha_destinatarios` e atualiza contadores
+- Aplica delay (`atraso_tipo`)
+- Encadeia próxima invocação; marca `concluida` no fim
 
-### Front: liberar envio de e-mail
+### Ajustar `send-transactional-email` (gerado pelo scaffold)
+Após o scaffold, vou patchar a função para aceitar e propagar opcionalmente `replyTo`, `fromName` e `fromLocal` no envelope da Lovable Email API. Esses 3 parâmetros viram override por chamada — sem isso ficamos limitados ao `From` fixo.
 
-`src/pages/Campanhas.tsx` → função `enviarCampanha`:
-- Troca o erro "Envio de e-mail ainda não está disponível" por chamada real:
-  ```
-  if (campanhaCanal === "email") {
-    await supabase.functions.invoke("enviar-campanha-email", { body: { campanha_id } })
-  } else {
-    await supabase.functions.invoke("enviar-campanha", { body: { campanha_id } })
-  }
-  ```
-
-⚠️ **Sobre uso de "transactional" para campanha**: A infra Lovable Email é tecnicamente para transactional (1:1, gatilho do usuário). Campanhas são broadcast (1:N). Vou usar a infra mesmo assim porque:
-1. Cada destinatário é tratado individualmente (1 invocação por contato), não é loop massivo
-2. Cada `idempotencyKey` é único por destinatário
-3. Você já tem opt-in dos contatos (cadastrados manualmente/via WhatsApp)
-4. O footer de unsubscribe é adicionado automaticamente, mantendo conformidade
-
-Se preferir Resend dedicado para evitar qualquer risco de reputação no domínio compartilhado, me avise antes de eu começar.
-
-## Parte 2 — Botão "Inserir variável" no editor
-
-`src/components/campanhas/EmailEditor.tsx`:
-
-- Adiciono novo botão na toolbar do Tiptap entre "Cor" e "Undo": ícone `Variable` (lucide) em DropdownMenu
-- Opções no dropdown:
-  - `{nome}` — Nome do contato
-  - `{email}` — E-mail do contato
-  - `{telefone}` — Telefone do contato
-  - `{empresa}` — Nome da sua empresa (do tenant)
-- Ao clicar, insere o token na posição do cursor via `editor.chain().focus().insertContent('{nome}').run()`
-- Tooltip explicando "Variáveis são substituídas pelos dados do contato no envio"
-- A legenda atual abaixo do editor (`Variáveis: {nome} {email}`) é removida (substituída pelo botão)
-
-Mesma funcionalidade espelhada no campo de assunto (input simples): adiciono um pequeno botão "Inserir variável" ao lado do campo `email_assunto` em `Campanhas.tsx` que abre o mesmo dropdown e insere no input.
+### Front — `src/pages/Campanhas.tsx`
+Trocar o erro de `enviarCampanha` por chamada real:
+```ts
+if (campanhaCanal === "email") {
+  await supabase.functions.invoke("enviar-campanha-email", { body: { campanha_id: campanhaId } });
+} else {
+  await supabase.functions.invoke("enviar-campanha", { body: { campanha_id: campanhaId } });
+}
+```
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---|---|
-| Domínio de e-mail | Configurado via dialog (pré-requisito) |
-| Infra de e-mail (auto) | Filas, log, supressão, cron, template registry |
-| `supabase/functions/_shared/transactional-email-templates/campaign-broadcast.tsx` (novo) | Template React Email para broadcast |
-| `supabase/functions/_shared/transactional-email-templates/registry.ts` | +import e entrada `'campaign-broadcast'` |
-| `supabase/functions/enviar-campanha-email/index.ts` (novo) | Drainer que invoca `send-transactional-email` por destinatário |
-| `src/pages/EmailUnsubscribe.tsx` (novo) | Página de unsubscribe branded |
+| Migration | `tenants` +coluna `email_reply_to` |
+| `src/pages/Empresa.tsx` | Campo Reply-To na aba E-mail |
+| Setup de domínio (dialog) | Pré-requisito |
+| Infra de e-mail (auto) | Filas, log, supressão, cron, unsubscribe |
+| `_shared/transactional-email-templates/campaign-broadcast.tsx` (novo) | Template wrapper React Email |
+| `_shared/transactional-email-templates/registry.ts` | Registrar template |
+| `send-transactional-email/index.ts` | Aceitar override de `replyTo`/`fromName`/`fromLocal` |
+| `enviar-campanha-email/index.ts` (novo) | Drainer da fila por canal email |
+| `src/pages/EmailUnsubscribe.tsx` (novo) | Página branded de unsubscribe |
 | `src/App.tsx` | Rota `/unsubscribe` |
-| `src/pages/Campanhas.tsx` | `enviarCampanha` chama nova função para canal email; botão de variável no input de assunto |
-| `src/components/campanhas/EmailEditor.tsx` | Dropdown "Inserir variável" na toolbar |
+| `src/pages/Campanhas.tsx` | `enviarCampanha` invoca função real |
 
 ## Resultado
 
-- **Envio real de e-mail** funcionando: campanhas com canal=email são enviadas via Lovable Email com fila, retry, supressão e unsubscribe automáticos
-- **Variáveis 1-clique**: editor e assunto ganham dropdown que insere `{nome}`, `{email}`, `{telefone}`, `{empresa}` na posição do cursor
-- Personalização real por destinatário: cada e-mail recebe nome/email/telefone substituídos antes do envio
+- Cada empresa configura: nome do remetente, prefixo local do e-mail, assinatura HTML e **endereço de resposta** (que pode ser Gmail/Outlook pessoal)
+- Quando o cliente responder a um e-mail da campanha, a resposta vai pro Gmail dela direto
+- Envio real de e-mail funcionando via Lovable Email com fila, retry, supressão e unsubscribe automáticos
 
 <lov-actions>
 <lov-open-email-setup>Configurar domínio de e-mail</lov-open-email-setup>
-<lov-suggestion message="Teste end-to-end: configure o domínio, crie uma campanha de e-mail com {nome} no corpo e envie pra 1 contato seu pra ver chegando">Verificar envio real end-to-end</lov-suggestion>
-<lov-suggestion message="Quero usar Resend dedicado em vez da infra Lovable Email pra campanhas (separar reputação de domínio entre transacional e broadcast)">Usar Resend para campanhas</lov-suggestion>
+<lov-suggestion message="Teste end-to-end: configure o domínio, defina Reply-To no Empresa → E-mail, crie uma campanha com {nome}, envie pra 1 contato seu e responda o e-mail pra confirmar que volta pro Gmail">Testar fluxo Reply-To completo</lov-suggestion>
 <lov-suggestion message="Adicionar templates de e-mail prontos (boas-vindas, recuperação de carrinho, aniversário) selecionáveis no editor">Templates de e-mail prontos</lov-suggestion>
-<lov-suggestion message="Mostrar estatísticas de entrega no detalhe da campanha (entregues, abertos, cliques, bounces) puxando do email_send_log">Métricas de entrega de e-mail</lov-suggestion>
+<lov-suggestion message="Mostrar estatísticas de entrega no detalhe da campanha (entregues, abertos, bounces) puxando do email_send_log">Métricas de entrega</lov-suggestion>
 </lov-actions>
-

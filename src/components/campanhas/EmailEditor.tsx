@@ -241,10 +241,6 @@ export function EmailEditor({
     <div>
       <Toolbar editor={editor} />
       <EditorContent editor={editor} />
-      <p className="text-xs text-muted-foreground mt-1">
-        Variáveis: <code className="bg-muted px-1 rounded">{"{nome}"}</code>{" "}
-        <code className="bg-muted px-1 rounded">{"{email}"}</code>
-      </p>
     </div>
   );
 

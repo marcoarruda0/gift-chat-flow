@@ -1248,6 +1248,59 @@ export type Database = {
           },
         ]
       }
+      whatsapp_cloud_config: {
+        Row: {
+          access_token: string
+          created_at: string
+          display_phone: string | null
+          id: string
+          phone_number_id: string
+          status: string
+          tenant_id: string
+          ultimo_erro: string | null
+          ultimo_teste_at: string | null
+          updated_at: string
+          verify_token: string
+          waba_id: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          display_phone?: string | null
+          id?: string
+          phone_number_id: string
+          status?: string
+          tenant_id: string
+          ultimo_erro?: string | null
+          ultimo_teste_at?: string | null
+          updated_at?: string
+          verify_token: string
+          waba_id: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          display_phone?: string | null
+          id?: string
+          phone_number_id?: string
+          status?: string
+          tenant_id?: string
+          ultimo_erro?: string | null
+          ultimo_teste_at?: string | null
+          updated_at?: string
+          verify_token?: string
+          waba_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_cloud_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       zapi_config: {
         Row: {
           client_token: string

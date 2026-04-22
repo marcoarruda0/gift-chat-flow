@@ -183,9 +183,9 @@ export default function WhatsappOficialConfig() {
         </p>
       </div>
 
-      <Card className="border-amber-500/30 bg-amber-500/5">
+      <Card className="border-warning/40 bg-warning/5">
         <CardContent className="pt-6 flex gap-3 text-sm">
-          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-medium">Antes de testar</p>
             <p className="text-muted-foreground">

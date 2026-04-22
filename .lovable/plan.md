@@ -1,104 +1,96 @@
 
 
-# Plano: Reply-To por empresa + Setup de domínio Lovable + Envio real de e-mail
+# Plano: Adicionar WhatsApp Cloud API (oficial) ao lado do Z-API
 
-## Parte 1 — Reply-To por empresa
+## Visão geral
 
-### Migration
-Adicionar uma coluna em `tenants`:
-```sql
-ALTER TABLE public.tenants
-  ADD COLUMN IF NOT EXISTS email_reply_to text;
+Cada empresa terá agora **dois canais WhatsApp coexistindo**: Z-API (não-oficial, atual) e Cloud API (oficial, novo). A nova aba "WhatsApp Oficial" em Empresa permite cadastrar credenciais Meta, e um botão de teste envia o template `hello_world` pra validar tudo end-to-end.
+
+Esta primeira fase entrega: **configuração + envio de template de teste + webhook recebendo mensagens (sem ainda integrar nas conversas)**. Integração com Conversas/Campanhas/Fluxos vem em fases seguintes, depois que você validar que recebe e envia.
+
+## Parte 1 — Banco de dados
+
+Nova tabela `whatsapp_cloud_config` (paralela à `zapi_config`, mesma estrutura de RLS por tenant):
+
+```text
+whatsapp_cloud_config
+├── id uuid PK
+├── tenant_id uuid (unique — 1 config por empresa)
+├── phone_number_id text       (ex: 1057954850740861)
+├── waba_id text               (WhatsApp Business Account ID)
+├── access_token text          (token permanente do System User)
+├── verify_token text          (gerado random pelo sistema, usado no webhook)
+├── display_phone text         (número formatado, ex: +55 11 99999-9999, opcional)
+├── status text default 'desconectado'  ('desconectado' | 'conectado' | 'erro')
+├── ultimo_teste_at timestamptz
+├── ultimo_erro text
+├── created_at, updated_at
 ```
 
-### UI — `src/pages/Empresa.tsx` (aba E-mail)
-Adicionar um novo campo entre "Endereço Local" e "Assinatura":
+RLS espelhando `zapi_config`: SELECT por tenant, INSERT/UPDATE/DELETE por admin do tenant.
 
-- **Label**: "E-mail para resposta (Reply-To)"
-- **Input** type=email, placeholder `pecarara.santoandre@gmail.com`
-- **Helper text**: "Quando seus contatos responderem ao e-mail enviado pela campanha, a resposta vai pra esse endereço. Pode ser seu Gmail/Outlook normal."
-- Atualizar `emailConfig` state + `loadTenantData` + `saveEmailConfig` para incluir `email_reply_to`
+## Parte 2 — Edge functions novas
 
-## Parte 2 — Setup do domínio Lovable
+### `whatsapp-cloud-proxy` (envio + teste)
+Análoga ao `zapi-proxy`, mas pra Graph API:
+- Recebe `{ endpoint, method, data }` do front (autenticado por JWT)
+- Resolve credenciais via service role na `whatsapp_cloud_config` do tenant do usuário
+- Faz `fetch` em `https://graph.facebook.com/v21.0/{phone_number_id}/{endpoint}` com `Authorization: Bearer {access_token}`
+- Endpoint principal usado pela UI: `messages` (POST) → envia template `hello_world` pra um número que o user digita
+- Retorna a resposta crua da Meta pra exibir no toast (ID da mensagem ou erro)
 
-Como ainda não há domínio configurado no projeto, vou abrir o setup dialog. Após você concluir, eu sigo automaticamente com:
+### `whatsapp-cloud-webhook` (recebimento, **sem integração com conversas ainda**)
+- `GET`: validação inicial — compara `hub.verify_token` da query com o `verify_token` salvo na config (busca match em qualquer tenant); responde `hub.challenge` se bater
+- `POST`: recebe payload da Meta. Nesta fase: **só loga** (`console.log` estruturado) e responde 200. Isso já valida que o webhook está recebendo. Integrar mensagens recebidas em `mensagens`/`conversas` fica pra fase 2.
+- `verify_jwt = false` em `supabase/config.toml` (Meta não envia JWT)
 
-1. **`setup_email_infra`** — cria filas pgmq, log de envios, supressão, cron
-2. **`scaffold_transactional_email`** — cria `send-transactional-email`, `handle-email-unsubscribe`, `handle-email-suppression`
+## Parte 3 — UI
 
-## Parte 3 — Template + edge function de envio de e-mail
+### Nova página `src/pages/WhatsappOficialConfig.tsx`
+Réplica visual do padrão de `ZapiConfig.tsx`, com:
 
-### Template `campaign-broadcast.tsx`
-Em `supabase/functions/_shared/transactional-email-templates/campaign-broadcast.tsx`:
-- Props: `subject`, `bodyHtml`, `signatureHtml`, `fromName`, `name?`
-- Wrapper React Email: Body branco, Container 600px, padding, Arial
-- Renderiza `bodyHtml` via `<Section dangerouslySetInnerHTML>` ⚠️ (exceção justificada: o conteúdo vem do editor do próprio dono do tenant, não de input de terceiros — é o equivalente a "rich text próprio")
-- Rodapé com `signatureHtml` separado por `<Hr>`
-- Registra em `registry.ts` com `previewData` realista
+- **Card "Credenciais"**: 4 inputs (Phone Number ID, WABA ID, Access Token, Display Phone opcional) + Save
+- **Card "Webhook"**: mostra `Callback URL` (read-only, copiável) = `https://{project_ref}.supabase.co/functions/v1/whatsapp-cloud-webhook` e `Verify Token` (read-only, copiável, gerado random no primeiro save)
+- **Card "Testar envio"**: input "Número destino" (E.164, ex: `5511999999999`) + botão "Enviar template hello_world"
+  - Chama `whatsapp-cloud-proxy` com `endpoint: 'messages'`, body equivalente ao curl do usuário
+  - Toast de sucesso com `messages[0].id` ou erro com mensagem da Meta
+  - Atualiza `ultimo_teste_at` e `status` na config
+- **Helper text** no topo explicando: "Antes de testar, configure o webhook na Meta App Dashboard com a Callback URL e Verify Token acima, e assine os campos `messages` e `message_status`."
 
-### Página de unsubscribe
-`src/pages/EmailUnsubscribe.tsx` + rota `/unsubscribe` em `App.tsx` (padrão branded da plataforma — valida token via GET, confirma via POST).
+### Roteamento
+`src/App.tsx` → adicionar rota `/configuracoes/whatsapp-oficial` apontando pra nova página (mesma proteção de auth das outras configs).
 
-### Edge function `enviar-campanha-email`
-`supabase/functions/enviar-campanha-email/index.ts` — segue mesmo padrão chunked do `enviar-campanha`:
+### Navegação em Empresa → WhatsApp
+Em `src/pages/Empresa.tsx`, na aba/seção que hoje lista instâncias Z-API (linha ~206), adicionar abaixo um bloco "WhatsApp Oficial (Cloud API)" com botão "Configurar" que leva a `/configuracoes/whatsapp-oficial`. Z-API permanece intocado.
 
-- Recebe `{ campanha_id, internal?, remaining_delay_ms? }`
-- Auth: JWT externo / service role interno
-- Busca campanha + tenant (`email_remetente_nome`, `email_remetente_local`, `email_assinatura`, **`email_reply_to`**)
-- Para cada destinatário pendente (1 por invocação):
-  - Substitui `{nome}`, `{email}`, `{telefone}`, `{empresa}` em `email_html` e `email_assunto`
-  - Invoca `send-transactional-email`:
-    ```
-    templateName: 'campaign-broadcast'
-    recipientEmail: dest.telefone (que armazena o email)
-    idempotencyKey: `campanha-${campanha_id}-${dest.id}`
-    replyTo: tenant.email_reply_to ?? null
-    fromName: tenant.email_remetente_nome
-    fromLocal: tenant.email_remetente_local
-    templateData: { subject, bodyHtml, signatureHtml, fromName, name }
-    ```
-  - Marca `enviado`/`falha` em `campanha_destinatarios` e atualiza contadores
-- Aplica delay (`atraso_tipo`)
-- Encadeia próxima invocação; marca `concluida` no fim
+## Parte 4 — Verify Token
 
-### Ajustar `send-transactional-email` (gerado pelo scaffold)
-Após o scaffold, vou patchar a função para aceitar e propagar opcionalmente `replyTo`, `fromName` e `fromLocal` no envelope da Lovable Email API. Esses 3 parâmetros viram override por chamada — sem isso ficamos limitados ao `From` fixo.
-
-### Front — `src/pages/Campanhas.tsx`
-Trocar o erro de `enviarCampanha` por chamada real:
-```ts
-if (campanhaCanal === "email") {
-  await supabase.functions.invoke("enviar-campanha-email", { body: { campanha_id: campanhaId } });
-} else {
-  await supabase.functions.invoke("enviar-campanha", { body: { campanha_id: campanhaId } });
-}
-```
+No primeiro save da config, se `verify_token` estiver vazio, o front gera `crypto.randomUUID().replace(/-/g, '')` (32 hex chars) e envia junto. Já fica disponível pra copiar no card de Webhook.
 
 ## Arquivos afetados
 
 | Arquivo | Mudança |
 |---|---|
-| Migration | `tenants` +coluna `email_reply_to` |
-| `src/pages/Empresa.tsx` | Campo Reply-To na aba E-mail |
-| Setup de domínio (dialog) | Pré-requisito |
-| Infra de e-mail (auto) | Filas, log, supressão, cron, unsubscribe |
-| `_shared/transactional-email-templates/campaign-broadcast.tsx` (novo) | Template wrapper React Email |
-| `_shared/transactional-email-templates/registry.ts` | Registrar template |
-| `send-transactional-email/index.ts` | Aceitar override de `replyTo`/`fromName`/`fromLocal` |
-| `enviar-campanha-email/index.ts` (novo) | Drainer da fila por canal email |
-| `src/pages/EmailUnsubscribe.tsx` (novo) | Página branded de unsubscribe |
-| `src/App.tsx` | Rota `/unsubscribe` |
-| `src/pages/Campanhas.tsx` | `enviarCampanha` invoca função real |
+| Migration nova | Criar tabela `whatsapp_cloud_config` + RLS + trigger updated_at |
+| `supabase/functions/whatsapp-cloud-proxy/index.ts` (novo) | Proxy autenticado pra Graph API |
+| `supabase/functions/whatsapp-cloud-webhook/index.ts` (novo) | GET verify + POST log |
+| `supabase/config.toml` | Bloco `[functions.whatsapp-cloud-webhook] verify_jwt = false` |
+| `src/pages/WhatsappOficialConfig.tsx` (novo) | UI completa de config + teste |
+| `src/App.tsx` | Rota `/configuracoes/whatsapp-oficial` |
+| `src/pages/Empresa.tsx` | Bloco "WhatsApp Oficial" abaixo do bloco Z-API |
 
-## Resultado
+## Fora do escopo desta fase (próximos passos depois do teste passar)
 
-- Cada empresa configura: nome do remetente, prefixo local do e-mail, assinatura HTML e **endereço de resposta** (que pode ser Gmail/Outlook pessoal)
-- Quando o cliente responder a um e-mail da campanha, a resposta vai pro Gmail dela direto
-- Envio real de e-mail funcionando via Lovable Email com fila, retry, supressão e unsubscribe automáticos
+1. **Receber mensagens nas Conversas**: webhook cria/atualiza `conversas` e `mensagens` quando vier mensagem real do cliente — exige campo `canal` em `conversas` ou `instancia_origem` pra distinguir Z-API vs Cloud API
+2. **Enviar mensagens livres do chat (janela 24h)**: ChatPanel detecta canal da conversa e usa o proxy correto
+3. **Templates aprovados**: tela de gestão (listar via Graph API `{waba_id}/message_templates`, enviar template selecionado nas Campanhas)
+4. **Campanhas via Cloud API**: `enviar-campanha` decide entre `zapi-proxy` ou `whatsapp-cloud-proxy` por config do tenant
 
-<lov-actions>
-<lov-open-email-setup>Configurar domínio de e-mail</lov-open-email-setup>
-<lov-suggestion message="Teste end-to-end: configure o domínio, defina Reply-To no Empresa → E-mail, crie uma campanha com {nome}, envie pra 1 contato seu e responda o e-mail pra confirmar que volta pro Gmail">Testar fluxo Reply-To completo</lov-suggestion>
-<lov-suggestion message="Adicionar templates de e-mail prontos (boas-vindas, recuperação de carrinho, aniversário) selecionáveis no editor">Templates de e-mail prontos</lov-suggestion>
-<lov-suggestion message="Mostrar estatísticas de entrega no detalhe da campanha (entregues, abertos, bounces) puxando do email_send_log">Métricas de entrega</lov-suggestion>
-</lov-actions>
+## O que você precisa fazer depois que eu implementar
+
+1. Acessar **Empresa → WhatsApp Oficial → Configurar**
+2. Colar Phone Number ID (`1057954850740861`), WABA ID, Access Token e salvar
+3. Copiar **Callback URL** e **Verify Token** que vão aparecer
+4. Na **Meta App Dashboard → WhatsApp → Configuration**, colar essas duas strings, clicar Verify, e assinar `messages` + `message_status`
+5. Voltar pra UI, digitar seu número de teste e clicar "Enviar template hello_world"
+

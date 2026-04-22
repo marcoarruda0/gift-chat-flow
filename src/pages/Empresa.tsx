@@ -62,6 +62,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   // Instâncias
   const [instances, setInstances] = useState<any[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(true);
+  const [cloudConfig, setCloudConfig] = useState<any>(null);
 
   // Departamentos (for team select)
   const [departamentos, setDepartamentos] = useState<any[]>([]);
@@ -209,6 +210,14 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
       .select("id, instance_id, status, updated_at")
       .eq("tenant_id", tenantId!);
     setInstances(data || []);
+
+    const { data: cloud } = await supabase
+      .from("whatsapp_cloud_config" as any)
+      .select("id, phone_number_id, display_phone, status, updated_at")
+      .eq("tenant_id", tenantId!)
+      .maybeSingle();
+    setCloudConfig(cloud || null);
+
     setLoadingInstances(false);
   };
 

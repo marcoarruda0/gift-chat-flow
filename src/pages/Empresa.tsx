@@ -62,6 +62,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   // Instâncias
   const [instances, setInstances] = useState<any[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(true);
+  const [cloudConfig, setCloudConfig] = useState<any>(null);
 
   // Departamentos (for team select)
   const [departamentos, setDepartamentos] = useState<any[]>([]);
@@ -209,6 +210,14 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
       .select("id, instance_id, status, updated_at")
       .eq("tenant_id", tenantId!);
     setInstances(data || []);
+
+    const { data: cloud } = await supabase
+      .from("whatsapp_cloud_config" as any)
+      .select("id, phone_number_id, display_phone, status, updated_at")
+      .eq("tenant_id", tenantId!)
+      .maybeSingle();
+    setCloudConfig(cloud || null);
+
     setLoadingInstances(false);
   };
 
@@ -534,17 +543,24 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
         </TabsContent>
 
         {/* ── Instâncias ── */}
-        <TabsContent value="instancias">
+        <TabsContent value="instancias" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Instâncias WhatsApp</CardTitle>
-              <CardDescription>Conexões Z-API vinculadas à sua empresa</CardDescription>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Z-API (não-oficial)</CardTitle>
+                  <CardDescription>Conexões Z-API vinculadas à sua empresa</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => window.location.href = "/configuracoes/zapi"}>
+                  <Settings2 className="h-4 w-4 mr-1" /> Configurar
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingInstances ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : instances.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">Nenhuma instância configurada. Acesse Configurações → Z-API para adicionar.</p>
+                <p className="text-sm text-muted-foreground py-4">Nenhuma instância configurada.</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -568,6 +584,52 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                         </TableCell>
                       </TableRow>
                     ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>WhatsApp Oficial (Cloud API)</CardTitle>
+                  <CardDescription>Número oficial conectado via Meta WhatsApp Business</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => window.location.href = "/configuracoes/whatsapp-oficial"}>
+                  <Settings2 className="h-4 w-4 mr-1" /> Configurar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingInstances ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : !cloudConfig ? (
+                <p className="text-sm text-muted-foreground py-4">Nenhum número oficial configurado.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Phone Number ID</TableHead>
+                      <TableHead>Telefone</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Última atualização</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">{cloudConfig.phone_number_id}</TableCell>
+                      <TableCell className="text-sm">{cloudConfig.display_phone || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={cloudConfig.status === "conectado" ? "default" : cloudConfig.status === "erro" ? "destructive" : "secondary"}>
+                          {cloudConfig.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(cloudConfig.updated_at).toLocaleDateString("pt-BR")}
+                      </TableCell>
+                    </TableRow>
                   </TableBody>
                 </Table>
               )}

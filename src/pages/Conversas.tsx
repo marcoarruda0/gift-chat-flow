@@ -263,6 +263,37 @@ export default function Conversas() {
     });
   };
 
+  // Helper: call WhatsApp Cloud proxy
+  const callCloud = async (endpoint: string, method: string, data?: any, useWabaId = false) => {
+    const { data: session } = await supabase.auth.getSession();
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/whatsapp-cloud-proxy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session?.access_token}`,
+      },
+      body: JSON.stringify({ endpoint, method, data, useWabaId }),
+    });
+    return res.json();
+  };
+
+  // Upload media to Cloud API and return media_id
+  const uploadCloudMedia = async (file: Blob, mimeType: string, filename: string) => {
+    // Cloud API media upload requires multipart/form-data with the actual file.
+    // We pass the file as base64 through the proxy which converts it server-side.
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const result = await callCloud("media", "POST", {
+      _multipart: true,
+      file_base64: base64,
+      mime_type: mimeType,
+      filename,
+    });
+    if (!result?.id) throw new Error(result?.error?.message || "Upload Cloud falhou");
+    return result.id as string;
+  };
+
   // Send text message (with variable substitution)
   const handleSend = async (rawText: string) => {
     if (!selectedId || !tenantId) return;

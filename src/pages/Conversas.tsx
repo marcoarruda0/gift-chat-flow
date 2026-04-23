@@ -25,6 +25,7 @@ interface ConversaRow {
   departamento_id: string | null;
   marcada_nao_lida: boolean;
   created_at: string | null;
+  canal: string;
 }
 
 interface MensagemRow {

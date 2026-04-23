@@ -419,7 +419,25 @@ export default function Conversas() {
         ultima_msg_at: new Date().toISOString(),
       }).eq("id", selectedId);
 
-      if (selected?.contato_telefone) {
+      if (selected?.canal === "whatsapp_cloud" && selected?.contato_telefone) {
+        try {
+          const mediaId = await uploadCloudMedia(file, file.type, file.name);
+          const cloudType = isImage ? "image" : "document";
+          const cloudPayload: any = isImage
+            ? { image: { id: mediaId } }
+            : { document: { id: mediaId, filename: file.name } };
+          const result = await callCloud("messages", "POST", {
+            messaging_product: "whatsapp",
+            to: formatPhone(selected.contato_telefone),
+            type: cloudType,
+            ...cloudPayload,
+          });
+          if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        } catch (e) {
+          console.warn("Cloud media send failed:", e);
+          toast.error("Erro ao enviar anexo via WhatsApp Oficial");
+        }
+      } else if (selected?.contato_telefone) {
         const phone = formatPhone(selected.contato_telefone);
         const endpoint = isImage ? "send-image" : "send-document";
         const data = isImage

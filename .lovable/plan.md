@@ -1,96 +1,72 @@
 
 
-# Plano: Adicionar WhatsApp Cloud API (oficial) ao lado do Z-API
+# Próximas etapas — WhatsApp Oficial (Cloud API)
 
-## Visão geral
+A fase 1 entregou: configuração de credenciais por empresa, webhook validado pela Meta e botão de teste enviando `hello_world`. A partir daqui, são 4 fases incrementais — cada uma desbloqueia um pedaço do uso real. Recomendo executar **na ordem abaixo**, validando cada uma antes da próxima.
 
-Cada empresa terá agora **dois canais WhatsApp coexistindo**: Z-API (não-oficial, atual) e Cloud API (oficial, novo). A nova aba "WhatsApp Oficial" em Empresa permite cadastrar credenciais Meta, e um botão de teste envia o template `hello_world` pra validar tudo end-to-end.
+## Fase 2 — Receber mensagens reais nas Conversas (PRIORIDADE)
 
-Esta primeira fase entrega: **configuração + envio de template de teste + webhook recebendo mensagens (sem ainda integrar nas conversas)**. Integração com Conversas/Campanhas/Fluxos vem em fases seguintes, depois que você validar que recebe e envia.
+Hoje o webhook só loga. Sem isso, nenhuma resposta de cliente aparece na plataforma.
 
-## Parte 1 — Banco de dados
+**Banco**:
+- Adicionar coluna `canal` em `conversas` (`'zapi' | 'whatsapp_cloud'`, default `'zapi'`) pra distinguir origem de cada conversa
+- Adicionar `whatsapp_cloud_phone_id` em `conversas` pra saber qual número oficial recebeu (suporte futuro a múltiplos números)
 
-Nova tabela `whatsapp_cloud_config` (paralela à `zapi_config`, mesma estrutura de RLS por tenant):
+**Edge function `whatsapp-cloud-webhook`** (expandir):
+- Parsear payload da Meta (estrutura `entry[].changes[].value.messages[]`)
+- Tipos suportados: `text`, `image`, `audio`, `video`, `document`, `interactive` (botões/listas)
+- Pra mídia: baixar via Graph API (`/{media_id}` → URL temporária → download → upload pro bucket `chat-media`)
+- Find-or-create de `contatos` (por telefone E.164) e `conversas` (com `canal='whatsapp_cloud'`)
+- Inserir em `mensagens` com `metadata.wa_message_id` pra dedup
+- Processar `statuses[]` (sent/delivered/read/failed) e atualizar `metadata` da mensagem original
+- Disparar fluxos e IA igual ao `zapi-webhook` faz hoje (reaproveitar lógica)
 
-```text
-whatsapp_cloud_config
-├── id uuid PK
-├── tenant_id uuid (unique — 1 config por empresa)
-├── phone_number_id text       (ex: 1057954850740861)
-├── waba_id text               (WhatsApp Business Account ID)
-├── access_token text          (token permanente do System User)
-├── verify_token text          (gerado random pelo sistema, usado no webhook)
-├── display_phone text         (número formatado, ex: +55 11 99999-9999, opcional)
-├── status text default 'desconectado'  ('desconectado' | 'conectado' | 'erro')
-├── ultimo_teste_at timestamptz
-├── ultimo_erro text
-├── created_at, updated_at
-```
+## Fase 3 — Enviar mensagens livres do chat (janela 24h)
 
-RLS espelhando `zapi_config`: SELECT por tenant, INSERT/UPDATE/DELETE por admin do tenant.
+Permite responder do `ChatPanel` quando o cliente já enviou algo nas últimas 24h (regra da Meta).
 
-## Parte 2 — Edge functions novas
+- `ChatPanel.tsx` recebe a `conversa.canal` como prop
+- Função `onSend` decide: `canal='zapi'` → `zapi-proxy`; `canal='whatsapp_cloud'` → `whatsapp-cloud-proxy` com body `{ type: 'text', text: { body } }`
+- Envio de áudio/imagem/documento via Graph API: upload prévio em `/{phone_number_id}/media`, depois `messages` referenciando o `media_id` retornado
+- Indicador visual no header do chat: badge "Oficial" quando `canal='whatsapp_cloud'`
+- Bloqueio de UI quando fora da janela 24h (última msg do contato > 24h) com aviso "Use um template aprovado"
 
-### `whatsapp-cloud-proxy` (envio + teste)
-Análoga ao `zapi-proxy`, mas pra Graph API:
-- Recebe `{ endpoint, method, data }` do front (autenticado por JWT)
-- Resolve credenciais via service role na `whatsapp_cloud_config` do tenant do usuário
-- Faz `fetch` em `https://graph.facebook.com/v21.0/{phone_number_id}/{endpoint}` com `Authorization: Bearer {access_token}`
-- Endpoint principal usado pela UI: `messages` (POST) → envia template `hello_world` pra um número que o user digita
-- Retorna a resposta crua da Meta pra exibir no toast (ID da mensagem ou erro)
+## Fase 4 — Gestão de templates aprovados
 
-### `whatsapp-cloud-webhook` (recebimento, **sem integração com conversas ainda**)
-- `GET`: validação inicial — compara `hub.verify_token` da query com o `verify_token` salvo na config (busca match em qualquer tenant); responde `hub.challenge` se bater
-- `POST`: recebe payload da Meta. Nesta fase: **só loga** (`console.log` estruturado) e responde 200. Isso já valida que o webhook está recebendo. Integrar mensagens recebidas em `mensagens`/`conversas` fica pra fase 2.
-- `verify_jwt = false` em `supabase/config.toml` (Meta não envia JWT)
+Templates são obrigatórios pra iniciar conversa fora da janela 24h e pra campanhas.
 
-## Parte 3 — UI
+**Nova página `src/pages/WhatsappTemplates.tsx`**:
+- Lista templates do WABA via proxy: `GET /{waba_id}/message_templates` (usar `useWabaId: true` que o proxy já suporta)
+- Mostra: nome, idioma, categoria (MARKETING/UTILITY/AUTHENTICATION), status (APPROVED/PENDING/REJECTED), corpo do template com placeholders `{{1}}`, `{{2}}`
+- Botão "Testar" envia o template com variáveis preenchidas pra um número de teste
+- (Opcional) Botão "Criar template" submetendo via `POST /{waba_id}/message_templates` pra aprovação Meta
 
-### Nova página `src/pages/WhatsappOficialConfig.tsx`
-Réplica visual do padrão de `ZapiConfig.tsx`, com:
+**Cache local** opcional: tabela `whatsapp_cloud_templates` com `synced_at` pra evitar bater na Graph API toda vez.
 
-- **Card "Credenciais"**: 4 inputs (Phone Number ID, WABA ID, Access Token, Display Phone opcional) + Save
-- **Card "Webhook"**: mostra `Callback URL` (read-only, copiável) = `https://{project_ref}.supabase.co/functions/v1/whatsapp-cloud-webhook` e `Verify Token` (read-only, copiável, gerado random no primeiro save)
-- **Card "Testar envio"**: input "Número destino" (E.164, ex: `5511999999999`) + botão "Enviar template hello_world"
-  - Chama `whatsapp-cloud-proxy` com `endpoint: 'messages'`, body equivalente ao curl do usuário
-  - Toast de sucesso com `messages[0].id` ou erro com mensagem da Meta
-  - Atualiza `ultimo_teste_at` e `status` na config
-- **Helper text** no topo explicando: "Antes de testar, configure o webhook na Meta App Dashboard com a Callback URL e Verify Token acima, e assine os campos `messages` e `message_status`."
+## Fase 5 — Campanhas via Cloud API
 
-### Roteamento
-`src/App.tsx` → adicionar rota `/configuracoes/whatsapp-oficial` apontando pra nova página (mesma proteção de auth das outras configs).
+Hoje `enviar-campanha` só usa Z-API. Pra campanhas oficiais é obrigatório template aprovado.
 
-### Navegação em Empresa → WhatsApp
-Em `src/pages/Empresa.tsx`, na aba/seção que hoje lista instâncias Z-API (linha ~206), adicionar abaixo um bloco "WhatsApp Oficial (Cloud API)" com botão "Configurar" que leva a `/configuracoes/whatsapp-oficial`. Z-API permanece intocado.
+**UI Campanhas (`src/pages/Campanhas.tsx`)**:
+- Quando canal = `whatsapp`, novo subseletor: "Z-API (não-oficial)" ou "WhatsApp Oficial"
+- Se "Oficial": dropdown de templates aprovados (vindos da Fase 4) + inputs pra cada variável `{{N}}` com suporte a `{nome}`, `{telefone}` etc.
+- Esconder editor de texto livre (não permitido sem template)
 
-## Parte 4 — Verify Token
+**Edge function `enviar-campanha`** (expandir):
+- Decidir provider pelo campo da campanha (`provider: 'zapi' | 'whatsapp_cloud'`)
+- Se `whatsapp_cloud`: substituir variáveis do contato nos componentes do template e chamar `whatsapp-cloud-proxy` com `{ type: 'template', template: { name, language, components } }`
+- Mesmo padrão chunked + delay já existente
 
-No primeiro save da config, se `verify_token` estiver vazio, o front gera `crypto.randomUUID().replace(/-/g, '')` (32 hex chars) e envia junto. Já fica disponível pra copiar no card de Webhook.
+## Resumo do que cada fase desbloqueia
 
-## Arquivos afetados
-
-| Arquivo | Mudança |
+| Fase | Desbloqueia |
 |---|---|
-| Migration nova | Criar tabela `whatsapp_cloud_config` + RLS + trigger updated_at |
-| `supabase/functions/whatsapp-cloud-proxy/index.ts` (novo) | Proxy autenticado pra Graph API |
-| `supabase/functions/whatsapp-cloud-webhook/index.ts` (novo) | GET verify + POST log |
-| `supabase/config.toml` | Bloco `[functions.whatsapp-cloud-webhook] verify_jwt = false` |
-| `src/pages/WhatsappOficialConfig.tsx` (novo) | UI completa de config + teste |
-| `src/App.tsx` | Rota `/configuracoes/whatsapp-oficial` |
-| `src/pages/Empresa.tsx` | Bloco "WhatsApp Oficial" abaixo do bloco Z-API |
+| 2 — Receber | Conversas reais entrando, fluxos/IA respondendo no canal oficial |
+| 3 — Enviar livre | Atendentes respondendo do chat dentro da janela 24h |
+| 4 — Templates | Visibilidade dos templates aprovados + testes individuais |
+| 5 — Campanhas | Disparo em massa oficial (Marketing/Utility) |
 
-## Fora do escopo desta fase (próximos passos depois do teste passar)
+## Recomendação
 
-1. **Receber mensagens nas Conversas**: webhook cria/atualiza `conversas` e `mensagens` quando vier mensagem real do cliente — exige campo `canal` em `conversas` ou `instancia_origem` pra distinguir Z-API vs Cloud API
-2. **Enviar mensagens livres do chat (janela 24h)**: ChatPanel detecta canal da conversa e usa o proxy correto
-3. **Templates aprovados**: tela de gestão (listar via Graph API `{waba_id}/message_templates`, enviar template selecionado nas Campanhas)
-4. **Campanhas via Cloud API**: `enviar-campanha` decide entre `zapi-proxy` ou `whatsapp-cloud-proxy` por config do tenant
-
-## O que você precisa fazer depois que eu implementar
-
-1. Acessar **Empresa → WhatsApp Oficial → Configurar**
-2. Colar Phone Number ID (`1057954850740861`), WABA ID, Access Token e salvar
-3. Copiar **Callback URL** e **Verify Token** que vão aparecer
-4. Na **Meta App Dashboard → WhatsApp → Configuration**, colar essas duas strings, clicar Verify, e assinar `messages` + `message_status`
-5. Voltar pra UI, digitar seu número de teste e clicar "Enviar template hello_world"
+Começar pela **Fase 2** agora — é o maior gap funcional (sem ela o canal oficial é só envio one-shot). Posso implementá-la inteira em uma rodada e você testa enviando uma mensagem do seu celular pro número oficial pra ver aparecer em Conversas.
 

@@ -34,6 +34,7 @@ interface ChatPanelProps {
   isAssignedToMe?: boolean;
   onPull?: () => void;
   canal?: string;
+  cloudWindowBlocked?: boolean;
 }
 
 export function ChatPanelEmpty() {

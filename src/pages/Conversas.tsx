@@ -374,7 +374,21 @@ export default function Conversas() {
         ultima_msg_at: new Date().toISOString(),
       }).eq("id", selectedId);
 
-      if (selected?.contato_telefone) {
+      if (selected?.canal === "whatsapp_cloud" && selected?.contato_telefone) {
+        try {
+          const mediaId = await uploadCloudMedia(blob, "audio/ogg", "audio.ogg");
+          const result = await callCloud("messages", "POST", {
+            messaging_product: "whatsapp",
+            to: formatPhone(selected.contato_telefone),
+            type: "audio",
+            audio: { id: mediaId },
+          });
+          if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        } catch (e) {
+          console.warn("Cloud audio send failed:", e);
+          toast.error("Erro ao enviar áudio via WhatsApp Oficial");
+        }
+      } else if (selected?.contato_telefone) {
         await callZapi("send-audio", "POST", {
           phone: formatPhone(selected.contato_telefone),
           audio: url,

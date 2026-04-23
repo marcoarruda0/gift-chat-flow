@@ -324,10 +324,28 @@ export default function Conversas() {
     }).eq("id", selectedId);
 
 
-  // Send via Z-API if contact has phone
-    if (selected?.contato_telefone) {
+    const isCloud = selected?.canal === "whatsapp_cloud";
+
+    if (isCloud && selected?.contato_telefone) {
       try {
-        // Prefix message with bold nickname for WhatsApp
+        const cloudText = senderName ? `*${senderName}:*\n${text}` : text;
+        const result = await callCloud("messages", "POST", {
+          messaging_product: "whatsapp",
+          to: formatPhone(selected.contato_telefone),
+          type: "text",
+          text: { body: cloudText },
+        });
+        if (result?.error) {
+          console.error("WhatsApp Cloud error:", result.error);
+          toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        }
+      } catch (e) {
+        console.warn("WhatsApp Cloud send failed:", e);
+        toast.error("Erro ao enviar via WhatsApp Oficial");
+      }
+    } else if (selected?.contato_telefone) {
+      // Send via Z-API
+      try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
         await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),

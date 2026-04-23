@@ -405,6 +405,7 @@ export type Database = {
           atendente_id: string | null
           atendimento_encerrado_at: string | null
           atendimento_iniciado_at: string | null
+          canal: string
           contato_id: string
           created_at: string
           departamento_id: string | null
@@ -415,12 +416,14 @@ export type Database = {
           tenant_id: string
           ultima_msg_at: string | null
           ultimo_texto: string | null
+          whatsapp_cloud_phone_id: string | null
         }
         Insert: {
           aguardando_humano?: boolean
           atendente_id?: string | null
           atendimento_encerrado_at?: string | null
           atendimento_iniciado_at?: string | null
+          canal?: string
           contato_id: string
           created_at?: string
           departamento_id?: string | null
@@ -431,12 +434,14 @@ export type Database = {
           tenant_id: string
           ultima_msg_at?: string | null
           ultimo_texto?: string | null
+          whatsapp_cloud_phone_id?: string | null
         }
         Update: {
           aguardando_humano?: boolean
           atendente_id?: string | null
           atendimento_encerrado_at?: string | null
           atendimento_iniciado_at?: string | null
+          canal?: string
           contato_id?: string
           created_at?: string
           departamento_id?: string | null
@@ -447,6 +452,7 @@ export type Database = {
           tenant_id?: string
           ultima_msg_at?: string | null
           ultimo_texto?: string | null
+          whatsapp_cloud_phone_id?: string | null
         }
         Relationships: [
           {

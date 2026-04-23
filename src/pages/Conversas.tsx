@@ -71,7 +71,7 @@ export default function Conversas() {
     if (!tenantId) return;
     const { data, error } = await supabase
       .from("conversas")
-      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, marcada_nao_lida, created_at, contato_id, contatos(nome, telefone, avatar_url)")
+      .select("id, ultimo_texto, ultima_msg_at, nao_lidas, status, aguardando_humano, atendente_id, departamento_id, marcada_nao_lida, created_at, contato_id, canal, contatos(nome, telefone, avatar_url)")
       .eq("tenant_id", tenantId)
       .order("ultima_msg_at", { ascending: false });
 
@@ -538,6 +538,7 @@ export default function Conversas() {
             onMarkUnread={handleMarkUnread}
             loading={loadingMsgs}
             isAssignedToMe={selected.atendente_id === user?.id}
+            canal={(selected as any).canal || "zapi"}
             onPull={handlePull}
           />
         ) : (

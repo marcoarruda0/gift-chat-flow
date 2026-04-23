@@ -6,6 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const GRAPH_VERSION = "v21.0";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -36,14 +38,12 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (match) {
-      console.log("[whatsapp-cloud-webhook] verify token matched, returning challenge");
       return new Response(challenge ?? "", {
         status: 200,
         headers: { "Content-Type": "text/plain" },
       });
     }
 
-    console.warn("[whatsapp-cloud-webhook] verify token did NOT match any tenant");
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -51,16 +51,420 @@ Deno.serve(async (req) => {
   if (req.method === "POST") {
     try {
       const body = await req.json();
-      console.log(
-        "[whatsapp-cloud-webhook] POST event:",
-        JSON.stringify(body, null, 2)
-      );
-      // Phase 1: just log. Integration with conversas/mensagens comes later.
+      console.log("[whatsapp-cloud-webhook] POST", JSON.stringify(body).slice(0, 800));
+
+      // Meta payload: { object: 'whatsapp_business_account', entry: [{ changes: [{ value: { messages, statuses, contacts, metadata }, field }] }] }
+      const entries = body.entry || [];
+      for (const entry of entries) {
+        const changes = entry.changes || [];
+        for (const change of changes) {
+          if (change.field !== "messages") continue;
+          const value = change.value || {};
+          const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
+          if (!phoneNumberId) {
+            console.warn("[whatsapp-cloud-webhook] no phone_number_id in payload");
+            continue;
+          }
+
+          // Resolve tenant by phone_number_id
+          const { data: cfg } = await serviceClient
+            .from("whatsapp_cloud_config")
+            .select("tenant_id, phone_number_id, access_token")
+            .eq("phone_number_id", phoneNumberId)
+            .maybeSingle();
+
+          if (!cfg) {
+            console.warn("[whatsapp-cloud-webhook] no tenant for phone_number_id", phoneNumberId);
+            continue;
+          }
+
+          const tenantId = cfg.tenant_id;
+          const accessToken = cfg.access_token;
+
+          // Process incoming messages
+          const messages = value.messages || [];
+          const contacts = value.contacts || [];
+          for (const msg of messages) {
+            await processIncomingMessage(
+              serviceClient,
+              tenantId,
+              phoneNumberId,
+              accessToken,
+              msg,
+              contacts
+            );
+          }
+
+          // Process status updates (sent/delivered/read/failed)
+          const statuses = value.statuses || [];
+          for (const status of statuses) {
+            await processStatusUpdate(serviceClient, tenantId, status);
+          }
+        }
+      }
     } catch (e) {
-      console.error("[whatsapp-cloud-webhook] failed to parse body", e);
+      console.error("[whatsapp-cloud-webhook] failed to process body", e);
     }
+    // Always return 200 quickly so Meta doesn't retry
     return new Response("ok", { status: 200 });
   }
 
   return new Response("Method Not Allowed", { status: 405 });
 });
+
+// ====== Helpers ======
+
+async function processIncomingMessage(
+  supabase: any,
+  tenantId: string,
+  phoneNumberId: string,
+  accessToken: string,
+  msg: any,
+  contacts: any[]
+) {
+  const waMessageId: string = msg.id;
+  const fromPhone: string = msg.from; // E.164 sem '+'
+  const type: string = msg.type;
+
+  if (!waMessageId || !fromPhone) {
+    console.warn("[whatsapp-cloud-webhook] missing id/from", msg);
+    return;
+  }
+
+  // Dedup
+  const { data: existing } = await supabase
+    .from("mensagens")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("metadata->>wa_message_id", waMessageId)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    console.log("[whatsapp-cloud-webhook] duplicate, skip", waMessageId);
+    return;
+  }
+
+  // Contact name from contacts[]
+  const contactInfo = contacts.find((c: any) => c.wa_id === fromPhone);
+  const contactName = contactInfo?.profile?.name || fromPhone;
+
+  // Find or create contact
+  const contato = await findOrCreateContact(supabase, tenantId, fromPhone, contactName);
+  if (!contato) {
+    console.error("[whatsapp-cloud-webhook] could not create contact");
+    return;
+  }
+
+  // Find or create conversation (canal='whatsapp_cloud')
+  const conversa = await findOrCreateConversa(supabase, tenantId, contato.id, phoneNumberId);
+  if (!conversa) {
+    console.error("[whatsapp-cloud-webhook] could not create conversa");
+    return;
+  }
+
+  // Parse content per type
+  const { conteudo, tipo, previewText, mediaInfo } = await parseMetaMessage(
+    msg,
+    type,
+    accessToken,
+    supabase,
+    tenantId
+  );
+
+  // Insert message
+  await supabase.from("mensagens").insert({
+    conversa_id: conversa.id,
+    tenant_id: tenantId,
+    conteudo,
+    remetente: "contato",
+    tipo,
+    metadata: {
+      wa_message_id: waMessageId,
+      wa_type: type,
+      senderName: contactName,
+      ...mediaInfo,
+    },
+  });
+
+  // Update conversation
+  const { data: cur } = await supabase
+    .from("conversas")
+    .select("nao_lidas")
+    .eq("id", conversa.id)
+    .single();
+
+  await supabase
+    .from("conversas")
+    .update({
+      ultimo_texto: previewText.slice(0, 100),
+      ultima_msg_at: new Date().toISOString(),
+      nao_lidas: (cur?.nao_lidas || 0) + 1,
+      status: "aberta",
+    })
+    .eq("id", conversa.id);
+
+  console.log("[whatsapp-cloud-webhook] message saved", { conversa: conversa.id, type });
+}
+
+async function parseMetaMessage(
+  msg: any,
+  type: string,
+  accessToken: string,
+  supabase: any,
+  tenantId: string
+): Promise<{ conteudo: string; tipo: string; previewText: string; mediaInfo: Record<string, any> }> {
+  if (type === "text") {
+    const text = msg.text?.body || "";
+    return { conteudo: text, tipo: "texto", previewText: text, mediaInfo: {} };
+  }
+
+  if (type === "interactive") {
+    // button_reply or list_reply
+    const inter = msg.interactive || {};
+    const reply = inter.button_reply || inter.list_reply;
+    const text = reply?.title || reply?.id || "[interação]";
+    return {
+      conteudo: text,
+      tipo: "texto",
+      previewText: text,
+      mediaInfo: { interactive: inter },
+    };
+  }
+
+  if (["image", "audio", "video", "document", "sticker"].includes(type)) {
+    const media = msg[type] || {};
+    const mediaId: string | undefined = media.id;
+    const caption: string = media.caption || "";
+    const mimeType: string = media.mime_type || "";
+    let publicUrl = "";
+
+    if (mediaId) {
+      try {
+        publicUrl = await downloadAndStoreMedia(
+          accessToken,
+          mediaId,
+          tenantId,
+          supabase,
+          mimeType,
+          type
+        );
+      } catch (e) {
+        console.error("[whatsapp-cloud-webhook] media download failed", e);
+      }
+    }
+
+    const tipoMap: Record<string, string> = {
+      image: "imagem",
+      audio: "audio",
+      video: "video",
+      document: "documento",
+      sticker: "imagem",
+    };
+    const tipo = tipoMap[type] || "texto";
+    const conteudo = publicUrl || caption || `[${type}]`;
+    const preview = caption || `[${tipo}]`;
+
+    return {
+      conteudo,
+      tipo,
+      previewText: preview,
+      mediaInfo: { caption, mimeType, mediaId, mediaUrl: publicUrl },
+    };
+  }
+
+  // Unsupported types (location, contacts, reaction, etc)
+  return {
+    conteudo: `[${type} não suportado]`,
+    tipo: "texto",
+    previewText: `[${type}]`,
+    mediaInfo: { raw: msg[type] || {} },
+  };
+}
+
+async function downloadAndStoreMedia(
+  accessToken: string,
+  mediaId: string,
+  tenantId: string,
+  supabase: any,
+  mimeType: string,
+  type: string
+): Promise<string> {
+  // 1. Get media URL from Graph API
+  const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!metaRes.ok) throw new Error(`Graph media meta failed: ${metaRes.status}`);
+  const metaJson = await metaRes.json();
+  const mediaUrl = metaJson.url;
+  if (!mediaUrl) throw new Error("No url in media meta");
+
+  // 2. Download binary
+  const binRes = await fetch(mediaUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!binRes.ok) throw new Error(`Media download failed: ${binRes.status}`);
+  const buffer = await binRes.arrayBuffer();
+
+  // 3. Upload to chat-media bucket
+  const ext = (mimeType.split("/")[1] || "bin").split(";")[0];
+  const path = `${tenantId}/whatsapp_cloud/${Date.now()}_${mediaId}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("chat-media")
+    .upload(path, new Uint8Array(buffer), {
+      contentType: mimeType || "application/octet-stream",
+      upsert: false,
+    });
+  if (upErr) throw upErr;
+
+  const { data: pub } = supabase.storage.from("chat-media").getPublicUrl(path);
+  return pub.publicUrl;
+}
+
+async function processStatusUpdate(supabase: any, tenantId: string, status: any) {
+  const waMessageId = status.id;
+  const newStatus = status.status; // sent | delivered | read | failed
+  if (!waMessageId || !newStatus) return;
+
+  // Find message by wa_message_id and merge status into metadata
+  const { data: msg } = await supabase
+    .from("mensagens")
+    .select("id, metadata")
+    .eq("tenant_id", tenantId)
+    .eq("metadata->>wa_message_id", waMessageId)
+    .maybeSingle();
+
+  if (!msg) return;
+
+  const newMeta = {
+    ...(msg.metadata || {}),
+    wa_status: newStatus,
+    wa_status_at: new Date().toISOString(),
+    ...(status.errors ? { wa_errors: status.errors } : {}),
+  };
+
+  await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", msg.id);
+}
+
+async function findOrCreateContact(
+  supabase: any,
+  tenantId: string,
+  phone: string,
+  name: string
+) {
+  const { data: existing } = await supabase
+    .from("contatos")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("telefone", phone)
+    .maybeSingle();
+  if (existing) return existing;
+
+  const { data: inserted, error } = await supabase
+    .from("contatos")
+    .insert({ tenant_id: tenantId, nome: name, telefone: phone })
+    .select("id")
+    .maybeSingle();
+  if (inserted) return inserted;
+
+  if (error && (error.code === "23505" || /duplicate|unique/i.test(error.message || ""))) {
+    const { data: retry } = await supabase
+      .from("contatos")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("telefone", phone)
+      .maybeSingle();
+    if (retry) return retry;
+  }
+
+  console.error("findOrCreateContact failed:", error);
+  return null;
+}
+
+async function findOrCreateConversa(
+  supabase: any,
+  tenantId: string,
+  contatoId: string,
+  phoneNumberId: string
+) {
+  // Find latest conversation for contact on canal=whatsapp_cloud
+  const { data: existing } = await supabase
+    .from("conversas")
+    .select("id, status, canal")
+    .eq("tenant_id", tenantId)
+    .eq("contato_id", contatoId)
+    .eq("canal", "whatsapp_cloud")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.status !== "aberta") {
+      await supabase
+        .from("conversas")
+        .update({ status: "aberta", nao_lidas: 0 })
+        .eq("id", existing.id);
+    }
+    return existing;
+  }
+
+  // Create new
+  const { data: defaultDepto } = await supabase
+    .from("departamentos")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("ativo", true)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+
+  let atendenteId: string | null = null;
+  let departamentoId: string | null = null;
+
+  if (defaultDepto) {
+    departamentoId = defaultDepto.id;
+    const { data: nextAgent } = await supabase.rpc("distribuir_atendente", {
+      p_tenant_id: tenantId,
+      p_departamento_id: departamentoId,
+    });
+    if (nextAgent) atendenteId = nextAgent;
+  }
+
+  const { data: newConversa } = await supabase
+    .from("conversas")
+    .insert({
+      tenant_id: tenantId,
+      contato_id: contatoId,
+      status: "aberta",
+      canal: "whatsapp_cloud",
+      whatsapp_cloud_phone_id: phoneNumberId,
+      departamento_id: departamentoId,
+      atendente_id: atendenteId,
+    })
+    .select("id, status, canal")
+    .single();
+
+  if (newConversa && atendenteId) {
+    const { data: agentProfile } = await supabase
+      .from("profiles")
+      .select("nome")
+      .eq("id", atendenteId)
+      .single();
+    const { data: deptoData } = await supabase
+      .from("departamentos")
+      .select("nome")
+      .eq("id", departamentoId!)
+      .single();
+
+    const agentName = agentProfile?.nome || "Atendente";
+    const deptoName = deptoData?.nome || "Departamento";
+
+    await supabase.from("mensagens").insert({
+      conversa_id: newConversa.id,
+      tenant_id: tenantId,
+      conteudo: `Conversa atribuída a ${agentName} (${deptoName})`,
+      remetente: "sistema",
+      tipo: "texto",
+    });
+  }
+
+  return newConversa;
+}

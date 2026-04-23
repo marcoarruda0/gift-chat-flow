@@ -33,6 +33,7 @@ interface ChatPanelProps {
   loading: boolean;
   isAssignedToMe?: boolean;
   onPull?: () => void;
+  canal?: string;
 }
 
 export function ChatPanelEmpty() {
@@ -45,7 +46,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -70,6 +71,11 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
           {contatoTelefone && <p className="text-xs text-muted-foreground">{contatoTelefone}</p>}
         </div>
         <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+          {canal === "whatsapp_cloud" && (
+            <Badge variant="default" className="text-xs gap-1 font-normal">
+              Oficial
+            </Badge>
+          )}
           {departamentoNome && (
             <Badge variant="secondary" className="text-xs gap-1 font-normal">
               <Building2 className="h-3 w-3" />

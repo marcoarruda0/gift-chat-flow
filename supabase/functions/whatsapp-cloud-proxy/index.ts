@@ -86,6 +86,37 @@ Deno.serve(async (req) => {
     const baseId = useWabaId ? cloudConfig.waba_id : cloudConfig.phone_number_id;
     const graphUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${baseId}/${endpoint}`;
 
+    // Multipart upload (media): client passes { _multipart: true, file_base64, mime_type, filename }
+    if (data?._multipart) {
+      const { file_base64, mime_type, filename } = data;
+      if (!file_base64 || !mime_type) {
+        return new Response(
+          JSON.stringify({ error: "file_base64 and mime_type required for multipart upload" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // Decode base64 to bytes
+      const binary = atob(file_base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const formData = new FormData();
+      formData.append("messaging_product", "whatsapp");
+      formData.append("type", mime_type);
+      formData.append("file", new Blob([bytes], { type: mime_type }), filename || "upload");
+
+      const uploadRes = await fetch(graphUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${cloudConfig.access_token}` },
+        body: formData,
+      });
+      const uploadData = await uploadRes.json();
+      return new Response(JSON.stringify(uploadData), {
+        status: uploadRes.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const fetchOptions: RequestInit = {
       method,
       headers: {

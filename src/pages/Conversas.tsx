@@ -25,6 +25,7 @@ interface ConversaRow {
   departamento_id: string | null;
   marcada_nao_lida: boolean;
   created_at: string | null;
+  canal: string;
 }
 
 interface MensagemRow {
@@ -91,6 +92,7 @@ export default function Conversas() {
       departamento_id: c.departamento_id || null,
       marcada_nao_lida: c.marcada_nao_lida ?? false,
       created_at: c.created_at || null,
+      canal: c.canal || "zapi",
     }));
     setConversas(mapped);
     setLoadingConversas(false);
@@ -261,6 +263,37 @@ export default function Conversas() {
     });
   };
 
+  // Helper: call WhatsApp Cloud proxy
+  const callCloud = async (endpoint: string, method: string, data?: any, useWabaId = false) => {
+    const { data: session } = await supabase.auth.getSession();
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/whatsapp-cloud-proxy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session?.access_token}`,
+      },
+      body: JSON.stringify({ endpoint, method, data, useWabaId }),
+    });
+    return res.json();
+  };
+
+  // Upload media to Cloud API and return media_id
+  const uploadCloudMedia = async (file: Blob, mimeType: string, filename: string) => {
+    // Cloud API media upload requires multipart/form-data with the actual file.
+    // We pass the file as base64 through the proxy which converts it server-side.
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const result = await callCloud("media", "POST", {
+      _multipart: true,
+      file_base64: base64,
+      mime_type: mimeType,
+      filename,
+    });
+    if (!result?.id) throw new Error(result?.error?.message || "Upload Cloud falhou");
+    return result.id as string;
+  };
+
   // Send text message (with variable substitution)
   const handleSend = async (rawText: string) => {
     if (!selectedId || !tenantId) return;
@@ -291,10 +324,28 @@ export default function Conversas() {
     }).eq("id", selectedId);
 
 
-  // Send via Z-API if contact has phone
-    if (selected?.contato_telefone) {
+    const isCloud = selected?.canal === "whatsapp_cloud";
+
+    if (isCloud && selected?.contato_telefone) {
       try {
-        // Prefix message with bold nickname for WhatsApp
+        const cloudText = senderName ? `*${senderName}:*\n${text}` : text;
+        const result = await callCloud("messages", "POST", {
+          messaging_product: "whatsapp",
+          to: formatPhone(selected.contato_telefone),
+          type: "text",
+          text: { body: cloudText },
+        });
+        if (result?.error) {
+          console.error("WhatsApp Cloud error:", result.error);
+          toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        }
+      } catch (e) {
+        console.warn("WhatsApp Cloud send failed:", e);
+        toast.error("Erro ao enviar via WhatsApp Oficial");
+      }
+    } else if (selected?.contato_telefone) {
+      // Send via Z-API
+      try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
         await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),
@@ -323,7 +374,21 @@ export default function Conversas() {
         ultima_msg_at: new Date().toISOString(),
       }).eq("id", selectedId);
 
-      if (selected?.contato_telefone) {
+      if (selected?.canal === "whatsapp_cloud" && selected?.contato_telefone) {
+        try {
+          const mediaId = await uploadCloudMedia(blob, "audio/ogg", "audio.ogg");
+          const result = await callCloud("messages", "POST", {
+            messaging_product: "whatsapp",
+            to: formatPhone(selected.contato_telefone),
+            type: "audio",
+            audio: { id: mediaId },
+          });
+          if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        } catch (e) {
+          console.warn("Cloud audio send failed:", e);
+          toast.error("Erro ao enviar áudio via WhatsApp Oficial");
+        }
+      } else if (selected?.contato_telefone) {
         await callZapi("send-audio", "POST", {
           phone: formatPhone(selected.contato_telefone),
           audio: url,
@@ -354,7 +419,25 @@ export default function Conversas() {
         ultima_msg_at: new Date().toISOString(),
       }).eq("id", selectedId);
 
-      if (selected?.contato_telefone) {
+      if (selected?.canal === "whatsapp_cloud" && selected?.contato_telefone) {
+        try {
+          const mediaId = await uploadCloudMedia(file, file.type, file.name);
+          const cloudType = isImage ? "image" : "document";
+          const cloudPayload: any = isImage
+            ? { image: { id: mediaId } }
+            : { document: { id: mediaId, filename: file.name } };
+          const result = await callCloud("messages", "POST", {
+            messaging_product: "whatsapp",
+            to: formatPhone(selected.contato_telefone),
+            type: cloudType,
+            ...cloudPayload,
+          });
+          if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        } catch (e) {
+          console.warn("Cloud media send failed:", e);
+          toast.error("Erro ao enviar anexo via WhatsApp Oficial");
+        }
+      } else if (selected?.contato_telefone) {
         const phone = formatPhone(selected.contato_telefone);
         const endpoint = isImage ? "send-image" : "send-document";
         const data = isImage
@@ -501,6 +584,14 @@ export default function Conversas() {
   const showChat = !isMobile || !!selectedId;
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
 
+  // 24h window for WhatsApp Cloud: only allow free-form sending if last contact message was within 24h
+  const lastContactMsgAt = mensagens
+    .filter(m => m.remetente === "contato")
+    .reduce<string | null>((acc, m) => (!acc || m.created_at > acc ? m.created_at : acc), null);
+  const isCloudChannel = selected?.canal === "whatsapp_cloud";
+  const within24h = !!lastContactMsgAt && (Date.now() - new Date(lastContactMsgAt).getTime()) < 24 * 60 * 60 * 1000;
+  const cloudWindowBlocked = isCloudChannel && !within24h;
+
   return (
     <div className="flex h-full w-full">
       {showList && (
@@ -538,7 +629,8 @@ export default function Conversas() {
             onMarkUnread={handleMarkUnread}
             loading={loadingMsgs}
             isAssignedToMe={selected.atendente_id === user?.id}
-            canal={(selected as any).canal || "zapi"}
+            canal={selected.canal || "zapi"}
+            cloudWindowBlocked={cloudWindowBlocked}
             onPull={handlePull}
           />
         ) : (

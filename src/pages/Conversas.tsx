@@ -538,6 +538,7 @@ export default function Conversas() {
             onMarkUnread={handleMarkUnread}
             loading={loadingMsgs}
             isAssignedToMe={selected.atendente_id === user?.id}
+            canal={(selected as any).canal || "zapi"}
             onPull={handlePull}
           />
         ) : (

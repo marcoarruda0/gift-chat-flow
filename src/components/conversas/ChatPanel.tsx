@@ -130,7 +130,20 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
       </ScrollArea>
 
       {isAssignedToMe ? (
-        <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+        cloudWindowBlocked ? (
+          <div className="px-4 py-4 border-t border-border bg-muted/50">
+            <div className="flex flex-col items-center gap-2 py-2 text-center">
+              <p className="text-sm font-medium text-foreground">
+                Janela de 24h expirada
+              </p>
+              <p className="text-xs text-muted-foreground max-w-md">
+                O WhatsApp Oficial só permite mensagens livres por 24h após a última mensagem do contato. Use um template aprovado para reabrir a conversa.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+        )
       ) : (
         <div className="px-4 py-4 border-t border-border bg-muted/50">
           <div className="flex flex-col items-center gap-3 py-2">

@@ -584,6 +584,14 @@ export default function Conversas() {
   const showChat = !isMobile || !!selectedId;
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
 
+  // 24h window for WhatsApp Cloud: only allow free-form sending if last contact message was within 24h
+  const lastContactMsgAt = mensagens
+    .filter(m => m.remetente === "contato")
+    .reduce<string | null>((acc, m) => (!acc || m.created_at > acc ? m.created_at : acc), null);
+  const isCloudChannel = selected?.canal === "whatsapp_cloud";
+  const within24h = !!lastContactMsgAt && (Date.now() - new Date(lastContactMsgAt).getTime()) < 24 * 60 * 60 * 1000;
+  const cloudWindowBlocked = isCloudChannel && !within24h;
+
   return (
     <div className="flex h-full w-full">
       {showList && (

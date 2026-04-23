@@ -92,6 +92,7 @@ export default function Conversas() {
       departamento_id: c.departamento_id || null,
       marcada_nao_lida: c.marcada_nao_lida ?? false,
       created_at: c.created_at || null,
+      canal: c.canal || "zapi",
     }));
     setConversas(mapped);
     setLoadingConversas(false);

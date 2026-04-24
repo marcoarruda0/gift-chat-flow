@@ -24,6 +24,10 @@ export default function WhatsappOficialConfig() {
   const [status, setStatus] = useState("desconectado");
   const [ultimoTesteAt, setUltimoTesteAt] = useState<string | null>(null);
   const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+  const [ultimaVerificacaoAt, setUltimaVerificacaoAt] = useState<string | null>(null);
+  const [ultimaMensagemAt, setUltimaMensagemAt] = useState<string | null>(null);
+  const [msgsRecebidas24h, setMsgsRecebidas24h] = useState<number>(0);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [existingId, setExistingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

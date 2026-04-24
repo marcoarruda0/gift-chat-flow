@@ -1263,6 +1263,8 @@ export type Database = {
           phone_number_id: string
           status: string
           tenant_id: string
+          ultima_mensagem_at: string | null
+          ultima_verificacao_at: string | null
           ultimo_erro: string | null
           ultimo_teste_at: string | null
           updated_at: string
@@ -1277,6 +1279,8 @@ export type Database = {
           phone_number_id: string
           status?: string
           tenant_id: string
+          ultima_mensagem_at?: string | null
+          ultima_verificacao_at?: string | null
           ultimo_erro?: string | null
           ultimo_teste_at?: string | null
           updated_at?: string
@@ -1291,6 +1295,8 @@ export type Database = {
           phone_number_id?: string
           status?: string
           tenant_id?: string
+          ultima_mensagem_at?: string | null
+          ultima_verificacao_at?: string | null
           ultimo_erro?: string | null
           ultimo_teste_at?: string | null
           updated_at?: string

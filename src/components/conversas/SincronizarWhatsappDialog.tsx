@@ -59,6 +59,11 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
       const res = await callZapi(`chats?page=${page}&pageSize=${PAGE_SIZE}`, "GET");
       const chats = await res.json();
 
+      // Z-API multi-device sem add-on "Histórico" retorna esse erro
+      if (chats?.error && typeof chats.error === "string" && chats.error.includes("multi device")) {
+        throw new Error("MULTI_DEVICE_NOT_SUPPORTED");
+      }
+
       if (!Array.isArray(chats) || chats.length === 0) break;
 
       allChats = allChats.concat(chats);

@@ -90,6 +90,13 @@ Deno.serve(async (req) => {
           // Process incoming messages
           const messages = value.messages || [];
           const contacts = value.contacts || [];
+          if (messages.length > 0) {
+            // Mark last-message timestamp for diagnostics
+            await serviceClient
+              .from("whatsapp_cloud_config")
+              .update({ ultima_mensagem_at: new Date().toISOString() })
+              .eq("phone_number_id", phoneNumberId);
+          }
           for (const msg of messages) {
             await processIncomingMessage(
               serviceClient,

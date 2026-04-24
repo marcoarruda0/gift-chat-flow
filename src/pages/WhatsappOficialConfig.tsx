@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
+import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const WEBHOOK_URL = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-webhook`;

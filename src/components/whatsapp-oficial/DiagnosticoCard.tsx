@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -11,6 +11,9 @@ interface Props {
   msgsRecebidas24h: number;
   diagLoading: boolean;
   onRefresh: () => void;
+  /** Re-assinar campo `messages` no WABA via Graph API */
+  onSubscribeMessages?: () => void | Promise<void>;
+  subscribing?: boolean;
 }
 
 function formatRelative(iso: string | null): string {
@@ -32,35 +35,36 @@ export function DiagnosticoCard({
   msgsRecebidas24h,
   diagLoading,
   onRefresh,
+  onSubscribeMessages,
+  subscribing,
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
 
-  // 4-state diagnostic
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
   let statusClass = "";
   let statusLabel = "Webhook nunca foi chamado pela Meta";
   let statusIcon = <XCircle className="h-3 w-3" />;
   let instrucao =
     "Configure Callback URL e Verify Token no painel da Meta (WhatsApp → Configuration) e clique em Verify and Save.";
+  let mostrarChecklist = false;
 
   if (ultimaVerificacaoAt && !temAtividade) {
-    // 🟡 Verificado mas Meta nunca enviou nenhum POST
     statusColor = "secondary";
     statusLabel = "Verificado, mas Meta não enviou nenhum evento";
     statusIcon = <Clock className="h-3 w-3" />;
     instrucao =
-      "No Meta Dashboard → WhatsApp → Configuration → Webhook fields, clique em Manage e assine os campos `messages` e `message_status`. Depois clique no botão Test ao lado de `messages` para confirmar.";
+      "O handshake de verificação funcionou, mas a Meta nunca disparou um POST. Causas mais prováveis abaixo:";
+    mostrarChecklist = true;
   } else if (temAtividade && !temMsgReal) {
-    // 🟠 Recebendo eventos (test/status) mas zero mensagem real de cliente
     statusColor = "secondary";
-    statusClass = "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30 hover:bg-orange-500/15";
+    statusClass =
+      "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30 hover:bg-orange-500/15";
     statusLabel = "Recebendo eventos, mas sem mensagens reais de cliente";
     statusIcon = <AlertTriangle className="h-3 w-3" />;
     instrucao =
       "A Meta está chamando o webhook (test/status), mas nenhum cliente mandou mensagem ainda. Se o app está em modo Development, adicione seu número em API Setup → To (Recipient phone number) e mande uma mensagem do seu celular para o número oficial.";
   } else if (temMsgReal) {
-    // 🟢 Tudo OK
     statusColor = "default";
     statusLabel = "Recebendo mensagens normalmente";
     statusIcon = <CheckCircle2 className="h-3 w-3" />;
@@ -99,6 +103,48 @@ export function DiagnosticoCard({
           <p className="text-sm text-muted-foreground border-l-2 border-primary/40 pl-3">
             {instrucao}
           </p>
+        )}
+
+        {mostrarChecklist && (
+          <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+            <p className="text-sm font-medium">Causas mais prováveis</p>
+            <ol className="space-y-2 text-sm text-muted-foreground list-decimal pl-5">
+              <li>
+                O campo <code className="bg-muted px-1 rounded text-xs">messages</code> não
+                está assinado no WABA (mais comum). Use o botão abaixo para assinar
+                automaticamente.
+              </li>
+              <li>
+                O App está em modo <strong>Development</strong> e o número remetente não está
+                na allowlist em <em>API Setup → To</em>.
+              </li>
+              <li>
+                A Callback URL salva no Meta Dashboard aponta pra outro App ou outro projeto.
+                Confira que é exatamente a URL mostrada acima.
+              </li>
+            </ol>
+
+            {onSubscribeMessages && (
+              <div className="pt-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => onSubscribeMessages()}
+                  disabled={subscribing}
+                >
+                  {subscribing ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Zap className="h-4 w-4 mr-1" />
+                  )}
+                  Re-assinar campo "messages" automaticamente
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Equivalente a clicar em "Subscribe" no painel da Meta.
+                </p>
+              </div>
+            )}
+          </div>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">

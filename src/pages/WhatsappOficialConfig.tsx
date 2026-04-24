@@ -34,6 +34,36 @@ export default function WhatsappOficialConfig() {
   const [testNumber, setTestNumber] = useState("");
   const [sending, setSending] = useState(false);
 
+  const loadDiagnostico = useCallback(async () => {
+    if (!tenantId) return;
+    setDiagLoading(true);
+    const { data } = await supabase
+      .from("whatsapp_cloud_config" as any)
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (data) {
+      const d = data as any;
+      setUltimoTesteAt(d.ultimo_teste_at || null);
+      setUltimoErro(d.ultimo_erro || null);
+      setUltimaVerificacaoAt(d.ultima_verificacao_at || null);
+      setUltimaMensagemAt(d.ultima_mensagem_at || null);
+      setStatus(d.status || "desconectado");
+    }
+
+    // Count incoming messages last 24h on canal=whatsapp_cloud
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count } = await supabase
+      .from("mensagens")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("remetente", "contato")
+      .gte("created_at", since)
+      .not("metadata->>wa_message_id", "is", null);
+    setMsgsRecebidas24h(count || 0);
+    setDiagLoading(false);
+  }, [tenantId]);
+
   useEffect(() => {
     if (!tenantId) return;
     (async () => {
@@ -52,11 +82,14 @@ export default function WhatsappOficialConfig() {
         setStatus(d.status || "desconectado");
         setUltimoTesteAt(d.ultimo_teste_at || null);
         setUltimoErro(d.ultimo_erro || null);
+        setUltimaVerificacaoAt(d.ultima_verificacao_at || null);
+        setUltimaMensagemAt(d.ultima_mensagem_at || null);
         setExistingId(d.id);
       }
       setLoading(false);
+      loadDiagnostico();
     })();
-  }, [tenantId]);
+  }, [tenantId, loadDiagnostico]);
 
   const handleSave = async () => {
     if (!tenantId || !phoneNumberId || !wabaId || !accessToken) {

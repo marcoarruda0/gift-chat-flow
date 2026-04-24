@@ -9,6 +9,19 @@ const corsHeaders = {
 const GRAPH_VERSION = "v21.0";
 
 Deno.serve(async (req) => {
+  // Log EVERY hit (so we can prove if Meta is calling at all)
+  const reqUrl = new URL(req.url);
+  console.log("[whatsapp-cloud-webhook] HIT", {
+    method: req.method,
+    path: reqUrl.pathname,
+    search: reqUrl.search,
+    ip:
+      req.headers.get("x-forwarded-for") ||
+      req.headers.get("cf-connecting-ip") ||
+      "unknown",
+    ua: req.headers.get("user-agent"),
+  });
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

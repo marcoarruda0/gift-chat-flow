@@ -38,6 +38,12 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (match) {
+      // Mark verification timestamp for diagnostics
+      await serviceClient
+        .from("whatsapp_cloud_config")
+        .update({ ultima_verificacao_at: new Date().toISOString() })
+        .eq("id", match.id);
+
       return new Response(challenge ?? "", {
         status: 200,
         headers: { "Content-Type": "text/plain" },

@@ -56,17 +56,42 @@ Deno.serve(async (req) => {
   // POST → incoming events from Meta
   if (req.method === "POST") {
     try {
-      const body = await req.json();
-      console.log("[whatsapp-cloud-webhook] POST", JSON.stringify(body).slice(0, 800));
+      const rawBody = await req.text();
+      console.log("[whatsapp-cloud-webhook] POST raw", rawBody.slice(0, 1200));
+
+      let body: any = {};
+      try {
+        body = rawBody ? JSON.parse(rawBody) : {};
+      } catch (parseErr) {
+        console.error("[whatsapp-cloud-webhook] body is not JSON", parseErr);
+        return new Response("ok", { status: 200 });
+      }
 
       // Meta payload: { object: 'whatsapp_business_account', entry: [{ changes: [{ value: { messages, statuses, contacts, metadata }, field }] }] }
       const entries = body.entry || [];
+      console.log("[whatsapp-cloud-webhook] entries:", entries.length);
+
       for (const entry of entries) {
         const changes = entry.changes || [];
         for (const change of changes) {
-          if (change.field !== "messages") continue;
           const value = change.value || {};
           const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
+          const messages = value.messages || [];
+          const contacts = value.contacts || [];
+          const statuses = value.statuses || [];
+
+          console.log("[whatsapp-cloud-webhook] change", {
+            field: change.field,
+            phoneNumberId,
+            messages: messages.length,
+            statuses: statuses.length,
+            contacts: contacts.length,
+          });
+
+          if (change.field !== "messages") {
+            console.log("[whatsapp-cloud-webhook] skip field", change.field);
+            continue;
+          }
           if (!phoneNumberId) {
             console.warn("[whatsapp-cloud-webhook] no phone_number_id in payload");
             continue;
@@ -87,36 +112,38 @@ Deno.serve(async (req) => {
           const tenantId = cfg.tenant_id;
           const accessToken = cfg.access_token;
 
-          // Process incoming messages
-          const messages = value.messages || [];
-          const contacts = value.contacts || [];
-          const statuses = value.statuses || [];
-
           // Diagnostic: any POST from Meta with messages OR statuses counts as "activity"
-          if (messages.length > 0 || statuses.length > 0) {
-            await serviceClient
-              .from("whatsapp_cloud_config")
-              .update({ ultima_mensagem_at: new Date().toISOString() })
-              .eq("phone_number_id", phoneNumberId);
-            console.log("[whatsapp-cloud-webhook] activity recorded", {
-              messages: messages.length,
-              statuses: statuses.length,
-            });
-          }
+          await serviceClient
+            .from("whatsapp_cloud_config")
+            .update({ ultima_mensagem_at: new Date().toISOString() })
+            .eq("phone_number_id", phoneNumberId);
+          console.log("[whatsapp-cloud-webhook] activity recorded", {
+            messages: messages.length,
+            statuses: statuses.length,
+          });
+
           for (const msg of messages) {
-            await processIncomingMessage(
-              serviceClient,
-              tenantId,
-              phoneNumberId,
-              accessToken,
-              msg,
-              contacts
-            );
+            try {
+              await processIncomingMessage(
+                serviceClient,
+                tenantId,
+                phoneNumberId,
+                accessToken,
+                msg,
+                contacts
+              );
+            } catch (e) {
+              console.error("[whatsapp-cloud-webhook] processIncomingMessage failed", e);
+            }
           }
 
           // Process status updates (sent/delivered/read/failed)
           for (const status of statuses) {
-            await processStatusUpdate(serviceClient, tenantId, status);
+            try {
+              await processStatusUpdate(serviceClient, tenantId, status);
+            } catch (e) {
+              console.error("[whatsapp-cloud-webhook] processStatusUpdate failed", e);
+            }
           }
         }
       }

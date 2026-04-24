@@ -1,11 +1,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
-  ultimaMensagemAt: string | null;
+  /** Última atividade POST do webhook (mensagens OU statuses) */
+  ultimaAtividadeAt: string | null;
+  /** Mensagens reais de cliente recebidas nas últimas 24h */
   msgsRecebidas24h: number;
   diagLoading: boolean;
   onRefresh: () => void;
@@ -26,28 +28,39 @@ function formatRelative(iso: string | null): string {
 
 export function DiagnosticoCard({
   ultimaVerificacaoAt,
-  ultimaMensagemAt,
+  ultimaAtividadeAt,
   msgsRecebidas24h,
   diagLoading,
   onRefresh,
 }: Props) {
-  const recebeuMsgRecente =
-    ultimaMensagemAt &&
-    Date.now() - new Date(ultimaMensagemAt).getTime() < 24 * 60 * 60 * 1000;
+  const temAtividade = !!ultimaAtividadeAt;
+  const temMsgReal = msgsRecebidas24h > 0;
 
+  // 4-state diagnostic
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
+  let statusClass = "";
   let statusLabel = "Webhook nunca foi chamado pela Meta";
   let statusIcon = <XCircle className="h-3 w-3" />;
   let instrucao =
     "Configure Callback URL e Verify Token no painel da Meta (WhatsApp → Configuration) e clique em Verify and Save.";
 
-  if (ultimaVerificacaoAt && !recebeuMsgRecente) {
+  if (ultimaVerificacaoAt && !temAtividade) {
+    // 🟡 Verificado mas Meta nunca enviou nenhum POST
     statusColor = "secondary";
-    statusLabel = "Verificado, mas sem mensagens recebidas";
+    statusLabel = "Verificado, mas Meta não enviou nenhum evento";
     statusIcon = <Clock className="h-3 w-3" />;
     instrucao =
-      "Em Webhook fields → Manage, assine os campos `messages` e `message_status`. Se o app estiver em modo Development, adicione seu número em API Setup → To.";
-  } else if (recebeuMsgRecente) {
+      "No Meta Dashboard → WhatsApp → Configuration → Webhook fields, clique em Manage e assine os campos `messages` e `message_status`. Depois clique no botão Test ao lado de `messages` para confirmar.";
+  } else if (temAtividade && !temMsgReal) {
+    // 🟠 Recebendo eventos (test/status) mas zero mensagem real de cliente
+    statusColor = "secondary";
+    statusClass = "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30 hover:bg-orange-500/15";
+    statusLabel = "Recebendo eventos, mas sem mensagens reais de cliente";
+    statusIcon = <AlertTriangle className="h-3 w-3" />;
+    instrucao =
+      "A Meta está chamando o webhook (test/status), mas nenhum cliente mandou mensagem ainda. Se o app está em modo Development, adicione seu número em API Setup → To (Recipient phone number) e mande uma mensagem do seu celular para o número oficial.";
+  } else if (temMsgReal) {
+    // 🟢 Tudo OK
     statusColor = "default";
     statusLabel = "Recebendo mensagens normalmente";
     statusIcon = <CheckCircle2 className="h-3 w-3" />;
@@ -76,7 +89,7 @@ export function DiagnosticoCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2">
-          <Badge variant={statusColor} className="gap-1">
+          <Badge variant={statusColor} className={`gap-1 ${statusClass}`}>
             {statusIcon}
             {statusLabel}
           </Badge>
@@ -90,15 +103,15 @@ export function DiagnosticoCard({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">
           <div>
-            <p className="text-xs text-muted-foreground">Última verificação</p>
+            <p className="text-xs text-muted-foreground">Última verificação (GET)</p>
             <p className="text-sm font-medium">{formatRelative(ultimaVerificacaoAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Última mensagem recebida</p>
-            <p className="text-sm font-medium">{formatRelative(ultimaMensagemAt)}</p>
+            <p className="text-xs text-muted-foreground">Última atividade (POST)</p>
+            <p className="text-sm font-medium">{formatRelative(ultimaAtividadeAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Mensagens nas últimas 24h</p>
+            <p className="text-xs text-muted-foreground">Mensagens reais (24h)</p>
             <p className="text-sm font-medium">{msgsRecebidas24h}</p>
           </div>
         </div>

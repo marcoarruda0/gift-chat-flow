@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
+import { DiagnosticoCard } from "@/components/whatsapp-oficial/DiagnosticoCard";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const WEBHOOK_URL = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-webhook`;
@@ -24,11 +25,45 @@ export default function WhatsappOficialConfig() {
   const [status, setStatus] = useState("desconectado");
   const [ultimoTesteAt, setUltimoTesteAt] = useState<string | null>(null);
   const [ultimoErro, setUltimoErro] = useState<string | null>(null);
+  const [ultimaVerificacaoAt, setUltimaVerificacaoAt] = useState<string | null>(null);
+  const [ultimaMensagemAt, setUltimaMensagemAt] = useState<string | null>(null);
+  const [msgsRecebidas24h, setMsgsRecebidas24h] = useState<number>(0);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [existingId, setExistingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testNumber, setTestNumber] = useState("");
   const [sending, setSending] = useState(false);
+
+  const loadDiagnostico = useCallback(async () => {
+    if (!tenantId) return;
+    setDiagLoading(true);
+    const { data } = await supabase
+      .from("whatsapp_cloud_config" as any)
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (data) {
+      const d = data as any;
+      setUltimoTesteAt(d.ultimo_teste_at || null);
+      setUltimoErro(d.ultimo_erro || null);
+      setUltimaVerificacaoAt(d.ultima_verificacao_at || null);
+      setUltimaMensagemAt(d.ultima_mensagem_at || null);
+      setStatus(d.status || "desconectado");
+    }
+
+    // Count incoming messages last 24h on canal=whatsapp_cloud
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count } = await supabase
+      .from("mensagens")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("remetente", "contato")
+      .gte("created_at", since)
+      .not("metadata->>wa_message_id", "is", null);
+    setMsgsRecebidas24h(count || 0);
+    setDiagLoading(false);
+  }, [tenantId]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -48,11 +83,14 @@ export default function WhatsappOficialConfig() {
         setStatus(d.status || "desconectado");
         setUltimoTesteAt(d.ultimo_teste_at || null);
         setUltimoErro(d.ultimo_erro || null);
+        setUltimaVerificacaoAt(d.ultima_verificacao_at || null);
+        setUltimaMensagemAt(d.ultima_mensagem_at || null);
         setExistingId(d.id);
       }
       setLoading(false);
+      loadDiagnostico();
     })();
-  }, [tenantId]);
+  }, [tenantId, loadDiagnostico]);
 
   const handleSave = async () => {
     if (!tenantId || !phoneNumberId || !wabaId || !accessToken) {
@@ -295,6 +333,15 @@ export default function WhatsappOficialConfig() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Diagnóstico do Webhook */}
+      <DiagnosticoCard
+        ultimaVerificacaoAt={ultimaVerificacaoAt}
+        ultimaMensagemAt={ultimaMensagemAt}
+        msgsRecebidas24h={msgsRecebidas24h}
+        diagLoading={diagLoading}
+        onRefresh={loadDiagnostico}
+      />
 
       {/* Testar envio */}
       <Card>

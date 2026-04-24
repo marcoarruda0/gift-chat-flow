@@ -287,9 +287,16 @@ export function SincronizarWhatsappDialog({ open, onOpenChange, onComplete }: Pr
       setProgress(100);
       onComplete();
       toast.success(`${imported} conversa(s) e ${msgsImported} mensagem(ns) importada(s)`);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Sync error:", e);
-      toast.error("Erro ao sincronizar WhatsApp");
+      if (e?.message === "MULTI_DEVICE_NOT_SUPPORTED") {
+        toast.error(
+          "Sincronização de histórico não disponível nesta instância Z-API. O recurso requer o add-on \"Histórico\" no painel da Z-API. Mensagens novas continuam chegando normalmente.",
+          { duration: 8000 }
+        );
+      } else {
+        toast.error("Erro ao sincronizar WhatsApp");
+      }
     } finally {
       setSyncing(false);
     }

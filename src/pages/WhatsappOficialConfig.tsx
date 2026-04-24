@@ -337,7 +337,7 @@ export default function WhatsappOficialConfig() {
       {/* Diagnóstico do Webhook */}
       <DiagnosticoCard
         ultimaVerificacaoAt={ultimaVerificacaoAt}
-        ultimaMensagemAt={ultimaMensagemAt}
+        ultimaAtividadeAt={ultimaMensagemAt}
         msgsRecebidas24h={msgsRecebidas24h}
         diagLoading={diagLoading}
         onRefresh={loadDiagnostico}

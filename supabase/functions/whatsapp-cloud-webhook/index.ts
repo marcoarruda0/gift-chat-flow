@@ -90,12 +90,18 @@ Deno.serve(async (req) => {
           // Process incoming messages
           const messages = value.messages || [];
           const contacts = value.contacts || [];
-          if (messages.length > 0) {
-            // Mark last-message timestamp for diagnostics
+          const statuses = value.statuses || [];
+
+          // Diagnostic: any POST from Meta with messages OR statuses counts as "activity"
+          if (messages.length > 0 || statuses.length > 0) {
             await serviceClient
               .from("whatsapp_cloud_config")
               .update({ ultima_mensagem_at: new Date().toISOString() })
               .eq("phone_number_id", phoneNumberId);
+            console.log("[whatsapp-cloud-webhook] activity recorded", {
+              messages: messages.length,
+              statuses: statuses.length,
+            });
           }
           for (const msg of messages) {
             await processIncomingMessage(
@@ -109,7 +115,6 @@ Deno.serve(async (req) => {
           }
 
           // Process status updates (sent/delivered/read/failed)
-          const statuses = value.statuses || [];
           for (const status of statuses) {
             await processStatusUpdate(serviceClient, tenantId, status);
           }

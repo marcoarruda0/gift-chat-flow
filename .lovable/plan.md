@@ -1,62 +1,74 @@
+# Plano: fazer a conversa do WhatsApp Oficial aparecer em /conversas
 
+## Diagnóstico confirmado
 
-# Plano: Diagnóstico do Webhook WhatsApp Oficial
+A tela `/conversas` não está escondendo o canal oficial.
 
-Confirmei via logs e banco: **a Meta nunca chamou o webhook** (zero hits, zero conversas com `canal='whatsapp_cloud'`). O código está correto — o problema é configuração na Meta App Dashboard que não dá pra você diagnosticar sem ferramenta.
+O que confirmei:
+- A query da página busca **todas** as conversas do tenant, incluindo o campo `canal`
+- A resposta de rede atual traz apenas conversas com `canal = 'zapi'`
+- No banco, hoje existem **0 conversas** com `canal = 'whatsapp_cloud'`
+- No banco, hoje existem **0 mensagens** ligadas a conversas `whatsapp_cloud`
+- Existe configuração salva em `whatsapp_cloud_config`, com verificação registrada, mas `ultima_mensagem_at` ainda está nula
+- Não há logs recentes do backend `whatsapp-cloud-webhook` neste ambiente
 
-## Configuração que você precisa fazer na Meta (manual, fora do código)
+Conclusão: o problema não está na listagem da UI; a conversa não aparece porque **nenhuma conversa do canal oficial foi persistida nesse backend ainda**.
 
-Na **Meta App Dashboard → seu app → WhatsApp → Configuration**:
+## O que vou fazer
 
-| Campo | Valor |
-|---|---|
-| Callback URL | `https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/whatsapp-cloud-webhook` |
-| Verify Token | `2ae78e78e00e4ffd972cb0c752925089` |
+### 1. Validar e reativar o backend do webhook oficial
+- Revisar a função `whatsapp-cloud-webhook`
+- Garantir que a versão atualmente deployada seja a mesma do código do projeto
+- Confirmar que qualquer POST da Meta esteja sendo registrado como atividade
+- Confirmar que payloads com `messages[]` realmente criem:
+  - contato
+  - conversa com `canal = 'whatsapp_cloud'`
+  - mensagem inicial
 
-Passos:
-1. Cole os dois valores → **Verify and Save** (Meta faz GET no webhook)
-2. Em **Webhook fields**, clicar **Manage** → assinar **`messages`** e **`message_status`** → **Subscribe**
-3. Em **API Setup**, garantir que o número que você usa pra mandar mensagem está em **"To"** (lista de números de teste) — apps em modo Development só recebem de números cadastrados ali
+### 2. Fortalecer o diagnóstico para não depender de suposição
+- Registrar com clareza no backend:
+  - último POST recebido
+  - tipo do evento recebido (`messages` vs `statuses`)
+  - `phone_number_id` recebido
+  - eventual erro de processamento
+- Se necessário, ajustar o card de diagnóstico para mostrar “houve POST, mas nenhuma conversa foi criada”
 
-Sem o passo 2 a Meta verifica a URL mas nunca envia mensagens.
+### 3. Validar o fluxo ponta a ponta
+Depois do ajuste:
+1. Confirmar que o webhook recebe o evento real
+2. Confirmar que a função encontra a configuração pelo `phone_number_id`
+3. Confirmar criação de `contatos`, `conversas` e `mensagens`
+4. Reabrir `/conversas` e verificar a nova conversa aparecendo na lista
 
-## Visibilidade no painel (código)
+## Arquivos envolvidos
 
-Pra você ver em tempo real se a Meta tocou o webhook, adiciono um card "Diagnóstico do Webhook" em `WhatsappOficialConfig.tsx`.
+- `supabase/functions/whatsapp-cloud-webhook/index.ts`
+- `src/pages/WhatsappOficialConfig.tsx`
+- `src/components/whatsapp-oficial/DiagnosticoCard.tsx`
+- possível migration adicional apenas se faltar algum campo de diagnóstico
 
-### Banco
-Migration adicionando 2 colunas em `whatsapp_cloud_config`:
-- `ultima_verificacao_at timestamptz` — atualizada no GET de handshake da Meta
-- `ultima_mensagem_at timestamptz` — atualizada quando entra POST com `messages[]`
+## Observação importante
 
-### Edge function `whatsapp-cloud-webhook`
-- No GET com token correto: `update whatsapp_cloud_config set ultima_verificacao_at = now() where verify_token = ?`
-- No POST com `messages[]` não-vazio: `update ... set ultima_mensagem_at = now() where phone_number_id = ?`
-- Manter logs detalhados (já existem)
+Pelo que vi agora, a tela de Conversas já está correta. Se uma conversa `whatsapp_cloud` existir para este tenant, ela deve aparecer automaticamente. Então o foco da correção é o backend de recebimento, não a listagem.
 
-### UI: novo card "Diagnóstico do Webhook" em `WhatsappOficialConfig.tsx`
-Mostra:
-- 🔴 **"Webhook nunca foi chamado pela Meta"** — se `ultima_verificacao_at IS NULL` → instrução: "Configure Callback URL + Verify Token na Meta e clique Verify and Save"
-- 🟡 **"Verificado, mas sem mensagens recebidas"** — se tem verificação mas não tem mensagem → instrução: "Em Webhook fields → Manage, assine o campo `messages`. Se o app estiver em Development, adicione seu número em API Setup → To"
-- 🟢 **"Recebendo mensagens normalmente"** — se tem mensagem nas últimas 24h
-- Timestamps: "Última verificação: há 5 min" / "Última mensagem: há 30s"
-- Contador: "Mensagens recebidas nas últimas 24h: N" (query em `mensagens` filtrando `metadata->>'wa_message_id' IS NOT NULL`)
-- Botão **"Atualizar diagnóstico"** que refaz o select da config
+## Detalhes técnicos
 
-## Arquivos afetados
+Fluxo esperado:
+```text
+Meta webhook POST
+  -> whatsapp-cloud-webhook
+  -> localizar config por phone_number_id
+  -> criar/achar contato
+  -> criar/achar conversa (canal=whatsapp_cloud)
+  -> inserir mensagem
+  -> /conversas passa a retornar esse registro
+```
 
-| Arquivo | Mudança |
-|---|---|
-| Migration nova | `ALTER TABLE whatsapp_cloud_config ADD COLUMN ultima_verificacao_at timestamptz, ADD COLUMN ultima_mensagem_at timestamptz` |
-| `supabase/functions/whatsapp-cloud-webhook/index.ts` | Marcar timestamps em verify (GET) + recebimento de mensagens (POST) |
-| `src/pages/WhatsappOficialConfig.tsx` | Novo card "Diagnóstico do Webhook" com semáforo, timestamps e contador |
+Ponto provável de falha atual:
+```text
+Webhook verificado/configurado
+  -> mas POST real não está chegando neste backend, ou
+  -> POST chega e não está gerando registros persistidos
+```
 
-## Como vamos validar
-
-1. Eu implemento e você abre `/configuracoes/whatsapp-oficial` — card mostra 🔴
-2. Você completa Verify+Save na Meta — recarrega → 🟡 ("Última verificação: agora")
-3. Você assina `messages` na Meta + adiciona seu número em "To"
-4. Manda mensagem do celular → recarrega → 🟢 e a conversa aparece em `/conversas` com badge "Oficial"
-
-Se travar em 🔴 mesmo após Verify and Save, é token/URL errados na Meta. Se travar em 🟡, é assinatura de campo `messages` ou número não autorizado.
-
+Se você aprovar, eu sigo investigando/corrigindo exatamente essa etapa de persistência do webhook oficial.

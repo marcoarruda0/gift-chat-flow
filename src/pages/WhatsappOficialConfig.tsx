@@ -333,6 +333,15 @@ export default function WhatsappOficialConfig() {
         </CardContent>
       </Card>
 
+      {/* Diagnóstico do Webhook */}
+      <DiagnosticoCard
+        ultimaVerificacaoAt={ultimaVerificacaoAt}
+        ultimaMensagemAt={ultimaMensagemAt}
+        msgsRecebidas24h={msgsRecebidas24h}
+        diagLoading={diagLoading}
+        onRefresh={loadDiagnostico}
+      />
+
       {/* Testar envio */}
       <Card>
         <CardHeader>

@@ -34,6 +34,7 @@ export default function WhatsappOficialConfig() {
   const [saving, setSaving] = useState(false);
   const [testNumber, setTestNumber] = useState("");
   const [sending, setSending] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
 
   const loadDiagnostico = useCallback(async () => {
     if (!tenantId) return;
@@ -135,7 +136,7 @@ export default function WhatsappOficialConfig() {
   };
 
   const callProxy = useCallback(
-    async (endpoint: string, method = "POST", data?: any) => {
+    async (endpoint: string, method = "POST", data?: any, useWabaId = false) => {
       const { data: session } = await supabase.auth.getSession();
       const url = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-proxy`;
       const res = await fetch(url, {
@@ -144,12 +145,33 @@ export default function WhatsappOficialConfig() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.session?.access_token}`,
         },
-        body: JSON.stringify({ endpoint, method, data }),
+        body: JSON.stringify({ endpoint, method, data, useWabaId }),
       });
       return res.json();
     },
     []
   );
+
+  const handleSubscribeMessages = useCallback(async () => {
+    if (!wabaId) {
+      toast.error("Salve o WABA ID antes de assinar.");
+      return;
+    }
+    setSubscribing(true);
+    try {
+      const result = await callProxy("subscribed_apps", "POST", {}, true);
+      if (result?.success) {
+        toast.success("Campo `messages` re-assinado com sucesso. Mande uma mensagem real agora.");
+      } else {
+        const msg = result?.error?.message || result?.error?.error_user_msg || JSON.stringify(result);
+        toast.error("Falhou: " + msg);
+      }
+    } catch (e: any) {
+      toast.error("Erro: " + e.message);
+    }
+    setSubscribing(false);
+    loadDiagnostico();
+  }, [wabaId, callProxy, loadDiagnostico]);
 
   const handleSendTest = async () => {
     if (!testNumber.trim()) {
@@ -341,6 +363,8 @@ export default function WhatsappOficialConfig() {
         msgsRecebidas24h={msgsRecebidas24h}
         diagLoading={diagLoading}
         onRefresh={loadDiagnostico}
+        onSubscribeMessages={handleSubscribeMessages}
+        subscribing={subscribing}
       />
 
       {/* Testar envio */}

@@ -725,6 +725,23 @@ export default function GiftbackCaixa() {
                 </div>
               )}
 
+              {/* Bloqueios consolidados */}
+              {!podeConfirmar && motivosBloqueio.length > 0 && (
+                <div
+                  className="rounded-md border border-muted-foreground/30 bg-muted/40 p-2 text-xs text-muted-foreground"
+                  data-testid="bloqueios-confirmacao"
+                >
+                  <p className="font-medium text-foreground mb-1">
+                    Para confirmar, resolva:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {motivosBloqueio.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <Button
                 type="submit"
                 className="w-full"

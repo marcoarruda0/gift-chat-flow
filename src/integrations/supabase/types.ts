@@ -779,31 +779,25 @@ export type Database = {
       }
       giftback_config: {
         Row: {
-          compra_minima: number | null
           created_at: string
-          credito_maximo: number | null
           id: string
-          max_resgate_pct: number | null
+          multiplicador_compra_minima: number
           percentual: number | null
           tenant_id: string
           validade_dias: number | null
         }
         Insert: {
-          compra_minima?: number | null
           created_at?: string
-          credito_maximo?: number | null
           id?: string
-          max_resgate_pct?: number | null
+          multiplicador_compra_minima?: number
           percentual?: number | null
           tenant_id: string
           validade_dias?: number | null
         }
         Update: {
-          compra_minima?: number | null
           created_at?: string
-          credito_maximo?: number | null
           id?: string
-          max_resgate_pct?: number | null
+          multiplicador_compra_minima?: number
           percentual?: number | null
           tenant_id?: string
           validade_dias?: number | null
@@ -821,11 +815,9 @@ export type Database = {
       giftback_config_rfv: {
         Row: {
           ativo: boolean
-          compra_minima: number | null
           created_at: string
-          credito_maximo: number | null
           id: string
-          max_resgate_pct: number | null
+          multiplicador_compra_minima: number | null
           percentual: number | null
           segmento: string
           tenant_id: string
@@ -834,11 +826,9 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
-          compra_minima?: number | null
           created_at?: string
-          credito_maximo?: number | null
           id?: string
-          max_resgate_pct?: number | null
+          multiplicador_compra_minima?: number | null
           percentual?: number | null
           segmento: string
           tenant_id: string
@@ -847,11 +837,9 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
-          compra_minima?: number | null
           created_at?: string
-          credito_maximo?: number | null
           id?: string
-          max_resgate_pct?: number | null
+          multiplicador_compra_minima?: number | null
           percentual?: number | null
           segmento?: string
           tenant_id?: string

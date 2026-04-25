@@ -8,6 +8,7 @@ import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
 import { TransferirDialog } from "@/components/conversas/TransferirDialog";
 import { ImportarConversasDialog } from "@/components/conversas/ImportarConversasDialog";
 import { SincronizarWhatsappDialog } from "@/components/conversas/SincronizarWhatsappDialog";
+import { EnviarTemplateDialog } from "@/components/conversas/EnviarTemplateDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 
@@ -52,6 +53,7 @@ export default function Conversas() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});

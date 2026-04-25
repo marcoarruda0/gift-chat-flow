@@ -1,58 +1,161 @@
-# Plano: provar se a Meta está chamando o webhook + auto-fix de assinatura
 
-## Diagnóstico atual (confirmado agora)
+# Sprint 1 — Status de entrega + Templates WhatsApp Oficial
 
-- `whatsapp_cloud_config`: `phone_number_id=1057954850740861`, `display_phone=+1 (555) 166-5056`, `status=conectado`
-- `ultima_verificacao_at = 2026-04-24 13:53` (GET handshake funcionou uma vez)
-- `ultima_mensagem_at = NULL` (nenhum POST foi processado pelo webhook)
-- `function_edge_logs` filtrando por `whatsapp-cloud-webhook`: **zero hits**
-- Comparativo: `zapi-webhook` está recebendo dezenas de mensagens por minuto
+Implementação focada em duas capacidades centrais da Frente 1: rastrear o status real de entrega das mensagens enviadas pela Cloud API e permitir que o usuário gerencie templates direto da plataforma (sync + criação).
 
-Conclusão: o problema **não é o nosso código** — a Meta literalmente não está chamando o endpoint. Para diferenciar entre "Meta não está chamando" vs "Meta chama mas a infraestrutura derruba antes" preciso de log na primeira linha de cada request, e quero te dar uma forma de re-assinar `messages` automaticamente sem mexer no painel da Meta.
+## 1. Status de entrega de mensagens
 
-## O que vou fazer
+### 1.1 Schema (migration)
+```sql
+ALTER TABLE public.mensagens
+  ADD COLUMN status_entrega text,
+  ADD COLUMN status_entrega_at timestamptz;
 
-### 1. `supabase/functions/whatsapp-cloud-webhook/index.ts`
-Adicionar log na primeira linha do `Deno.serve`, antes de qualquer parsing:
-```ts
-console.log("[whatsapp-cloud-webhook] HIT", {
-  method, path, search, ip, ua
-});
+CREATE INDEX idx_mensagens_wa_msg_id
+  ON public.mensagens ((metadata->>'wa_message_id'))
+  WHERE metadata ? 'wa_message_id';
 ```
-Assim, qualquer request que tocar a função aparece em `edge_function_logs` independentemente do método ou do corpo. Se mesmo depois disso continuar zerado, está provado que a Meta não está chamando — não é problema nosso.
+Valores esperados em `status_entrega`: `sent | delivered | read | failed`.
 
-### 2. `supabase/functions/whatsapp-cloud-proxy/index.ts`
-Hoje o proxy só permite `/{phone_number_id}/...`. Vou adicionar suporte explícito a chamadas no nível do WABA (`useWabaId: true` já existe) e garantir que aceita `subscribed_apps` como endpoint, para a UI poder chamar:
+### 1.2 Webhook (`whatsapp-cloud-webhook/index.ts`)
+- Quando `value.statuses[]` vier no payload, iterar e fazer `UPDATE mensagens` casando por `metadata->>'wa_message_id' = status.id`.
+- Gravar `status_entrega = status.status` e `status_entrega_at = to_timestamp(status.timestamp)`.
+- Para `failed`, mesclar `status.errors[]` em `metadata.delivery_errors` para diagnóstico.
+- Contabilizar atualizações no `whatsapp_webhook_eventos.mensagens_criadas` (ou novo campo `status_atualizados` — aproveitar o existente para evitar nova migration).
+
+### 1.3 Persistir `wa_message_id` ao enviar
+- No `handleSendTest` em `WhatsappOficialConfig.tsx`: pegar `messages[0].id` da resposta do proxy e salvar em `metadata.wa_message_id` ao inserir a mensagem local.
+- (Conversas via Cloud API ainda não enviam — fica para Sprint 2; hoje só o teste/template envia.)
+
+### 1.4 UI (`MessageBubble.tsx`)
+- Adicionar prop `statusEntrega` (vinda da query de mensagens).
+- Renderizar abaixo do horário, apenas para `remetente='atendente'` em conversa `whatsapp_cloud`:
+  - `sent` → ✓ cinza
+  - `delivered` → ✓✓ cinza
+  - `read` → ✓✓ azul
+  - `failed` → ⚠ vermelho com tooltip mostrando `metadata.delivery_errors[0].message`
+- Ícones via lucide (`Check`, `CheckCheck`, `AlertCircle`).
+- `ChatPanel.tsx`: incluir `status_entrega` e `status_entrega_at` no `select` de mensagens e propagar para `MessageBubble`.
+
+## 2. Templates: tabela + sync + submissão
+
+### 2.1 Schema (migration)
+```sql
+CREATE TABLE public.whatsapp_cloud_templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  meta_template_id text,
+  name text NOT NULL,
+  language text NOT NULL,
+  category text,
+  status text NOT NULL DEFAULT 'PENDING',
+  components jsonb NOT NULL DEFAULT '[]'::jsonb,
+  rejection_reason text,
+  synced_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (tenant_id, name, language)
+);
+
+ALTER TABLE public.whatsapp_cloud_templates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_view_templates ON public.whatsapp_cloud_templates
+  FOR SELECT USING (tenant_id = get_user_tenant_id(auth.uid()));
+
+CREATE POLICY tenant_admin_insert_templates ON public.whatsapp_cloud_templates
+  FOR INSERT WITH CHECK (
+    tenant_id = get_user_tenant_id(auth.uid())
+    AND (has_role(auth.uid(), 'admin_tenant') OR has_role(auth.uid(), 'admin_master'))
+  );
+
+CREATE POLICY tenant_admin_update_templates ON public.whatsapp_cloud_templates
+  FOR UPDATE USING (
+    tenant_id = get_user_tenant_id(auth.uid())
+    AND (has_role(auth.uid(), 'admin_tenant') OR has_role(auth.uid(), 'admin_master'))
+  );
+
+CREATE POLICY tenant_admin_delete_templates ON public.whatsapp_cloud_templates
+  FOR DELETE USING (
+    tenant_id = get_user_tenant_id(auth.uid())
+    AND (has_role(auth.uid(), 'admin_tenant') OR has_role(auth.uid(), 'admin_master'))
+  );
 ```
-POST https://graph.facebook.com/v21.0/{waba_id}/subscribed_apps
-```
-Isso é o equivalente programático de "Subscribe" no painel da Meta.
 
-### 3. `src/components/whatsapp-oficial/DiagnosticoCard.tsx`
-- Quando estado for 🟡 ("Verificado, mas Meta não enviou nenhum evento"), mostrar uma **checklist visual** das 3 causas prováveis:
-  1. Campo `messages` não está assinado em `Webhook fields`
-  2. App está em modo Development e o número remetente não está na allowlist
-  3. Webhook está apontando pra outro App / WABA
-- Adicionar botão **"Re-assinar messages automaticamente"** que dispara uma função client → proxy → `POST /{waba_id}/subscribed_apps`. Mostra toast de sucesso/erro e força refresh do diagnóstico.
+### 2.2 Sincronização com a Meta
+- Reutilizar `whatsapp-cloud-proxy` com `useWabaId: true` e `endpoint: 'message_templates?fields=id,name,language,status,category,components,rejection_reason&limit=200'`, `method: GET`.
+- Lógica de upsert client-side (chamada do botão "Sincronizar agora"): para cada template retornado, `upsert` por `(tenant_id, name, language)` — atualiza status, components e `synced_at`.
+- Marcar como `DELETED` localmente templates que não vieram mais (opcional — por ora, manter histórico, sem deletar).
 
-### 4. `src/pages/WhatsappOficialConfig.tsx`
-- Implementar handler `handleSubscribeMessages()` que chama o proxy com `useWabaId: true` e endpoint `subscribed_apps`.
-- Passar esse handler como prop para o `DiagnosticoCard`.
+### 2.3 Criação de template via plataforma
+- Form chama proxy com `useWabaId: true`, `endpoint: 'message_templates'`, `method: POST`, body:
+  ```json
+  {
+    "name": "boas_vindas",
+    "language": "pt_BR",
+    "category": "UTILITY",
+    "components": [
+      { "type": "HEADER", "format": "TEXT", "text": "Olá {{1}}" },
+      { "type": "BODY", "text": "Seu pedido {{1}} foi confirmado.", 
+        "example": { "body_text": [["12345"]] } },
+      { "type": "FOOTER", "text": "Loja Exemplo" },
+      { "type": "BUTTONS", "buttons": [{ "type": "QUICK_REPLY", "text": "Ok" }] }
+    ]
+  }
+  ```
+- Após resposta da Meta com `id`, inserir registro local com `status='PENDING'` e `meta_template_id=<id>`.
 
-## Como vamos validar
+### 2.4 UI
+**Novo componente `TemplatesCard.tsx`:**
+- Lista templates do tenant em tabela: nome, idioma, categoria, status (badge colorido), última sync.
+- Botão "Sincronizar agora" → chama proxy + upsert.
+- Botão "Criar template" → abre `CriarTemplateDialog`.
+- Para `REJECTED`, mostrar `rejection_reason` no expand.
 
-1. Você abre `/configuracoes/whatsapp-oficial` → clica em "Re-assinar messages automaticamente"
-2. Se a Meta retornar `{ success: true }`, o webhook passa a ser chamado e o card vira 🟠/🟢
-3. Se a Meta retornar erro de permissão (`access_token` sem escopo `whatsapp_business_management`), o toast mostra a mensagem exata — aí saberemos que precisa gerar um novo token na Meta
-4. Mando uma mensagem real do meu celular pro número oficial → conversa aparece em `/conversas` com badge "Oficial"
+**Novo componente `CriarTemplateDialog.tsx`:**
+- Campos:
+  - Nome (validação snake_case, lowercase, ≤512 chars)
+  - Idioma (select, default `pt_BR`; opções comuns: `pt_BR`, `en_US`, `es_ES`)
+  - Categoria (radio: UTILITY / MARKETING / AUTHENTICATION)
+  - Header (select tipo: nenhum / texto)
+    - Se texto: input com 1 placeholder opcional `{{1}}` + exemplo
+  - Body (textarea, obrigatório, suporta `{{1}}..{{n}}`) + área dinâmica de exemplos por placeholder
+  - Footer (input opcional, ≤60 chars)
+  - Botões (lista dinâmica, máx 3, tipo Quick Reply ou URL com placeholder opcional)
+- Validação client-side antes de enviar (regex no nome, contagem de placeholders bate com exemplos).
+- Aviso visual: "A aprovação pela Meta leva até 24h. Status será atualizado no próximo sync."
 
-## Arquivos modificados
+**Integração na página:**
+- `WhatsappOficialConfig.tsx`: adicionar nova tab "Templates" (entre "Diagnóstico" e "Auditoria") renderizando `<TemplatesCard />`.
 
-- `supabase/functions/whatsapp-cloud-webhook/index.ts` (log na primeira linha)
-- `supabase/functions/whatsapp-cloud-proxy/index.ts` (já suporta `useWabaId`, mas vou garantir)
-- `src/components/whatsapp-oficial/DiagnosticoCard.tsx` (checklist + botão re-assinar)
-- `src/pages/WhatsappOficialConfig.tsx` (handler de re-assinatura)
+## 3. Tipos
+- Após a migration, `src/integrations/supabase/types.ts` é regenerado automaticamente — não editar manualmente.
 
-## Risco
+## 📁 Arquivos
 
-Baixo. Adições são puramente aditivas — log extra e um novo botão. Nenhuma migração de banco.
+**Migrations (2 novas):**
+- `mensagens` + `status_entrega` + índice `wa_message_id`
+- Tabela `whatsapp_cloud_templates` + RLS
+
+**Edge function modificada:**
+- `supabase/functions/whatsapp-cloud-webhook/index.ts` — handler de `statuses[]`
+
+**Componentes novos:**
+- `src/components/whatsapp-oficial/TemplatesCard.tsx`
+- `src/components/whatsapp-oficial/CriarTemplateDialog.tsx`
+
+**Componentes modificados:**
+- `src/pages/WhatsappOficialConfig.tsx` — nova tab + persistir `wa_message_id` no `handleSendTest`
+- `src/components/conversas/MessageBubble.tsx` — ícones de status
+- `src/components/conversas/ChatPanel.tsx` — incluir colunas de status no fetch
+
+## ✅ Como validar
+
+1. Enviar template "hello_world" pelo botão de teste → mensagem aparece em `/conversas` com ✓.
+2. Em segundos, status muda para ✓✓ (delivered) e depois ✓✓ azul (read) ao abrir no celular.
+3. Aba Templates: clicar em "Sincronizar agora" → lista exibe `hello_world` (e quaisquer templates que existam na WABA) com status `APPROVED`.
+4. Criar um template novo via dialog → aparece com badge `PENDING`. Após algumas horas, novo sync mostra `APPROVED` ou `REJECTED` com motivo.
+
+## 🚫 Fora do escopo (vai para Sprint 2)
+- Mídia inbound (image/audio/video/document do contato).
+- Envio de mídia/texto livre via Cloud API a partir de `ChatInput`.
+- Bloqueio da janela de 24h (depende de templates aprovados — implementar junto).
+- Hardening (HMAC, idempotência, app_secret) — vai para Sprint 5.

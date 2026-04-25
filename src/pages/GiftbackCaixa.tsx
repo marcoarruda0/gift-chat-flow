@@ -688,7 +688,7 @@ export default function GiftbackCaixa() {
                     <Switch
                       checked={aplicarGiftback}
                       onCheckedChange={setAplicarGiftback}
-                      disabled={!regrasOk}
+                      disabled={!regrasOk || configAusente || configCarregando}
                     />
                     <Label>
                       Aplicar giftback de{" "}

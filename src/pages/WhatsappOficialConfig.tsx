@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,9 @@ const WEBHOOK_URL = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-clo
 export default function WhatsappOficialConfig() {
   const { profile } = useAuth();
   const tenantId = profile?.tenant_id;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "config";
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
@@ -457,7 +461,20 @@ export default function WhatsappOficialConfig() {
         </p>
       </div>
 
-      <Tabs defaultValue="config" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v);
+          if (v === "config") {
+            searchParams.delete("tab");
+            setSearchParams(searchParams, { replace: true });
+          } else {
+            searchParams.set("tab", v);
+            setSearchParams(searchParams, { replace: true });
+          }
+        }}
+        className="space-y-6"
+      >
         <TabsList>
           <TabsTrigger value="config">Configuração</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>

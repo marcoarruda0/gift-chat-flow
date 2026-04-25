@@ -183,57 +183,112 @@ describe("Cenário de geração e resgate (regra do multiplicador)", () => {
     expect(r.gbGerado).toBe(40);
   });
 
-  it("compra ACIMA do mínimo + resgate parcial: novo saldo correto", () => {
-    const r = simular({
-      saldo: 100,
-      valorCompra: 500,
-      giftbackSolicitado: 60,
-      regras: { percentual: 10, multiplicador_compra_minima: 4 },
-    });
-    expect(r.gbUsado).toBe(60);
-    expect(r.gbGerado).toBe(50);
-    expect(r.novoSaldo).toBe(90); // 100 - 60 + 50
-  });
+  // Cenário antigo de resgate parcial removido — a regra agora é tudo-ou-nada,
+  // coberta pela suíte `calcularTransacaoGiftback` abaixo.
 });
 
-describe("Limite de resgate = min(saldo, valor da compra)", () => {
-  it("resgate solicitado acima do saldo é capado pelo saldo", () => {
-    const r = simular({
-      saldo: 50,
-      valorCompra: 1000,
-      giftbackSolicitado: 999,
-      regras: { percentual: 10, multiplicador_compra_minima: 4 },
-    });
-    expect(r.gbUsado).toBe(50);
-  });
+describe("calcularTransacaoGiftback (1 ativo + tudo-ou-nada)", () => {
+  const base = { multiplicador: 4, percentual: 10 };
 
-  it("resgate solicitado acima da compra é capado pela compra", () => {
-    const r = simular({
-      saldo: 500,
-      valorCompra: 80,
-      giftbackSolicitado: 200,
-      regras: { percentual: 10, multiplicador_compra_minima: 0 },
+  it("sem ativo + compra ≥ mínimo → gera novo, ação 'nenhum'", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 0,
+      valorCompra: 50,
+      aplicarGiftback: false,
     });
-    expect(r.gbUsado).toBe(80);
-  });
-
-  it("min(saldo, compra, solicitado) — solicitado vence quando é o menor", () => {
-    const r = simular({
-      saldo: 500,
-      valorCompra: 1000,
-      giftbackSolicitado: 30,
-      regras: { percentual: 10, multiplicador_compra_minima: 0 },
-    });
-    expect(r.gbUsado).toBe(30);
-  });
-
-  it("resgate sem saldo é zero", () => {
-    const r = simular({
-      saldo: 0,
-      valorCompra: 100,
-      giftbackSolicitado: 50,
-      regras: { percentual: 10, multiplicador_compra_minima: 4 },
-    });
+    expect(r.acaoSobreAtivo).toBe("nenhum");
+    expect(r.gbGerado).toBe(5);
     expect(r.gbUsado).toBe(0);
+    expect(r.novoSaldo).toBe(5);
+    expect(r.erroValidacao).toBeNull();
+  });
+
+  it("sem ativo: saldo 0 nunca tem mínimo → qualquer compra > 0 gera", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 0,
+      valorCompra: 1,
+      aplicarGiftback: false,
+    });
+    expect(r.gbGerado).toBeCloseTo(0.1);
+    expect(r.acaoSobreAtivo).toBe("nenhum");
+  });
+
+  it("com ativo + NÃO aplicar + compra ≥ mínimo → invalida antigo (substituir) + gera novo", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 100,
+      valorCompra: 500,
+      aplicarGiftback: false,
+    });
+    expect(r.acaoSobreAtivo).toBe("substituir");
+    expect(r.gbUsado).toBe(0);
+    expect(r.gbGerado).toBe(50);
+    expect(r.novoSaldo).toBe(50);
+  });
+
+  it("com ativo + NÃO aplicar + compra < mínimo → invalida antigo, sem gerar", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 100,
+      valorCompra: 200,
+      aplicarGiftback: false,
+    });
+    expect(r.acaoSobreAtivo).toBe("invalidar_nao_uso");
+    expect(r.gbGerado).toBe(0);
+    expect(r.novoSaldo).toBe(0);
+  });
+
+  it("com ativo + APLICAR + compra ≥ ativo + compra ≥ mínimo → usa antigo + gera novo", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 100,
+      valorCompra: 500,
+      aplicarGiftback: true,
+    });
+    expect(r.acaoSobreAtivo).toBe("usar");
+    expect(r.gbUsado).toBe(100);
+    expect(r.gbGerado).toBe(50);
+    expect(r.novoSaldo).toBe(50);
+  });
+
+  it("com ativo + APLICAR + compra ≥ ativo + compra < mínimo → usa, NÃO gera", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 100,
+      valorCompra: 250,
+      aplicarGiftback: true,
+    });
+    expect(r.acaoSobreAtivo).toBe("usar");
+    expect(r.gbUsado).toBe(100);
+    expect(r.gbGerado).toBe(0);
+    expect(r.novoSaldo).toBe(0);
+  });
+
+  it("com ativo + APLICAR + compra < valor do ativo → ERRO (sem resgate parcial)", () => {
+    const r = calcularTransacaoGiftback({
+      ...base,
+      saldoAtivo: 100,
+      valorCompra: 80,
+      aplicarGiftback: true,
+    });
+    expect(r.erroValidacao).toMatch(/tudo-ou-nada/i);
+    expect(r.gbUsado).toBe(0);
+    expect(r.gbGerado).toBe(0);
+    expect(r.acaoSobreAtivo).toBe("nenhum");
+  });
+
+  it("multiplicador 0 → barreira desativada mesmo com saldo", () => {
+    const r = calcularTransacaoGiftback({
+      multiplicador: 0,
+      percentual: 10,
+      saldoAtivo: 200,
+      valorCompra: 50,
+      aplicarGiftback: false,
+    });
+    expect(r.compraMinimaParaGerar).toBe(0);
+    expect(r.acaoSobreAtivo).toBe("substituir");
+    expect(r.gbGerado).toBe(5);
   });
 });

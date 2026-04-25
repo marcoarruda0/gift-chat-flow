@@ -192,3 +192,35 @@ export function calcularTransacaoGiftback(
     erroValidacao: null,
   };
 }
+
+/**
+ * Faz parse defensivo do valor digitado pelo operador no caixa.
+ * Aceita string com vírgula ou ponto. Retorna `{ valor: 0, erro: null }`
+ * para entrada vazia (estado inicial) e mensagens claras para qualquer
+ * coisa inválida (NaN, negativo, zero, acima do limite).
+ */
+export function parseValorCompra(
+  raw: string | null | undefined,
+): { valor: number; erro: string | null } {
+  const limpo = (raw ?? "").toString().trim().replace(",", ".");
+  if (!limpo) return { valor: 0, erro: null };
+  const n = Number(limpo);
+  if (!Number.isFinite(n)) {
+    return { valor: 0, erro: "Valor inválido (não é um número)." };
+  }
+  if (n < 0) {
+    return { valor: 0, erro: "Valor da compra não pode ser negativo." };
+  }
+  if (n === 0) {
+    return { valor: 0, erro: "Valor da compra deve ser maior que zero." };
+  }
+  if (n > 1_000_000) {
+    return {
+      valor: 0,
+      erro: "Valor acima do limite permitido (R$ 1.000.000,00).",
+    };
+  }
+  // Limita a 2 casas decimais (centavos)
+  const arredondado = Math.round(n * 100) / 100;
+  return { valor: arredondado, erro: null };
+}

@@ -273,6 +273,30 @@ export default function WhatsappOficialConfig() {
     loadDiagnostico();
   }, [loadDiagnostico]);
 
+  const handleSaveAlertaConfig = useCallback(
+    async (pct: number, minEv: number) => {
+      if (!existingId) {
+        toast.error("Salve as credenciais antes de configurar alertas");
+        return;
+      }
+      setSavingAlerta(true);
+      const { error } = await supabase
+        .from("whatsapp_cloud_config" as any)
+        .update({ alerta_taxa_erro_pct: pct, alerta_min_eventos: minEv })
+        .eq("id", existingId);
+      setSavingAlerta(false);
+      if (error) {
+        toast.error("Erro ao salvar: " + error.message);
+      } else {
+        setAlertaTaxaErroPct(pct);
+        setAlertaMinEventos(minEv);
+        toast.success("Configuração de alerta salva");
+        loadDiagnostico();
+      }
+    },
+    [existingId, loadDiagnostico]
+  );
+
   const handleSendTest = async () => {
     if (!testNumber.trim()) {
       toast.error("Informe o número de destino (formato E.164, ex: 5511999999999)");

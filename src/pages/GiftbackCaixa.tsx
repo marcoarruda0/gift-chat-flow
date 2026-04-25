@@ -382,7 +382,7 @@ export default function GiftbackCaixa() {
         .eq("id", contato!.id);
 
       return {
-        valorCompra: valorCompraNum,
+        valorCompra: valorValidado,
         giftbackUsado: transacao.gbUsado,
         giftbackGerado: transacao.gbGerado,
         novoSaldo: transacao.novoSaldo,

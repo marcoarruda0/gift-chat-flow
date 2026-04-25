@@ -547,7 +547,33 @@ export default function GiftbackCaixa() {
             <CardTitle className="text-lg">Registrar Compra</CardTitle>
           </CardHeader>
           <CardContent>
-            {!regrasOk && (
+            {configCarregando && (
+              <div
+                className="mb-4 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground"
+                role="status"
+                data-testid="config-carregando-alert"
+              >
+                Carregando configuração de giftback…
+              </div>
+            )}
+
+            {configAusente && (
+              <div
+                className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+                data-testid="config-ausente-alert"
+              >
+                <p className="font-medium">
+                  Configuração de giftback ausente.
+                </p>
+                <p className="mt-1 text-xs">
+                  Crie em <strong>Giftback → Configuração</strong> antes de
+                  operar o caixa.
+                </p>
+              </div>
+            )}
+
+            {!regrasOk && !configAusente && (
               <div
                 className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
                 role="alert"
@@ -579,11 +605,33 @@ export default function GiftbackCaixa() {
                   type="number"
                   step="0.01"
                   min="0.01"
+                  inputMode="decimal"
                   value={valorCompra}
                   onChange={(e) => setValorCompra(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Bloqueia caracteres que HTML5 number aceita mas
+                    // não fazem sentido para um valor monetário positivo
+                    if (["e", "E", "+", "-"].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
                   required
-                  disabled={!regrasOk}
+                  disabled={!regrasOk || configAusente || configCarregando}
+                  aria-invalid={!!erroValor}
+                  data-testid="input-valor-compra"
                 />
+
+                {/* Erro de validação do valor digitado */}
+                {erroValor && (
+                  <div
+                    className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex gap-2"
+                    role="alert"
+                    data-testid="erro-valor-compra"
+                  >
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{erroValor}</span>
+                  </div>
+                )}
 
                 {/* Aviso: compra abaixo do mínimo (não vai gerar) */}
                 {valorCompraNum > 0 &&

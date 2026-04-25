@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.expirar-giftbacks]
 verify_jwt = false
+
+[functions.processar-comunicacoes-giftback]
+verify_jwt = false

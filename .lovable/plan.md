@@ -1,44 +1,116 @@
+## 🎯 Objetivo
 
-# 🎯 Melhorias: expiração automática + validações robustas no Caixa
+Permitir que o tenant configure **regras de comunicação** (ex.: "giftback criado", "saldo vencendo em 3 dias", "expirou ontem") associando cada uma a um **template aprovado do WhatsApp Cloud**. Um **cronjob diário único** (horário configurável pelo tenant) processa todas as regras ativas e dispara as mensagens.
 
-## Parte 1 — Job de expiração de giftbacks (cron)
+Decisões aprovadas:
+- **Canal**: somente WhatsApp Oficial (Cloud API), reusando templates já aprovados.
+- **Eventos**: tenant define livremente (tipo de gatilho + offset em dias). Não há eventos fixos no código.
+- **Variáveis**: catálogo amplo — `nome_cliente`, `nome_empresa`, `valor_giftback`, `id_giftback`, `data_vencimento`, `dias_ate_expirar`, `saldo_giftback`.
+- **Horário**: um único HH:MM por tenant para todas as regras.
 
-### 🔧 Edge function `expirar-giftbacks`
-Arquivo: `supabase/functions/expirar-giftbacks/index.ts`
+---
 
-Lógica (com **service role key**, sem dependência de tenant logado):
-1. Buscar todos `giftback_movimentos` com `tipo='credito'`, `status='ativo'` e `validade < hoje` (data UTC).
-2. Para cada batch (até 1000 por vez):
-   - `UPDATE giftback_movimentos SET status='expirado', motivo_inativacao='expirado' WHERE id IN (...)`.
-   - Coletar `contato_id` distintos.
-3. Para cada `contato_id` afetado: `UPDATE contatos SET saldo_giftback = 0` (após expirar, por definição da regra "1 ativo por cliente", o saldo agregado vira 0 — não há outro ativo possível pelo índice único).
-4. Retornar JSON com `{ expirados: N, contatos_zerados: M, executado_em }`.
+## 📐 Modelo de dados
 
-Implementação:
-- Importar `createClient` de `npm:@supabase/supabase-js@2`.
-- Usar `Deno.env.get("SUPABASE_URL")` e `SUPABASE_SERVICE_ROLE_KEY`.
-- CORS headers padrão (apesar de ser chamada por cron, deixa testável manualmente).
-- Sem `verify_jwt` na config (executa anônimo via cron com Bearer anon key, mas valida via service role internamente). Adicionar bloco em `supabase/config.toml`:
-  ```toml
-  [functions.expirar-giftbacks]
-  verify_jwt = false
-  ```
+### Nova tabela `giftback_comunicacao_config` (1 por tenant — settings globais)
+| coluna | tipo | default | descrição |
+|---|---|---|---|
+| `id` | uuid PK | `gen_random_uuid()` | |
+| `tenant_id` | uuid UNIQUE | — | RLS por tenant |
+| `ativo` | boolean | `true` | desliga TODO o cronjob desse tenant |
+| `horario_envio` | time | `'09:00'` | HH:MM no fuso `America/Sao_Paulo` |
+| `created_at` / `updated_at` | timestamptz | `now()` | |
 
-### ⏰ Agendamento via pg_cron
-Como a SQL contém URL do projeto + anon key (dados sensíveis específicos do tenant), **NÃO usar migration**. Em vez disso, usar a tool `supabase--insert` no momento da execução:
+### Nova tabela `giftback_comunicacao_regras` (N por tenant — uma regra por evento)
+| coluna | tipo | descrição |
+|---|---|---|
+| `id` | uuid PK | |
+| `tenant_id` | uuid | RLS |
+| `nome` | text | rótulo livre ("Aviso 3 dias antes") |
+| `ativo` | boolean | liga/desliga só essa regra |
+| `tipo_gatilho` | enum `gb_gatilho_tipo` | `criado` \| `vencendo` \| `expirado` |
+| `dias_offset` | integer | dias relativos: `criado` ignora; `vencendo` = X dias antes (ex.: 3); `expirado` = X dias depois (ex.: 0 ou 1) |
+| `template_name` | text | nome do template Cloud aprovado |
+| `template_language` | text | ex.: `pt_BR` |
+| `template_components` | jsonb | snapshot dos components (mesmo padrão de `campanhas`) |
+| `template_variaveis` | jsonb | mapping `{ "body.1": "{{nome_cliente}}", "body.2": "R$ {{valor_giftback}}", ... }` |
+| `created_at` / `updated_at` | timestamptz | |
+
+Index: `(tenant_id, tipo_gatilho, dias_offset)` para lookup rápido.
+
+### Nova tabela `giftback_comunicacao_log` (auditoria — evita reenvio)
+| coluna | tipo | descrição |
+|---|---|---|
+| `id` | uuid PK | |
+| `tenant_id` | uuid | RLS |
+| `regra_id` | uuid | FK lógica para `giftback_comunicacao_regras` |
+| `movimento_id` | uuid | FK lógica para `giftback_movimentos` |
+| `contato_id` | uuid | |
+| `enviado_em` | timestamptz | `now()` |
+| `status` | text | `enviado` \| `falha` \| `sem_telefone` |
+| `wa_message_id` | text | retorno da Graph API |
+| `erro` | text | nullable |
+
+**Constraint chave**: `UNIQUE (regra_id, movimento_id)` — garante idempotência (cada regra só dispara 1x por giftback).
+
+### RLS de todas as tabelas acima
+- SELECT: `tenant_id = get_user_tenant_id(auth.uid())`
+- INSERT/UPDATE/DELETE: idem + `has_role('admin_tenant')`
+- Edge function escreve com service role (bypassa RLS).
+
+---
+
+## 🛠️ Backend: Edge Function `processar-comunicacoes-giftback`
+
+Arquivo: `supabase/functions/processar-comunicacoes-giftback/index.ts`
+
+### Lógica (executada via cron a cada 15 min — explica abaixo)
+
+1. **Buscar tenants elegíveis agora**: `SELECT * FROM giftback_comunicacao_config WHERE ativo=true AND horario_envio entre (now BRT - 7min, now BRT + 7min)`. Janela de tolerância evita problemas de drift do cron.
+2. Para cada tenant:
+   - Verificar se já rodou hoje (consultar `giftback_comunicacao_log` com `enviado_em::date = today AND tenant_id`). Se sim, pular.
+   - Carregar todas as regras ativas do tenant + config Cloud (`whatsapp_cloud_config`).
+   - Para cada regra:
+     - **`criado`**: buscar `giftback_movimentos` com `tipo='credito'`, `status='ativo'`, `created_at::date = today`.
+     - **`vencendo`**: buscar com `validade = today + dias_offset`, `status='ativo'`.
+     - **`expirado`**: buscar com `status='expirado'`, `validade = today - dias_offset` (ou usar log de expiração via cron `expirar-giftbacks`).
+   - Para cada movimento encontrado:
+     - **Pular se já existe log** `(regra_id, movimento_id)` — UPSERT garante idempotência via UNIQUE.
+     - Resolver variáveis (catálogo abaixo) com dados do contato + movimento + tenant.
+     - Montar `components` no formato Graph API (mesmo padrão de `enviar-campanha-cloud`).
+     - POST para `https://graph.facebook.com/v21.0/{phone_number_id}/messages`.
+     - Inserir log com `status='enviado'` ou `status='falha'` + erro.
+   - Pequeno delay aleatório entre envios (500–2000ms) para não estourar rate limit da Meta.
+
+### Resolver variáveis disponíveis
+
+Função utilitária (compartilhada com `enviar-campanha-cloud` no futuro, mas inicialmente local):
+
+```ts
+const VARS = {
+  nome_cliente: contato.nome,
+  nome_empresa: tenant.nome,
+  valor_giftback: formatBRL(movimento.valor),
+  saldo_giftback: formatBRL(contato.saldo_giftback),
+  id_giftback: movimento.id.slice(0, 8).toUpperCase(),
+  data_vencimento: format(movimento.validade, "dd/MM/yyyy"),
+  dias_ate_expirar: differenceInDays(movimento.validade, today).toString(),
+};
+```
+
+Substitui `{{var}}` em cada `template_variaveis[campo]` e injeta nos `components`.
+
+### Cron schedule (via tool `supabase--insert`, NÃO migration)
+
+Roda **a cada 15 min**; a function decide internamente se é o horário do tenant. Isso permite que cada tenant escolha qualquer HH:MM sem alterar o cron.
 
 ```sql
--- Habilitar extensões (idempotente)
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-
--- Agendar 1x por dia às 03:00 UTC (00:00 BRT)
 select cron.schedule(
-  'expirar-giftbacks-daily',
-  '0 3 * * *',
+  'processar-comunicacoes-giftback-15min',
+  '*/15 * * * *',
   $$
   select net.http_post(
-    url := 'https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/expirar-giftbacks',
+    url := 'https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/processar-comunicacoes-giftback',
     headers := '{"Content-Type":"application/json","Authorization":"Bearer <ANON_KEY>"}'::jsonb,
     body := '{}'::jsonb
   );
@@ -46,93 +118,77 @@ select cron.schedule(
 );
 ```
 
-> ⚠️ Como esse SQL contém a anon key real do projeto, será executado via `supabase--insert` (não via migration), conforme regra do sistema.
-
-### 🔁 Coexistência com o lazy-expire
-- O lazy-expire em `GiftbackCaixa.buscarContato` **continua existindo** como rede de segurança (defesa em profundidade) caso o cron atrase ou falhe.
-- O cron garante que `saldo_giftback` em relatórios, dashboards e segmentações fique correto mesmo sem ninguém abrir o caixa.
+`verify_jwt = false` em `supabase/config.toml` para essa function (igual `expirar-giftbacks`).
 
 ---
 
-## Parte 2 — Hardening de validações no Caixa
+## 🎨 Frontend
 
-Arquivo: `src/pages/GiftbackCaixa.tsx`
+### Nova aba em `GiftbackConfig.tsx`: **"Comunicações"**
 
-### Estado atual já cobre
-- `regrasInvalidas[]` bloqueia quando multiplicador/percentual/validade são inválidos.
-- `podeConfirmar` exige `valorCompraNum > 0`.
-- `registrarMutation` revalida regras e valor antes do INSERT.
+Adicionar 4ª `TabsTrigger` ao lado de Configuração / RFV / Relatório.
 
-### O que falta (foco do request)
+#### Componente `src/components/giftback/ComunicacoesGiftbackTab.tsx`
 
-#### 2.1 Validação rigorosa do valor da compra
-Substituir o `parseFloat` solto por uma função utilitária local:
+**Bloco superior — Configuração geral** (1 linha):
+- Switch "Ativar comunicações automáticas"
+- Input `time` "Horário de envio diário" (HH:MM)
+- Botão "Salvar" → upsert em `giftback_comunicacao_config`
+- Aviso se WhatsApp Cloud não estiver configurado: "Configure o WhatsApp Oficial antes de criar regras" + link para `/configuracoes/whatsapp-oficial`
 
-```ts
-function parseValorCompra(raw: string): { valor: number; erro: string | null } {
-  const limpo = raw.trim().replace(",", ".");
-  if (!limpo) return { valor: 0, erro: null }; // vazio = sem erro ainda
-  const n = Number(limpo);
-  if (!Number.isFinite(n)) return { valor: 0, erro: "Valor inválido (não é um número)." };
-  if (n < 0) return { valor: 0, erro: "Valor da compra não pode ser negativo." };
-  if (n === 0) return { valor: 0, erro: "Valor da compra deve ser maior que zero." };
-  if (n > 1_000_000) return { valor: 0, erro: "Valor acima do limite permitido (R$ 1.000.000)." };
-  // Limite a 2 casas decimais — evitar lixo tipo 12.345678
-  const arredondado = Math.round(n * 100) / 100;
-  return { valor: arredondado, erro: null };
-}
-```
+**Bloco principal — Tabela de regras**:
+- Botão "+ Nova regra" abre dialog
+- Colunas: Nome | Gatilho | Quando | Template | Status | Ações (editar / excluir / toggle ativo)
+- Empty state com CTA
 
-Uso:
-- Substituir `const valorCompraNum = parseFloat(valorCompra) || 0` por `const { valor: valorCompraNum, erro: erroValor } = parseValorCompra(valorCompra)`.
-- Renderizar `erroValor` abaixo do input numérico (mesmo padrão visual do `aviso-abaixo-minimo`, mas com `border-destructive`).
-- Adicionar `erroValor` ao `podeConfirmar`: `regrasOk && valorCompraNum > 0 && !erroResgate && !erroValor`.
+#### Componente `src/components/giftback/RegraComunicacaoDialog.tsx`
 
-#### 2.2 Endurecimento do input
-- Manter `type="number"` mas adicionar `inputMode="decimal"` e `onKeyDown` para bloquear `e`, `E`, `+`, `-` (HTML5 number aceita esses caracteres).
-- Manter `min="0.01"` e `step="0.01"`.
+Form fields:
+1. **Nome da regra** (text)
+2. **Tipo de gatilho** (select): "Giftback criado" | "Saldo vencendo" | "Giftback expirado"
+3. **Dias** (number) — visível só para `vencendo`/`expirado`. Label dinâmico:
+   - vencendo: "X dias **antes** do vencimento"
+   - expirado: "X dias **após** expirar (0 = mesmo dia)"
+4. **Template** (reuso de `TemplateCampanhaPicker` ou variante simplificada): lista templates com `status='APPROVED'` do tenant.
+5. **Mapeamento de variáveis**: para cada placeholder `{{n}}` do template, mostrar input com botão "Inserir variável" (popover lista o catálogo `nome_cliente`, `valor_giftback`, etc.). Reusa padrão do `InsertVariableButton.tsx` adaptado para variáveis de giftback.
+6. **Preview** ao vivo do texto final usando dados mock.
+7. **Ativo** (switch).
 
-#### 2.3 Bloqueio total quando regras ausentes
-Hoje já bloqueia o submit, mas o input fica habilitado quando `regrasAtuais` é `null` (configGlobal ainda carregando). Adicionar guarda extra:
-- Mostrar skeleton/aviso "Carregando configuração..." quando `configGlobal === undefined` (loading).
-- Se `configGlobal === null` (sem registro no banco): mostrar erro vermelho "Configuração de giftback ausente. Crie em Giftback → Configuração antes de operar o caixa." e desabilitar TODO o formulário.
+Salva via `INSERT/UPDATE` em `giftback_comunicacao_regras`.
 
-#### 2.4 Mutation: validações finais (defesa em profundidade)
-Reforçar `registrarMutation.mutationFn` no início:
-```ts
-if (!profile?.tenant_id || !user?.id) throw new Error("Sessão inválida.");
-if (!contato) throw new Error("Selecione um contato antes de continuar.");
-if (!configGlobal) throw new Error("Configuração de giftback ausente.");
-const { valor, erro: erroValor } = parseValorCompra(valorCompra);
-if (erroValor) throw new Error(erroValor);
-if (valor <= 0) throw new Error("Valor da compra inválido.");
-// ... resto continua
-```
+#### Componente `src/components/giftback/InsertGiftbackVarButton.tsx`
 
-Substituir todas as referências internas a `valorCompraNum` por `valor` validado dentro da mutation.
+Popover com lista clicável:
+- `{{nome_cliente}}` — Nome do cliente
+- `{{nome_empresa}}` — Nome da loja
+- `{{valor_giftback}}` — Valor (R$ XX,XX)
+- `{{id_giftback}}` — ID curto (8 chars)
+- `{{saldo_giftback}}` — Saldo total atual
+- `{{data_vencimento}}` — DD/MM/AAAA
+- `{{dias_ate_expirar}}` — Número
 
-#### 2.5 Mensagens de erro consolidadas
-Acima do botão "Confirmar Compra", quando `!podeConfirmar`, mostrar lista do que está bloqueando:
-- "Configure as regras de giftback" (se `!regrasOk`)
-- "Informe um valor válido" (se `erroValor` ou `valorCompraNum <= 0`)
-- "Resgate inválido" (se `erroResgate`)
+Insere no input ativo (controle via ref).
 
-Bloco com `data-testid="bloqueios-confirmacao"` para futura cobertura de teste.
+#### Bloco "Histórico" (opcional nesta sprint, recomendo incluir)
+Tabela enxuta dos últimos 50 logs de `giftback_comunicacao_log` com regra, contato, status, data — para debug/auditoria.
 
 ---
 
-## 🧪 Testes — `src/lib/__tests__/giftback-rules.test.ts`
+## 🧪 Testes
 
-Adicionar nova suíte `parseValorCompra` (extrair função para `src/lib/giftback-rules.ts` para ser testável e reusável):
-- `""` → `{ valor: 0, erro: null }`
-- `"abc"` → erro
-- `"-50"` → erro (negativo)
-- `"0"` → erro (zero)
-- `"NaN"` → erro
-- `"1000001"` → erro (acima do limite)
-- `"99,90"` (vírgula) → `{ valor: 99.9, erro: null }`
-- `"12.3456"` → `{ valor: 12.35, erro: null }` (arredondado)
-- `"50"` → `{ valor: 50, erro: null }`
+### `src/lib/__tests__/giftback-comunicacao.test.ts` (novo)
+
+Extrair lógica pura para `src/lib/giftback-comunicacao.ts`:
+- `resolverVariaveis(template, contexto)` — substitui `{{var}}` 
+- `montarComponentsTemplate(components, variaveisMap, contexto)` — integra com Graph API format
+- `tenantDeveRodarAgora(horarioConfig, agoraBRT, toleranciaMin)` — valida janela do cron
+
+Casos:
+- Variáveis básicas resolvem corretamente.
+- Variável inexistente vira string vazia (não quebra).
+- `dias_ate_expirar` calcula correto incluindo casos de hoje (0), passado (negativo).
+- Janela de tolerância: `09:00` aceita `08:54` a `09:06`, rejeita `08:50` e `09:10`.
+- Preview formatBRL: `99` → `R$ 99,00`.
 
 ---
 
@@ -140,19 +196,34 @@ Adicionar nova suíte `parseValorCompra` (extrair função para `src/lib/giftbac
 
 | Tipo | Arquivo |
 |---|---|
-| Novo | `supabase/functions/expirar-giftbacks/index.ts` |
-| Editado | `supabase/config.toml` (adicionar bloco da função) |
-| SQL via insert tool (não migration) | Schedule pg_cron + pg_net |
-| Editado | `src/lib/giftback-rules.ts` (exportar `parseValorCompra`) |
-| Editado | `src/pages/GiftbackCaixa.tsx` (validações, bloqueios, mensagens) |
-| Editado | `src/lib/__tests__/giftback-rules.test.ts` (suíte parseValorCompra) |
+| Migration | criar 3 tabelas (`config`, `regras`, `log`) + enum `gb_gatilho_tipo` + RLS |
+| Novo | `supabase/functions/processar-comunicacoes-giftback/index.ts` |
+| Editado | `supabase/config.toml` (adicionar bloco `verify_jwt = false` da nova function) |
+| SQL via insert tool | `cron.schedule` a cada 15min |
+| Editado | `src/pages/GiftbackConfig.tsx` (nova aba) |
+| Novo | `src/components/giftback/ComunicacoesGiftbackTab.tsx` |
+| Novo | `src/components/giftback/RegraComunicacaoDialog.tsx` |
+| Novo | `src/components/giftback/InsertGiftbackVarButton.tsx` |
+| Novo | `src/lib/giftback-comunicacao.ts` (lógica pura) |
+| Novo | `src/lib/__tests__/giftback-comunicacao.test.ts` |
 
-## ⚠️ Riscos / Notas
-- O cron roda diariamente às 03:00 UTC. Se o tenant precisar de granularidade maior (ex.: a cada hora), basta ajustar o cron expression.
-- A função usa service role: por design, **bypassa RLS** para varrer todos os tenants de uma vez. Garantido por `where validade < today` + tipo/status, ou seja, escopo bem delimitado.
-- Limite de R$ 1.000.000 é defensivo (evita digitação acidental tipo R$ 1234567); ajustável.
+---
+
+## ⚠️ Riscos e Considerações
+
+1. **Templates aprovados pela Meta** — usuário precisa ter ao menos 1 template `APPROVED` no `whatsapp_cloud_templates`. UI alerta caso não tenha.
+2. **Idempotência** garantida pelo UNIQUE `(regra_id, movimento_id)` no log + check antes de enviar.
+3. **Fuso horário**: cron roda em UTC; conversão para `America/Sao_Paulo` é feita dentro da function via `toLocaleString("en-US", { timeZone: "America/Sao_Paulo" })` para comparar com `horario_envio`.
+4. **Rate limit Meta**: delay 0.5–2s entre mensagens; se tenant tiver 1000 contatos vencendo no mesmo dia, processo demora ~15min — aceitável (cron próximo só roda em 15min de qualquer forma e a verificação "já rodou hoje" evita duplicação).
+5. **Lógica de "expirou"** depende do cron `expirar-giftbacks` ter rodado antes (03:00 UTC = 00:00 BRT). Como o cron de comunicação roda no horário do tenant (tipicamente 9h+), sempre haverá dados corretos.
+6. **Variável `dias_ate_expirar` em mensagem `criado`**: calcula corretamente baseado em `validade` do movimento.
+
+---
 
 ## 🚫 Fora deste sprint
-- Notificação automática ao cliente "seu giftback expira em X dias".
-- Dashboard de auditoria mostrando quantos giftbacks foram expirados pelo job.
-- Histórico/log persistido das execuções do cron (hoje só fica no log da edge function).
+
+- Múltiplos canais (Z-API, e-mail, SMS).
+- Segmentação avançada (regra só para clientes RFV "ouro", por exemplo).
+- A/B testing de templates.
+- Reagendamento manual de mensagens falhas (admin precisa reativar rodando next day).
+- Dashboard analítico (taxa de abertura, etc.) — depende de webhook de status que já existe mas não está conectado a este fluxo.

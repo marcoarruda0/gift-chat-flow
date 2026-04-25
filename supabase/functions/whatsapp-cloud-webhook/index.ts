@@ -579,6 +579,34 @@ async function processStatusUpdate(supabase: any, tenantId: string, status: any)
     .eq("id", msg.id);
 
   console.log("[processStatusUpdate] updated", { id: msg.id, newStatus });
+
+  // Also update campanha_destinatarios when this wa_message_id belongs to a campaign send
+  try {
+    const { data: dest } = await supabase
+      .from("campanha_destinatarios")
+      .select("id, status_entrega")
+      .eq("tenant_id", tenantId)
+      .eq("wa_message_id", waMessageId)
+      .maybeSingle();
+
+    if (dest) {
+      const destRank = order[dest.status_entrega || ""] || 0;
+      // failed always wins; otherwise only progress forward
+      if (newStatus === "failed" || newRank === 0 || newRank >= destRank) {
+        await supabase
+          .from("campanha_destinatarios")
+          .update({
+            status_entrega: newStatus,
+            status_entrega_at: statusAt,
+            ...(status.errors ? { delivery_error: status.errors } : {}),
+          })
+          .eq("id", dest.id);
+        console.log("[processStatusUpdate] campanha_destinatarios updated", { id: dest.id, newStatus });
+      }
+    }
+  } catch (e) {
+    console.error("[processStatusUpdate] failed to update campanha_destinatarios", e);
+  }
 }
 
 async function findOrCreateContact(

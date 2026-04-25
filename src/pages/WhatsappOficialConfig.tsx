@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
 import { DiagnosticoCard } from "@/components/whatsapp-oficial/DiagnosticoCard";
 import { AuditoriaCard } from "@/components/whatsapp-oficial/AuditoriaCard";
+import { AlertasCard } from "@/components/whatsapp-oficial/AlertasCard";
 import { TemplatesCard } from "@/components/whatsapp-oficial/TemplatesCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -641,7 +642,8 @@ export default function WhatsappOficialConfig() {
           <TemplatesCard tenantId={tenantId ?? null} wabaId={wabaId} />
         </TabsContent>
 
-        <TabsContent value="auditoria" className="mt-0">
+        <TabsContent value="auditoria" className="mt-0 space-y-6">
+          <AlertasCard tenantId={tenantId ?? null} />
           <AuditoriaCard tenantId={tenantId ?? null} />
         </TabsContent>
       </Tabs>

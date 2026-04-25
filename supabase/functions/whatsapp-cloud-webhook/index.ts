@@ -242,14 +242,14 @@ async function processIncomingMessage(
   accessToken: string,
   msg: any,
   contacts: any[]
-) {
+): Promise<{ mensagemCriada: boolean; conversaCriada: boolean }> {
   const waMessageId: string = msg.id;
   const fromPhone: string = msg.from; // E.164 sem '+'
   const type: string = msg.type;
 
   if (!waMessageId || !fromPhone) {
     console.warn("[whatsapp-cloud-webhook] missing id/from", msg);
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
   // Dedup
@@ -261,28 +261,27 @@ async function processIncomingMessage(
     .limit(1);
   if (existing && existing.length > 0) {
     console.log("[whatsapp-cloud-webhook] duplicate, skip", waMessageId);
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
   // Contact name from contacts[]
   const contactInfo = contacts.find((c: any) => c.wa_id === fromPhone);
   const contactName = contactInfo?.profile?.name || fromPhone;
 
-  // Find or create contact
   const contato = await findOrCreateContact(supabase, tenantId, fromPhone, contactName);
   if (!contato) {
     console.error("[whatsapp-cloud-webhook] could not create contact");
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
-  // Find or create conversation (canal='whatsapp_cloud')
-  const conversa = await findOrCreateConversa(supabase, tenantId, contato.id, phoneNumberId);
-  if (!conversa) {
+  const convResult = await findOrCreateConversa(supabase, tenantId, contato.id, phoneNumberId);
+  if (!convResult?.conversa) {
     console.error("[whatsapp-cloud-webhook] could not create conversa");
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
+  const conversa = convResult.conversa;
+  const conversaCriada = convResult.created;
 
-  // Parse content per type
   const { conteudo, tipo, previewText, mediaInfo } = await parseMetaMessage(
     msg,
     type,
@@ -291,7 +290,6 @@ async function processIncomingMessage(
     tenantId
   );
 
-  // Insert message
   await supabase.from("mensagens").insert({
     conversa_id: conversa.id,
     tenant_id: tenantId,
@@ -306,7 +304,6 @@ async function processIncomingMessage(
     },
   });
 
-  // Update conversation
   const { data: cur } = await supabase
     .from("conversas")
     .select("nao_lidas")
@@ -324,6 +321,7 @@ async function processIncomingMessage(
     .eq("id", conversa.id);
 
   console.log("[whatsapp-cloud-webhook] message saved", { conversa: conversa.id, type });
+  return { mensagemCriada: true, conversaCriada };
 }
 
 async function parseMetaMessage(

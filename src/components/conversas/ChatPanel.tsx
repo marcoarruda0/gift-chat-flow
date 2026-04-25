@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User, HandMetal } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User, HandMetal, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface Mensagem {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -64,20 +64,12 @@ export default function ComunicacoesGiftbackTab() {
   });
 
   // Carrega valores iniciais quando cfg chega
-  useState(() => {
+  useEffect(() => {
     if (cfg) {
       setHorario(String(cfg.horario_envio).slice(0, 5));
       setAtivo(cfg.ativo);
     }
-  });
-
-  // sincroniza quando cfg carrega depois
-  if (cfg && !cfgLoading) {
-    const cfgHor = String(cfg.horario_envio).slice(0, 5);
-    if (cfgHor !== horario && horario === "09:00" && cfg.id) {
-      setHorario(cfgHor);
-    }
-  }
+  }, [cfg]);
 
   // Regras
   const { data: regras, isLoading: regrasLoading } = useQuery({

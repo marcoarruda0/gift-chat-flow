@@ -74,6 +74,10 @@ export function DiagnosticoCard({
   subscribing,
   onReprocessLast,
   reprocessing,
+  alertaTaxaErroPct,
+  alertaMinEventos,
+  onSaveAlertaConfig,
+  savingAlerta,
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
@@ -81,6 +85,10 @@ export function DiagnosticoCard({
     totalEventos24h > 0
       ? Math.round(((totalEventos24h - errosWebhook24h) / totalEventos24h) * 100)
       : null;
+  const taxaErro =
+    totalEventos24h > 0 ? (errosWebhook24h / totalEventos24h) * 100 : 0;
+  const alertaAtivo =
+    totalEventos24h >= alertaMinEventos && taxaErro > alertaTaxaErroPct;
 
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
   let statusClass = "";

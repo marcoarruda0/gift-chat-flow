@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.processar-comunicacoes-giftback]
 verify_jwt = false
+
+[functions.enviar-teste-comunicacao-giftback]
+verify_jwt = true

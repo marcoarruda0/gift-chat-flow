@@ -17,7 +17,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Send } from "lucide-react";
 import { InsertGiftbackVarButton } from "./InsertGiftbackVarButton";
+import { TestarRegraDialog } from "./TestarRegraDialog";
+import { SEGMENTOS_ORDENADOS } from "@/lib/rfv-segments";
 import {
   buildVarsMap,
   buildPreviewText,
@@ -36,6 +41,8 @@ interface RegraExistente {
   template_language: string;
   template_components: any;
   template_variaveis: any;
+  filtro_rfv_modo?: string | null;
+  filtro_rfv_segmentos?: string[] | null;
 }
 
 interface RegraComunicacaoDialogProps {
@@ -64,6 +71,9 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
   const [diasOffset, setDiasOffset] = useState("0");
   const [templateId, setTemplateId] = useState<string>("");
   const [variaveis, setVariaveis] = useState<Record<string, string>>({});
+  const [filtroRfvModo, setFiltroRfvModo] = useState<"todos" | "incluir">("todos");
+  const [filtroRfvSegmentos, setFiltroRfvSegmentos] = useState<string[]>([]);
+  const [testarOpen, setTestarOpen] = useState(false);
 
   const { data: templates } = useQuery({
     queryKey: ["wa-templates-approved"],
@@ -87,6 +97,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
       setTipoGatilho(regra.tipo_gatilho);
       setDiasOffset(String(regra.dias_offset ?? 0));
       setVariaveis((regra.template_variaveis as Record<string, string>) || {});
+      setFiltroRfvModo((regra.filtro_rfv_modo as "todos" | "incluir") || "todos");
+      setFiltroRfvSegmentos((regra.filtro_rfv_segmentos as string[]) || []);
       // Procura template pelo nome+lang
       const match = (templates || []).find(
         (t: any) => t.name === regra.template_name && t.language === regra.template_language,
@@ -99,6 +111,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
       setDiasOffset("0");
       setTemplateId("");
       setVariaveis({});
+      setFiltroRfvModo("todos");
+      setFiltroRfvSegmentos([]);
     }
   }, [open, regra, templates]);
 
@@ -172,6 +186,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
         template_language: templateAtual.language,
         template_components: templateAtual.components,
         template_variaveis: variaveis,
+        filtro_rfv_modo: filtroRfvModo,
+        filtro_rfv_segmentos: filtroRfvModo === "incluir" ? filtroRfvSegmentos : [],
       };
 
       if (regra?.id) {
@@ -305,6 +321,66 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
             </div>
           )}
 
+          {/* Filtro RFM */}
+          <div className="space-y-3 rounded-md border p-3">
+            <Label className="text-sm">Filtrar por segmento RFM (opcional)</Label>
+            <p className="text-xs text-muted-foreground">
+              Restringe o disparo aos clientes que estão em determinados segmentos
+              RFM. Por padrão, a regra é aplicada a todos os clientes elegíveis.
+            </p>
+            <RadioGroup
+              value={filtroRfvModo}
+              onValueChange={(v) => setFiltroRfvModo(v as "todos" | "incluir")}
+              className="space-y-2"
+            >
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="todos" id="rfv-todos" />
+                <Label htmlFor="rfv-todos" className="cursor-pointer text-sm font-normal">
+                  Enviar para todos os clientes
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="incluir" id="rfv-incluir" />
+                <Label htmlFor="rfv-incluir" className="cursor-pointer text-sm font-normal">
+                  Apenas segmentos selecionados
+                </Label>
+              </div>
+            </RadioGroup>
+
+            {filtroRfvModo === "incluir" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
+                {SEGMENTOS_ORDENADOS.map((seg) => {
+                  const checked = filtroRfvSegmentos.includes(seg.key);
+                  return (
+                    <label
+                      key={seg.key}
+                      className="flex items-center gap-2 cursor-pointer rounded-md border px-2 py-1.5 hover:bg-muted/50"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          setFiltroRfvSegmentos((prev) =>
+                            v ? Array.from(new Set([...prev, seg.key])) : prev.filter((k) => k !== seg.key),
+                          );
+                        }}
+                      />
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: seg.cor }}
+                      />
+                      <span className="text-sm">{seg.nome}</span>
+                    </label>
+                  );
+                })}
+                {filtroRfvSegmentos.length === 0 && (
+                  <p className="col-span-full text-xs text-destructive">
+                    Selecione ao menos um segmento, ou volte para "todos".
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <Switch checked={ativo} onCheckedChange={setAtivo} />
             <Label className="cursor-pointer" onClick={() => setAtivo(!ativo)}>
@@ -313,13 +389,32 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
+          {regra?.id && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setTestarOpen(true)}
+              className="sm:mr-auto"
+            >
+              <Send className="h-4 w-4 mr-1" /> Enviar teste
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
             {saveMutation.isPending ? "Salvando..." : "Salvar regra"}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {regra?.id && (
+        <TestarRegraDialog
+          open={testarOpen}
+          onOpenChange={setTestarOpen}
+          regraId={regra.id}
+          regraNome={regra.nome}
+        />
+      )}
     </Dialog>
   );
 }

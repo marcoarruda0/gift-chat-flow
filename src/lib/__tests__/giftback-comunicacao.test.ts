@@ -5,6 +5,8 @@ import {
   montarComponentsTemplate,
   buildPreviewText,
   tenantDeveRodarAgora,
+  segmentoFromSoma,
+  contatoPassaFiltroRfv,
 } from "../giftback-comunicacao";
 
 describe("buildVarsMap", () => {
@@ -138,5 +140,46 @@ describe("tenantDeveRodarAgora", () => {
   it("respeita ciclo de 24h (00:00 vizinho de 23:55)", () => {
     expect(tenantDeveRodarAgora("00:00", { hours: 23, minutes: 55 }, 7)).toBe(true);
     expect(tenantDeveRodarAgora("23:55", { hours: 0, minutes: 0 }, 7)).toBe(true);
+  });
+});
+
+describe("segmentoFromSoma", () => {
+  it("retorna sem_dados quando algum valor é nulo", () => {
+    expect(segmentoFromSoma(null, 5, 5)).toBe("sem_dados");
+    expect(segmentoFromSoma(5, undefined, 5)).toBe("sem_dados");
+  });
+
+  it("classifica corretamente por faixa de soma", () => {
+    expect(segmentoFromSoma(5, 5, 5)).toBe("campeoes"); // 15
+    expect(segmentoFromSoma(5, 5, 3)).toBe("campeoes"); // 13
+    expect(segmentoFromSoma(4, 4, 4)).toBe("leais"); // 12
+    expect(segmentoFromSoma(4, 3, 3)).toBe("leais"); // 10
+    expect(segmentoFromSoma(3, 3, 3)).toBe("potenciais"); // 9
+    expect(segmentoFromSoma(3, 3, 2)).toBe("potenciais"); // 8
+    expect(segmentoFromSoma(3, 2, 2)).toBe("atencao"); // 7
+    expect(segmentoFromSoma(2, 2, 2)).toBe("atencao"); // 6
+    expect(segmentoFromSoma(2, 2, 1)).toBe("em_risco"); // 5
+    expect(segmentoFromSoma(2, 1, 1)).toBe("em_risco"); // 4
+    expect(segmentoFromSoma(1, 1, 1)).toBe("perdidos"); // 3
+  });
+});
+
+describe("contatoPassaFiltroRfv", () => {
+  it("modo 'todos' sempre passa, ignorando lista", () => {
+    expect(contatoPassaFiltroRfv("perdidos", "todos", [])).toBe(true);
+    expect(contatoPassaFiltroRfv("perdidos", "todos", ["campeoes"])).toBe(true);
+    expect(contatoPassaFiltroRfv("campeoes", null, ["leais"])).toBe(true);
+  });
+
+  it("modo 'incluir' com lista vazia passa todos (degrada para 'todos')", () => {
+    expect(contatoPassaFiltroRfv("perdidos", "incluir", [])).toBe(true);
+    expect(contatoPassaFiltroRfv("perdidos", "incluir", null)).toBe(true);
+  });
+
+  it("modo 'incluir' filtra por segmento", () => {
+    expect(contatoPassaFiltroRfv("campeoes", "incluir", ["campeoes", "leais"])).toBe(true);
+    expect(contatoPassaFiltroRfv("leais", "incluir", ["campeoes", "leais"])).toBe(true);
+    expect(contatoPassaFiltroRfv("perdidos", "incluir", ["campeoes", "leais"])).toBe(false);
+    expect(contatoPassaFiltroRfv("sem_dados", "incluir", ["campeoes"])).toBe(false);
   });
 });

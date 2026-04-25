@@ -95,6 +95,35 @@ function montarComponents(
   return out;
 }
 
+type SegmentoRfvKey =
+  | "campeoes" | "leais" | "potenciais" | "atencao" | "em_risco" | "perdidos" | "sem_dados";
+
+function segmentoFromSoma(
+  r: number | null | undefined,
+  f: number | null | undefined,
+  v: number | null | undefined,
+): SegmentoRfvKey {
+  if (r == null || f == null || v == null) return "sem_dados";
+  const soma = r + f + v;
+  if (soma >= 13) return "campeoes";
+  if (soma >= 10) return "leais";
+  if (soma >= 8) return "potenciais";
+  if (soma >= 6) return "atencao";
+  if (soma >= 4) return "em_risco";
+  return "perdidos";
+}
+
+function passaFiltroRfv(
+  seg: SegmentoRfvKey,
+  modo: string | null | undefined,
+  permitidos: string[] | null | undefined,
+): boolean {
+  if (modo !== "incluir") return true;
+  const lista = permitidos || [];
+  if (lista.length === 0) return true;
+  return lista.includes(seg);
+}
+
 function tenantDeveRodarAgora(horario: string, agoraBRT: Date): boolean {
   const [hStr, mStr] = (horario || "").split(":");
   const h = parseInt(hStr, 10);
@@ -248,13 +277,16 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // 7. Buscar contatos em batch
+        // 7. Buscar contatos em batch (inclui RFV para filtro)
         const contatoIds = Array.from(new Set(movs.map((m) => m.contato_id)));
         const { data: contatos } = await supabase
           .from("contatos")
-          .select("id, nome, telefone, saldo_giftback")
+          .select("id, nome, telefone, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor")
           .in("id", contatoIds);
         const contatosMap = new Map((contatos || []).map((c) => [c.id, c]));
+
+        const filtroRfvModo = (regra as any).filtro_rfv_modo as string | undefined;
+        const filtroRfvSegs = ((regra as any).filtro_rfv_segmentos as string[] | undefined) || [];
 
         for (const mov of movs) {
           // 8. Já enviou esta regra para este movimento?
@@ -267,8 +299,21 @@ Deno.serve(async (req) => {
 
           if (jaEnviado && jaEnviado.length > 0) continue;
 
-          const contato = contatosMap.get(mov.contato_id);
+          const contato = contatosMap.get(mov.contato_id) as any;
           if (!contato) continue;
+
+          // 8.1 Filtro RFM (se a regra restringir segmentos)
+          const seg = segmentoFromSoma(
+            contato.rfv_recencia,
+            contato.rfv_frequencia,
+            contato.rfv_valor,
+          );
+          if (!passaFiltroRfv(seg, filtroRfvModo, filtroRfvSegs)) {
+            console.log(
+              `[gb-com] regra=${regra.nome} mov=${mov.id} pulado por filtro RFM (segmento=${seg})`,
+            );
+            continue;
+          }
 
           if (!contato.telefone) {
             await supabase.from("giftback_comunicacao_log").insert({

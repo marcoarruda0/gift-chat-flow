@@ -806,45 +806,65 @@ export type Database = {
       }
       giftback_comunicacao_log: {
         Row: {
-          contato_id: string
+          contato_id: string | null
           enviado_em: string
           erro: string | null
           id: string
+          is_teste: boolean
           movimento_id: string
-          regra_id: string
+          regra_id: string | null
           status: string
           tenant_id: string
           wa_message_id: string | null
         }
         Insert: {
-          contato_id: string
+          contato_id?: string | null
           enviado_em?: string
           erro?: string | null
           id?: string
+          is_teste?: boolean
           movimento_id: string
-          regra_id: string
+          regra_id?: string | null
           status: string
           tenant_id: string
           wa_message_id?: string | null
         }
         Update: {
-          contato_id?: string
+          contato_id?: string | null
           enviado_em?: string
           erro?: string | null
           id?: string
+          is_teste?: boolean
           movimento_id?: string
-          regra_id?: string
+          regra_id?: string | null
           status?: string
           tenant_id?: string
           wa_message_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "giftback_comunicacao_log_contato_id_fkey"
+            columns: ["contato_id"]
+            isOneToOne: false
+            referencedRelation: "contatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "giftback_comunicacao_log_regra_id_fkey"
+            columns: ["regra_id"]
+            isOneToOne: false
+            referencedRelation: "giftback_comunicacao_regras"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       giftback_comunicacao_regras: {
         Row: {
           ativo: boolean
           created_at: string
           dias_offset: number
+          filtro_rfv_modo: string
+          filtro_rfv_segmentos: string[]
           id: string
           nome: string
           template_components: Json
@@ -859,6 +879,8 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           dias_offset?: number
+          filtro_rfv_modo?: string
+          filtro_rfv_segmentos?: string[]
           id?: string
           nome: string
           template_components?: Json
@@ -873,6 +895,8 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           dias_offset?: number
+          filtro_rfv_modo?: string
+          filtro_rfv_segmentos?: string[]
           id?: string
           nome?: string
           template_components?: Json

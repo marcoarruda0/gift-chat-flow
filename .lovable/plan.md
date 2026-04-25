@@ -1,229 +1,110 @@
-## 🎯 Objetivo
 
-Permitir que o tenant configure **regras de comunicação** (ex.: "giftback criado", "saldo vencendo em 3 dias", "expirou ontem") associando cada uma a um **template aprovado do WhatsApp Cloud**. Um **cronjob diário único** (horário configurável pelo tenant) processa todas as regras ativas e dispara as mensagens.
+# Plano: 3 melhorias no módulo Giftback → Comunicações
 
-Decisões aprovadas:
-- **Canal**: somente WhatsApp Oficial (Cloud API), reusando templates já aprovados.
-- **Eventos**: tenant define livremente (tipo de gatilho + offset em dias). Não há eventos fixos no código.
-- **Variáveis**: catálogo amplo — `nome_cliente`, `nome_empresa`, `valor_giftback`, `id_giftback`, `data_vencimento`, `dias_ate_expirar`, `saldo_giftback`.
-- **Horário**: um único HH:MM por tenant para todas as regras.
+## 1. Filtro por RFM nas regras de comunicação
 
----
+### Banco de dados (migração)
+Adicionar 2 colunas em `giftback_comunicacao_regras`:
+- `filtro_rfv_segmentos text[] NOT NULL DEFAULT '{}'` — segmentos selecionados (`campeoes`, `leais`, `potenciais`, `atencao`, `em_risco`, `perdidos`, `sem_dados`). Vazio = "todos".
+- `filtro_rfv_modo text NOT NULL DEFAULT 'todos'` — `'todos'` (ignora filtro) ou `'incluir'` (apenas segmentos da lista).
 
-## 📐 Modelo de dados
+### UI — `RegraComunicacaoDialog.tsx`
+- Nova seção "Filtrar por segmento RFM (opcional)" com:
+  - RadioGroup: "Enviar para todos" / "Apenas segmentos selecionados"
+  - Quando "selecionados": grid de checkboxes coloridos usando `SEGMENTOS_ORDENADOS` de `src/lib/rfv-segments.ts` (badges com `cor` HEX inline).
+- Persistir nos campos novos via mutation existente.
 
-### Nova tabela `giftback_comunicacao_config` (1 por tenant — settings globais)
-| coluna | tipo | default | descrição |
-|---|---|---|---|
-| `id` | uuid PK | `gen_random_uuid()` | |
-| `tenant_id` | uuid UNIQUE | — | RLS por tenant |
-| `ativo` | boolean | `true` | desliga TODO o cronjob desse tenant |
-| `horario_envio` | time | `'09:00'` | HH:MM no fuso `America/Sao_Paulo` |
-| `created_at` / `updated_at` | timestamptz | `now()` | |
+### Backend — `processar-comunicacoes-giftback`
+- Após buscar contatos do batch, derivar segmento de cada contato com função local equivalente a `getSegmentoBySoma(rfv_recencia, rfv_frequencia, rfv_valor)` (incluir `rfv_recencia/frequencia/valor` no SELECT de `contatos`).
+- Se `regra.filtro_rfv_modo === 'incluir'` e `filtro_rfv_segmentos.length > 0`, pular movimentos cujo contato não está na lista. Logar como `status='filtrado_rfv'` opcionalmente, ou simplesmente ignorar sem registrar.
 
-### Nova tabela `giftback_comunicacao_regras` (N por tenant — uma regra por evento)
-| coluna | tipo | descrição |
-|---|---|---|
-| `id` | uuid PK | |
-| `tenant_id` | uuid | RLS |
-| `nome` | text | rótulo livre ("Aviso 3 dias antes") |
-| `ativo` | boolean | liga/desliga só essa regra |
-| `tipo_gatilho` | enum `gb_gatilho_tipo` | `criado` \| `vencendo` \| `expirado` |
-| `dias_offset` | integer | dias relativos: `criado` ignora; `vencendo` = X dias antes (ex.: 3); `expirado` = X dias depois (ex.: 0 ou 1) |
-| `template_name` | text | nome do template Cloud aprovado |
-| `template_language` | text | ex.: `pt_BR` |
-| `template_components` | jsonb | snapshot dos components (mesmo padrão de `campanhas`) |
-| `template_variaveis` | jsonb | mapping `{ "body.1": "{{nome_cliente}}", "body.2": "R$ {{valor_giftback}}", ... }` |
-| `created_at` / `updated_at` | timestamptz | |
-
-Index: `(tenant_id, tipo_gatilho, dias_offset)` para lookup rápido.
-
-### Nova tabela `giftback_comunicacao_log` (auditoria — evita reenvio)
-| coluna | tipo | descrição |
-|---|---|---|
-| `id` | uuid PK | |
-| `tenant_id` | uuid | RLS |
-| `regra_id` | uuid | FK lógica para `giftback_comunicacao_regras` |
-| `movimento_id` | uuid | FK lógica para `giftback_movimentos` |
-| `contato_id` | uuid | |
-| `enviado_em` | timestamptz | `now()` |
-| `status` | text | `enviado` \| `falha` \| `sem_telefone` |
-| `wa_message_id` | text | retorno da Graph API |
-| `erro` | text | nullable |
-
-**Constraint chave**: `UNIQUE (regra_id, movimento_id)` — garante idempotência (cada regra só dispara 1x por giftback).
-
-### RLS de todas as tabelas acima
-- SELECT: `tenant_id = get_user_tenant_id(auth.uid())`
-- INSERT/UPDATE/DELETE: idem + `has_role('admin_tenant')`
-- Edge function escreve com service role (bypassa RLS).
+### Lib pura
+- Replicar mini-função `segmentoFromSoma()` em `src/lib/giftback-comunicacao.ts` (e cópia interna na edge function — projeto já segue esse padrão).
+- Adicionar testes em `src/lib/__tests__/giftback-comunicacao.test.ts` para o filtro de segmento.
 
 ---
 
-## 🛠️ Backend: Edge Function `processar-comunicacoes-giftback`
+## 2. Botão "Disparar teste" para um contato
 
-Arquivo: `supabase/functions/processar-comunicacoes-giftback/index.ts`
+### UI — novo componente `TestarRegraDialog.tsx` (ou inline no `RegraComunicacaoDialog`)
+- Botão "Enviar teste" no rodapé do `RegraComunicacaoDialog` (visível apenas quando regra existente — `regra?.id`).
+- Dialog contém:
+  - Combobox de busca de contato (query em `contatos` por nome/telefone, scoped tenant).
+  - Seletor de movimento de giftback do contato (último crédito; ou opção "usar dados de exemplo" se contato não tiver movimento).
+  - Pré-visualização do BODY já com variáveis resolvidas (reusa `buildPreviewText` + `buildVarsMap` com dados reais).
+  - Botão "Enviar agora via WhatsApp Oficial".
 
-### Lógica (executada via cron a cada 15 min — explica abaixo)
+### Edge function nova: `enviar-teste-comunicacao-giftback`
+- Auth: valida JWT do usuário (header Authorization), lê `tenant_id` via `profiles`.
+- Body: `{ regra_id, contato_id, movimento_id? }`.
+- Carrega regra (mesmo tenant), contato, movimento (se informado) ou monta mock; carrega `whatsapp_cloud_config`; monta payload idêntico ao cron e envia para Graph API.
+- Registra log em `giftback_comunicacao_log` com flag/erro identificando teste — adicionar coluna `is_teste boolean DEFAULT false` para distinguir testes de envios reais.
+- Retorna `{ ok, wa_message_id, preview_text, payload_enviado }` para feedback em tempo real.
 
-1. **Buscar tenants elegíveis agora**: `SELECT * FROM giftback_comunicacao_config WHERE ativo=true AND horario_envio entre (now BRT - 7min, now BRT + 7min)`. Janela de tolerância evita problemas de drift do cron.
-2. Para cada tenant:
-   - Verificar se já rodou hoje (consultar `giftback_comunicacao_log` com `enviado_em::date = today AND tenant_id`). Se sim, pular.
-   - Carregar todas as regras ativas do tenant + config Cloud (`whatsapp_cloud_config`).
-   - Para cada regra:
-     - **`criado`**: buscar `giftback_movimentos` com `tipo='credito'`, `status='ativo'`, `created_at::date = today`.
-     - **`vencendo`**: buscar com `validade = today + dias_offset`, `status='ativo'`.
-     - **`expirado`**: buscar com `status='expirado'`, `validade = today - dias_offset` (ou usar log de expiração via cron `expirar-giftbacks`).
-   - Para cada movimento encontrado:
-     - **Pular se já existe log** `(regra_id, movimento_id)` — UPSERT garante idempotência via UNIQUE.
-     - Resolver variáveis (catálogo abaixo) com dados do contato + movimento + tenant.
-     - Montar `components` no formato Graph API (mesmo padrão de `enviar-campanha-cloud`).
-     - POST para `https://graph.facebook.com/v21.0/{phone_number_id}/messages`.
-     - Inserir log com `status='enviado'` ou `status='falha'` + erro.
-   - Pequeno delay aleatório entre envios (500–2000ms) para não estourar rate limit da Meta.
+### Config
+- Adicionar bloco `[functions.enviar-teste-comunicacao-giftback]` em `supabase/config.toml` com `verify_jwt = true` (pois é ação autenticada do admin).
 
-### Resolver variáveis disponíveis
-
-Função utilitária (compartilhada com `enviar-campanha-cloud` no futuro, mas inicialmente local):
-
-```ts
-const VARS = {
-  nome_cliente: contato.nome,
-  nome_empresa: tenant.nome,
-  valor_giftback: formatBRL(movimento.valor),
-  saldo_giftback: formatBRL(contato.saldo_giftback),
-  id_giftback: movimento.id.slice(0, 8).toUpperCase(),
-  data_vencimento: format(movimento.validade, "dd/MM/yyyy"),
-  dias_ate_expirar: differenceInDays(movimento.validade, today).toString(),
-};
-```
-
-Substitui `{{var}}` em cada `template_variaveis[campo]` e injeta nos `components`.
-
-### Cron schedule (via tool `supabase--insert`, NÃO migration)
-
-Roda **a cada 15 min**; a function decide internamente se é o horário do tenant. Isso permite que cada tenant escolha qualquer HH:MM sem alterar o cron.
-
-```sql
-select cron.schedule(
-  'processar-comunicacoes-giftback-15min',
-  '*/15 * * * *',
-  $$
-  select net.http_post(
-    url := 'https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/processar-comunicacoes-giftback',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer <ANON_KEY>"}'::jsonb,
-    body := '{}'::jsonb
-  );
-  $$
-);
-```
-
-`verify_jwt = false` em `supabase/config.toml` para essa function (igual `expirar-giftbacks`).
+### UX
+- Toast de sucesso/falha após envio. Mostrar `wa_message_id` retornado.
 
 ---
 
-## 🎨 Frontend
+## 3. Exportação CSV/PDF dos últimos envios
 
-### Nova aba em `GiftbackConfig.tsx`: **"Comunicações"**
+### UI — nova seção em `ComunicacoesGiftbackTab.tsx` (substitui o card "Últimos envios" atual)
+- Filtros no topo (acima da tabela):
+  - **Regra**: Select com lista de regras do tenant (+ "Todas").
+  - **Gatilho**: Select `criado` / `vencendo` / `expirado` / "Todos".
+  - **Status**: Select `enviado` / `falha` / `sem_telefone` / "Todos".
+  - **Período**: 2 inputs date (de / até) — default últimos 30 dias.
+- Tabela paginada (50 por página) com: Data, Regra, Gatilho, Contato (nome+telefone), Status, Erro, wa_message_id.
+- Botões no header: "Exportar CSV" e "Exportar PDF".
 
-Adicionar 4ª `TabsTrigger` ao lado de Configuração / RFV / Relatório.
+### Query
+- Hook `useGbComLogs(filtros)` com `useQuery` em `giftback_comunicacao_log` LEFT JOIN `giftback_comunicacao_regras` (via `regra_id`) e `contatos` (via `contato_id`). Como Supabase não faz join arbitrário, usar duas queries (logs + maps) ou foreign keys embedded — vou adicionar FKs:
+  - `giftback_comunicacao_log.regra_id → giftback_comunicacao_regras(id)` (ON DELETE SET NULL para preservar histórico)
+  - `giftback_comunicacao_log.contato_id → contatos(id)` (ON DELETE SET NULL)
+  - Permite usar `select("*, regra:giftback_comunicacao_regras(nome,tipo_gatilho), contato:contatos(nome,telefone)")`.
 
-#### Componente `src/components/giftback/ComunicacoesGiftbackTab.tsx`
+### Exportação CSV (frontend puro)
+- Função `exportarLogsCSV(logs)` em `src/lib/giftback-comunicacao-export.ts`:
+  - Gera CSV UTF-8 com BOM (Excel pt-BR), separador `;`, escapando `"`.
+  - Colunas: Data/Hora, Regra, Gatilho, Contato, Telefone, Status, Erro, WA Message ID, Teste (sim/não).
+  - Download via `Blob` + `URL.createObjectURL`.
 
-**Bloco superior — Configuração geral** (1 linha):
-- Switch "Ativar comunicações automáticas"
-- Input `time` "Horário de envio diário" (HH:MM)
-- Botão "Salvar" → upsert em `giftback_comunicacao_config`
-- Aviso se WhatsApp Cloud não estiver configurado: "Configure o WhatsApp Oficial antes de criar regras" + link para `/configuracoes/whatsapp-oficial`
+### Exportação PDF (frontend)
+- Adicionar dependência `jspdf` + `jspdf-autotable` (leves, ~150kb).
+- Função `exportarLogsPDF(logs, filtros, tenantNome)`:
+  - Cabeçalho: nome do tenant, "Relatório de envios de Giftback", filtros aplicados, data de geração.
+  - Tabela com `autoTable`: mesmas colunas (sem WA Message ID por espaço).
+  - Rodapé com numeração de páginas.
+  - Download `comunicacoes-giftback-YYYY-MM-DD.pdf`.
 
-**Bloco principal — Tabela de regras**:
-- Botão "+ Nova regra" abre dialog
-- Colunas: Nome | Gatilho | Quando | Template | Status | Ações (editar / excluir / toggle ativo)
-- Empty state com CTA
-
-#### Componente `src/components/giftback/RegraComunicacaoDialog.tsx`
-
-Form fields:
-1. **Nome da regra** (text)
-2. **Tipo de gatilho** (select): "Giftback criado" | "Saldo vencendo" | "Giftback expirado"
-3. **Dias** (number) — visível só para `vencendo`/`expirado`. Label dinâmico:
-   - vencendo: "X dias **antes** do vencimento"
-   - expirado: "X dias **após** expirar (0 = mesmo dia)"
-4. **Template** (reuso de `TemplateCampanhaPicker` ou variante simplificada): lista templates com `status='APPROVED'` do tenant.
-5. **Mapeamento de variáveis**: para cada placeholder `{{n}}` do template, mostrar input com botão "Inserir variável" (popover lista o catálogo `nome_cliente`, `valor_giftback`, etc.). Reusa padrão do `InsertVariableButton.tsx` adaptado para variáveis de giftback.
-6. **Preview** ao vivo do texto final usando dados mock.
-7. **Ativo** (switch).
-
-Salva via `INSERT/UPDATE` em `giftback_comunicacao_regras`.
-
-#### Componente `src/components/giftback/InsertGiftbackVarButton.tsx`
-
-Popover com lista clicável:
-- `{{nome_cliente}}` — Nome do cliente
-- `{{nome_empresa}}` — Nome da loja
-- `{{valor_giftback}}` — Valor (R$ XX,XX)
-- `{{id_giftback}}` — ID curto (8 chars)
-- `{{saldo_giftback}}` — Saldo total atual
-- `{{data_vencimento}}` — DD/MM/AAAA
-- `{{dias_ate_expirar}}` — Número
-
-Insere no input ativo (controle via ref).
-
-#### Bloco "Histórico" (opcional nesta sprint, recomendo incluir)
-Tabela enxuta dos últimos 50 logs de `giftback_comunicacao_log` com regra, contato, status, data — para debug/auditoria.
+### Limites
+- Exportação respeita filtros aplicados; cap em 5.000 linhas (mostrar aviso se atingir limite, sugerindo refinar período).
 
 ---
 
-## 🧪 Testes
+## Resumo de arquivos
 
-### `src/lib/__tests__/giftback-comunicacao.test.ts` (novo)
+**Migração (1 nova)**:
+- Adiciona `filtro_rfv_segmentos`, `filtro_rfv_modo` em `giftback_comunicacao_regras`.
+- Adiciona `is_teste` em `giftback_comunicacao_log`.
+- Adiciona FKs `giftback_comunicacao_log → regras / contatos`.
 
-Extrair lógica pura para `src/lib/giftback-comunicacao.ts`:
-- `resolverVariaveis(template, contexto)` — substitui `{{var}}` 
-- `montarComponentsTemplate(components, variaveisMap, contexto)` — integra com Graph API format
-- `tenantDeveRodarAgora(horarioConfig, agoraBRT, toleranciaMin)` — valida janela do cron
+**Backend (1 nova edge function + 1 modificada)**:
+- `supabase/functions/enviar-teste-comunicacao-giftback/index.ts` (novo)
+- `supabase/functions/processar-comunicacoes-giftback/index.ts` (filtro RFM)
+- `supabase/config.toml` (registrar nova função)
 
-Casos:
-- Variáveis básicas resolvem corretamente.
-- Variável inexistente vira string vazia (não quebra).
-- `dias_ate_expirar` calcula correto incluindo casos de hoje (0), passado (negativo).
-- Janela de tolerância: `09:00` aceita `08:54` a `09:06`, rejeita `08:50` e `09:10`.
-- Preview formatBRL: `99` → `R$ 99,00`.
+**Frontend (3 modificados + 2 novos)**:
+- `src/components/giftback/RegraComunicacaoDialog.tsx` — filtro RFM + botão "Enviar teste"
+- `src/components/giftback/ComunicacoesGiftbackTab.tsx` — filtros + exportação
+- `src/components/giftback/TestarRegraDialog.tsx` (novo) — UI de envio de teste
+- `src/lib/giftback-comunicacao.ts` — helper `segmentoFromSoma`
+- `src/lib/giftback-comunicacao-export.ts` (novo) — funções CSV/PDF
 
----
+**Testes**:
+- `src/lib/__tests__/giftback-comunicacao.test.ts` — cenários de filtro RFM + parser CSV.
 
-## 📁 Arquivos afetados
-
-| Tipo | Arquivo |
-|---|---|
-| Migration | criar 3 tabelas (`config`, `regras`, `log`) + enum `gb_gatilho_tipo` + RLS |
-| Novo | `supabase/functions/processar-comunicacoes-giftback/index.ts` |
-| Editado | `supabase/config.toml` (adicionar bloco `verify_jwt = false` da nova function) |
-| SQL via insert tool | `cron.schedule` a cada 15min |
-| Editado | `src/pages/GiftbackConfig.tsx` (nova aba) |
-| Novo | `src/components/giftback/ComunicacoesGiftbackTab.tsx` |
-| Novo | `src/components/giftback/RegraComunicacaoDialog.tsx` |
-| Novo | `src/components/giftback/InsertGiftbackVarButton.tsx` |
-| Novo | `src/lib/giftback-comunicacao.ts` (lógica pura) |
-| Novo | `src/lib/__tests__/giftback-comunicacao.test.ts` |
-
----
-
-## ⚠️ Riscos e Considerações
-
-1. **Templates aprovados pela Meta** — usuário precisa ter ao menos 1 template `APPROVED` no `whatsapp_cloud_templates`. UI alerta caso não tenha.
-2. **Idempotência** garantida pelo UNIQUE `(regra_id, movimento_id)` no log + check antes de enviar.
-3. **Fuso horário**: cron roda em UTC; conversão para `America/Sao_Paulo` é feita dentro da function via `toLocaleString("en-US", { timeZone: "America/Sao_Paulo" })` para comparar com `horario_envio`.
-4. **Rate limit Meta**: delay 0.5–2s entre mensagens; se tenant tiver 1000 contatos vencendo no mesmo dia, processo demora ~15min — aceitável (cron próximo só roda em 15min de qualquer forma e a verificação "já rodou hoje" evita duplicação).
-5. **Lógica de "expirou"** depende do cron `expirar-giftbacks` ter rodado antes (03:00 UTC = 00:00 BRT). Como o cron de comunicação roda no horário do tenant (tipicamente 9h+), sempre haverá dados corretos.
-6. **Variável `dias_ate_expirar` em mensagem `criado`**: calcula corretamente baseado em `validade` do movimento.
-
----
-
-## 🚫 Fora deste sprint
-
-- Múltiplos canais (Z-API, e-mail, SMS).
-- Segmentação avançada (regra só para clientes RFV "ouro", por exemplo).
-- A/B testing de templates.
-- Reagendamento manual de mensagens falhas (admin precisa reativar rodando next day).
-- Dashboard analítico (taxa de abertura, etc.) — depende de webhook de status que já existe mas não está conectado a este fluxo.
+**Dependências novas**: `jspdf`, `jspdf-autotable`.

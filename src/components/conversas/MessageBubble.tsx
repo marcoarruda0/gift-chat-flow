@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { FileDown, Image, Mic, Video } from "lucide-react";
+import { FileDown, Image, Mic, Video, Check, CheckCheck, AlertCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageBubbleProps {
   conteudo: string;
@@ -11,6 +12,8 @@ interface MessageBubbleProps {
   senderName?: string | null;
   senderAvatar?: string | null;
   metadata?: Record<string, any> | null;
+  statusEntrega?: string | null;
+  canal?: string;
 }
 
 const NAME_COLORS = [

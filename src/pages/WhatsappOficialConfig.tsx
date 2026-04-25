@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
 import { DiagnosticoCard } from "@/components/whatsapp-oficial/DiagnosticoCard";
+import { AuditoriaCard } from "@/components/whatsapp-oficial/AuditoriaCard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const WEBHOOK_URL = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-webhook`;
@@ -35,6 +37,7 @@ export default function WhatsappOficialConfig() {
   const [testNumber, setTestNumber] = useState("");
   const [sending, setSending] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
 
   const loadDiagnostico = useCallback(async () => {
     if (!tenantId) return;
@@ -173,6 +176,32 @@ export default function WhatsappOficialConfig() {
     loadDiagnostico();
   }, [wabaId, callProxy, loadDiagnostico]);
 
+  const handleReprocessLast = useCallback(async () => {
+    setReprocessing(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const url = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-reprocessar`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.session?.access_token}`,
+        },
+        body: JSON.stringify({ ultimo: true }),
+      });
+      const j = await res.json();
+      if (j?.ok) {
+        toast.success("Último evento reprocessado.");
+      } else {
+        toast.error("Falhou: " + (j?.error || res.status));
+      }
+    } catch (e: any) {
+      toast.error("Erro: " + e.message);
+    }
+    setReprocessing(false);
+    loadDiagnostico();
+  }, [loadDiagnostico]);
+
   const handleSendTest = async () => {
     if (!testNumber.trim()) {
       toast.error("Informe o número de destino (formato E.164, ex: 5511999999999)");
@@ -212,6 +241,95 @@ export default function WhatsappOficialConfig() {
 
       if (msgId) {
         toast.success(`✅ Template enviado! Message ID: ${msgId}`);
+
+        // Persist outbound message in mensagens (so it shows up in /conversas)
+        try {
+          const phoneClean = testNumber.trim().replace(/\D/g, "");
+
+          // 1. Find or create contact
+          let contatoId: string | null = null;
+          const { data: existingContato } = await supabase
+            .from("contatos")
+            .select("id")
+            .eq("tenant_id", tenantId!)
+            .eq("telefone", phoneClean)
+            .maybeSingle();
+          if (existingContato) {
+            contatoId = existingContato.id;
+          } else {
+            const { data: novoContato } = await supabase
+              .from("contatos")
+              .insert({
+                tenant_id: tenantId!,
+                nome: phoneClean,
+                telefone: phoneClean,
+              })
+              .select("id")
+              .maybeSingle();
+            contatoId = novoContato?.id ?? null;
+          }
+
+          if (contatoId) {
+            // 2. Find or create whatsapp_cloud conversation
+            let conversaId: string | null = null;
+            const { data: existingConv } = await supabase
+              .from("conversas")
+              .select("id")
+              .eq("tenant_id", tenantId!)
+              .eq("contato_id", contatoId)
+              .eq("canal", "whatsapp_cloud")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (existingConv) {
+              conversaId = existingConv.id;
+              await supabase
+                .from("conversas")
+                .update({
+                  status: "aberta",
+                  ultima_msg_at: new Date().toISOString(),
+                  ultimo_texto: "[template hello_world]",
+                  whatsapp_cloud_phone_id: phoneNumberId,
+                })
+                .eq("id", conversaId);
+            } else {
+              const { data: novaConv } = await supabase
+                .from("conversas")
+                .insert({
+                  tenant_id: tenantId!,
+                  contato_id: contatoId,
+                  canal: "whatsapp_cloud",
+                  status: "aberta",
+                  whatsapp_cloud_phone_id: phoneNumberId,
+                  ultimo_texto: "[template hello_world]",
+                  ultima_msg_at: new Date().toISOString(),
+                })
+                .select("id")
+                .maybeSingle();
+              conversaId = novaConv?.id ?? null;
+            }
+
+            // 3. Insert outbound message
+            if (conversaId) {
+              await supabase.from("mensagens").insert({
+                tenant_id: tenantId!,
+                conversa_id: conversaId,
+                remetente: "atendente",
+                tipo: "texto",
+                conteudo: "[template hello_world]",
+                metadata: {
+                  wa_message_id: msgId,
+                  wa_type: "template",
+                  template_name: "hello_world",
+                  outbound_test: true,
+                },
+              });
+            }
+          }
+        } catch (persistErr: any) {
+          console.error("Falha ao persistir mensagem outbound:", persistErr);
+          toast.error("Mensagem enviada na Meta, mas não foi gravada localmente: " + persistErr.message);
+        }
       } else {
         toast.error(`Erro Meta: ${errorMsg || JSON.stringify(result)}`);
       }
@@ -235,7 +353,7 @@ export default function WhatsappOficialConfig() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">WhatsApp Oficial (Cloud API)</h1>
         <p className="text-muted-foreground">
@@ -243,168 +361,183 @@ export default function WhatsappOficialConfig() {
         </p>
       </div>
 
-      <Card className="border-primary/30 bg-muted/40">
-        <CardContent className="pt-6 flex gap-3 text-sm">
-          <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-medium">Antes de testar</p>
-            <p className="text-muted-foreground">
-              Configure o webhook no Meta App Dashboard (WhatsApp → Configuration) com a
-              <strong> Callback URL</strong> e <strong>Verify Token</strong> abaixo, e assine
-              os campos <code className="text-xs bg-muted px-1 rounded">messages</code> e{" "}
-              <code className="text-xs bg-muted px-1 rounded">message_status</code>.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="config" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="config">Configuração</TabsTrigger>
+          <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
+        </TabsList>
 
-      {/* Credenciais */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Credenciais</CardTitle>
-              <CardDescription>Dados da sua conta WhatsApp Business na Meta</CardDescription>
-            </div>
-            <Badge
-              variant={status === "conectado" ? "default" : status === "erro" ? "destructive" : "secondary"}
-              className="gap-1"
-            >
-              {status === "conectado" ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-              {status === "conectado" ? "Conectado" : status === "erro" ? "Erro" : "Desconectado"}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Phone Number ID</Label>
-            <Input
-              value={phoneNumberId}
-              onChange={(e) => setPhoneNumberId(e.target.value)}
-              placeholder="ex: 1057954850740861"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>WhatsApp Business Account ID (WABA ID)</Label>
-            <Input
-              value={wabaId}
-              onChange={(e) => setWabaId(e.target.value)}
-              placeholder="Identificação da conta do WhatsApp Business"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Access Token (System User permanente)</Label>
-            <Input
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              placeholder="EAA..."
-              type="password"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Telefone para exibição (opcional)</Label>
-            <Input
-              value={displayPhone}
-              onChange={(e) => setDisplayPhone(e.target.value)}
-              placeholder="+55 11 99999-9999"
-            />
-          </div>
-
-          <div className="pt-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-              Salvar
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Webhook */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Webhook</CardTitle>
-          <CardDescription>Cole estes valores no painel da Meta</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Callback URL</Label>
-            <div className="flex gap-2">
-              <Input value={WEBHOOK_URL} readOnly className="font-mono text-xs" />
-              <Button variant="outline" size="icon" onClick={() => copy(WEBHOOK_URL, "Callback URL")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Verify Token</Label>
-            <div className="flex gap-2">
-              <Input
-                value={verifyToken || "(será gerado ao salvar)"}
-                readOnly
-                className="font-mono text-xs"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={!verifyToken}
-                onClick={() => copy(verifyToken, "Verify Token")}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Diagnóstico do Webhook */}
-      <DiagnosticoCard
-        ultimaVerificacaoAt={ultimaVerificacaoAt}
-        ultimaAtividadeAt={ultimaMensagemAt}
-        msgsRecebidas24h={msgsRecebidas24h}
-        diagLoading={diagLoading}
-        onRefresh={loadDiagnostico}
-        onSubscribeMessages={handleSubscribeMessages}
-        subscribing={subscribing}
-      />
-
-      {/* Testar envio */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Testar envio</CardTitle>
-          <CardDescription>
-            Envia o template <code className="text-xs bg-muted px-1 rounded">hello_world</code> (en_US)
-            pra um número de teste cadastrado no Meta Dashboard
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Número destino (E.164, sem + nem espaços)</Label>
-            <Input
-              value={testNumber}
-              onChange={(e) => setTestNumber(e.target.value)}
-              placeholder="5511999999999"
-            />
-          </div>
-          <Button onClick={handleSendTest} disabled={sending || !existingId}>
-            {sending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
-            Enviar template hello_world
-          </Button>
-
-          {ultimoTesteAt && (
-            <div className="text-sm text-muted-foreground border-t pt-3">
-              <p>
-                <strong>Último teste:</strong>{" "}
-                {new Date(ultimoTesteAt).toLocaleString("pt-BR")}
-              </p>
-              {ultimoErro && (
-                <p className="text-destructive mt-1 break-all">
-                  <strong>Erro:</strong> {ultimoErro}
+        <TabsContent value="config" className="space-y-6 mt-0">
+          <Card className="border-primary/30 bg-muted/40">
+            <CardContent className="pt-6 flex gap-3 text-sm">
+              <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-medium">Antes de testar</p>
+                <p className="text-muted-foreground">
+                  Configure o webhook no Meta App Dashboard (WhatsApp → Configuration) com a
+                  <strong> Callback URL</strong> e <strong>Verify Token</strong> abaixo, e assine
+                  os campos <code className="text-xs bg-muted px-1 rounded">messages</code> e{" "}
+                  <code className="text-xs bg-muted px-1 rounded">message_status</code>.
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Credenciais */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Credenciais</CardTitle>
+                  <CardDescription>Dados da sua conta WhatsApp Business na Meta</CardDescription>
+                </div>
+                <Badge
+                  variant={status === "conectado" ? "default" : status === "erro" ? "destructive" : "secondary"}
+                  className="gap-1"
+                >
+                  {status === "conectado" ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                  {status === "conectado" ? "Conectado" : status === "erro" ? "Erro" : "Desconectado"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Phone Number ID</Label>
+                <Input
+                  value={phoneNumberId}
+                  onChange={(e) => setPhoneNumberId(e.target.value)}
+                  placeholder="ex: 1057954850740861"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>WhatsApp Business Account ID (WABA ID)</Label>
+                <Input
+                  value={wabaId}
+                  onChange={(e) => setWabaId(e.target.value)}
+                  placeholder="Identificação da conta do WhatsApp Business"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Access Token (System User permanente)</Label>
+                <Input
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder="EAA..."
+                  type="password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Telefone para exibição (opcional)</Label>
+                <Input
+                  value={displayPhone}
+                  onChange={(e) => setDisplayPhone(e.target.value)}
+                  placeholder="+55 11 99999-9999"
+                />
+              </div>
+
+              <div className="pt-2">
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                  Salvar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Webhook */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Webhook</CardTitle>
+              <CardDescription>Cole estes valores no painel da Meta</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Callback URL</Label>
+                <div className="flex gap-2">
+                  <Input value={WEBHOOK_URL} readOnly className="font-mono text-xs" />
+                  <Button variant="outline" size="icon" onClick={() => copy(WEBHOOK_URL, "Callback URL")}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Verify Token</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={verifyToken || "(será gerado ao salvar)"}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!verifyToken}
+                    onClick={() => copy(verifyToken, "Verify Token")}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Diagnóstico do Webhook */}
+          <DiagnosticoCard
+            ultimaVerificacaoAt={ultimaVerificacaoAt}
+            ultimaAtividadeAt={ultimaMensagemAt}
+            msgsRecebidas24h={msgsRecebidas24h}
+            diagLoading={diagLoading}
+            onRefresh={loadDiagnostico}
+            onSubscribeMessages={handleSubscribeMessages}
+            subscribing={subscribing}
+            onReprocessLast={handleReprocessLast}
+            reprocessing={reprocessing}
+          />
+
+          {/* Testar envio */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Testar envio</CardTitle>
+              <CardDescription>
+                Envia o template <code className="text-xs bg-muted px-1 rounded">hello_world</code> (en_US)
+                pra um número de teste cadastrado no Meta Dashboard
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Número destino (E.164, sem + nem espaços)</Label>
+                <Input
+                  value={testNumber}
+                  onChange={(e) => setTestNumber(e.target.value)}
+                  placeholder="5511999999999"
+                />
+              </div>
+              <Button onClick={handleSendTest} disabled={sending || !existingId}>
+                {sending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                Enviar template hello_world
+              </Button>
+
+              {ultimoTesteAt && (
+                <div className="text-sm text-muted-foreground border-t pt-3">
+                  <p>
+                    <strong>Último teste:</strong>{" "}
+                    {new Date(ultimoTesteAt).toLocaleString("pt-BR")}
+                  </p>
+                  {ultimoErro && (
+                    <p className="text-destructive mt-1 break-all">
+                      <strong>Erro:</strong> {ultimoErro}
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="auditoria" className="mt-0">
+          <AuditoriaCard tenantId={tenantId ?? null} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

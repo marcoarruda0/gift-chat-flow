@@ -68,11 +68,16 @@ Deno.serve(async (req) => {
 
   // POST → incoming events from Meta
   if (req.method === "POST") {
+    let rawBody = "";
+    let body: any = {};
+    let auditId: string | null = null;
+    let auditTenantId: string | null = null;
+    let auditPhoneNumberId: string | null = null;
+
     try {
-      const rawBody = await req.text();
+      rawBody = await req.text();
       console.log("[whatsapp-cloud-webhook] POST raw", rawBody.slice(0, 1200));
 
-      let body: any = {};
       try {
         body = rawBody ? JSON.parse(rawBody) : {};
       } catch (parseErr) {
@@ -80,88 +85,59 @@ Deno.serve(async (req) => {
         return new Response("ok", { status: 200 });
       }
 
-      // Meta payload: { object: 'whatsapp_business_account', entry: [{ changes: [{ value: { messages, statuses, contacts, metadata }, field }] }] }
-      const entries = body.entry || [];
-      console.log("[whatsapp-cloud-webhook] entries:", entries.length);
+      // Try to extract phone_number_id for audit early
+      const firstChange = body?.entry?.[0]?.changes?.[0];
+      auditPhoneNumberId = firstChange?.value?.metadata?.phone_number_id ?? null;
 
-      for (const entry of entries) {
-        const changes = entry.changes || [];
-        for (const change of changes) {
-          const value = change.value || {};
-          const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
-          const messages = value.messages || [];
-          const contacts = value.contacts || [];
-          const statuses = value.statuses || [];
+      if (auditPhoneNumberId) {
+        const { data: cfgEarly } = await serviceClient
+          .from("whatsapp_cloud_config")
+          .select("tenant_id")
+          .eq("phone_number_id", auditPhoneNumberId)
+          .maybeSingle();
+        auditTenantId = cfgEarly?.tenant_id ?? null;
+      }
 
-          console.log("[whatsapp-cloud-webhook] change", {
-            field: change.field,
-            phoneNumberId,
-            messages: messages.length,
-            statuses: statuses.length,
-            contacts: contacts.length,
-          });
+      // Insert audit row BEFORE processing
+      const { data: auditRow } = await serviceClient
+        .from("whatsapp_webhook_eventos")
+        .insert({
+          tenant_id: auditTenantId,
+          phone_number_id: auditPhoneNumberId,
+          payload: body,
+          status: "recebido",
+        })
+        .select("id")
+        .maybeSingle();
+      auditId = auditRow?.id ?? null;
 
-          if (change.field !== "messages") {
-            console.log("[whatsapp-cloud-webhook] skip field", change.field);
-            continue;
-          }
-          if (!phoneNumberId) {
-            console.warn("[whatsapp-cloud-webhook] no phone_number_id in payload");
-            continue;
-          }
+      const result = await processWebhookPayload(serviceClient, body);
 
-          // Resolve tenant by phone_number_id
-          const { data: cfg } = await serviceClient
-            .from("whatsapp_cloud_config")
-            .select("tenant_id, phone_number_id, access_token")
-            .eq("phone_number_id", phoneNumberId)
-            .maybeSingle();
-
-          if (!cfg) {
-            console.warn("[whatsapp-cloud-webhook] no tenant for phone_number_id", phoneNumberId);
-            continue;
-          }
-
-          const tenantId = cfg.tenant_id;
-          const accessToken = cfg.access_token;
-
-          // Diagnostic: any POST from Meta with messages OR statuses counts as "activity"
-          await serviceClient
-            .from("whatsapp_cloud_config")
-            .update({ ultima_mensagem_at: new Date().toISOString() })
-            .eq("phone_number_id", phoneNumberId);
-          console.log("[whatsapp-cloud-webhook] activity recorded", {
-            messages: messages.length,
-            statuses: statuses.length,
-          });
-
-          for (const msg of messages) {
-            try {
-              await processIncomingMessage(
-                serviceClient,
-                tenantId,
-                phoneNumberId,
-                accessToken,
-                msg,
-                contacts
-              );
-            } catch (e) {
-              console.error("[whatsapp-cloud-webhook] processIncomingMessage failed", e);
-            }
-          }
-
-          // Process status updates (sent/delivered/read/failed)
-          for (const status of statuses) {
-            try {
-              await processStatusUpdate(serviceClient, tenantId, status);
-            } catch (e) {
-              console.error("[whatsapp-cloud-webhook] processStatusUpdate failed", e);
-            }
-          }
-        }
+      if (auditId) {
+        await serviceClient
+          .from("whatsapp_webhook_eventos")
+          .update({
+            status: result.error ? "erro" : "processado",
+            erro_mensagem: result.error,
+            mensagens_criadas: result.mensagensCriadas,
+            conversas_criadas: result.conversasCriadas,
+            tenant_id: auditTenantId ?? result.tenantId ?? null,
+            processado_at: new Date().toISOString(),
+          })
+          .eq("id", auditId);
       }
     } catch (e) {
       console.error("[whatsapp-cloud-webhook] failed to process body", e);
+      if (auditId) {
+        await serviceClient
+          .from("whatsapp_webhook_eventos")
+          .update({
+            status: "erro",
+            erro_mensagem: (e as Error).message,
+            processado_at: new Date().toISOString(),
+          })
+          .eq("id", auditId);
+      }
     }
     // Always return 200 quickly so Meta doesn't retry
     return new Response("ok", { status: 200 });
@@ -169,6 +145,93 @@ Deno.serve(async (req) => {
 
   return new Response("Method Not Allowed", { status: 405 });
 });
+
+// Exported for reuse by reprocessing function (called via direct import in Deno)
+export async function processWebhookPayload(
+  serviceClient: any,
+  body: any
+): Promise<{ mensagensCriadas: number; conversasCriadas: number; error: string | null; tenantId: string | null }> {
+  let mensagensCriadas = 0;
+  let conversasCriadas = 0;
+  let error: string | null = null;
+  let tenantIdOut: string | null = null;
+
+  const entries = body.entry || [];
+  console.log("[whatsapp-cloud-webhook] entries:", entries.length);
+
+  for (const entry of entries) {
+    const changes = entry.changes || [];
+    for (const change of changes) {
+      const value = change.value || {};
+      const phoneNumberId: string | undefined = value.metadata?.phone_number_id;
+      const messages = value.messages || [];
+      const contacts = value.contacts || [];
+      const statuses = value.statuses || [];
+
+      console.log("[whatsapp-cloud-webhook] change", {
+        field: change.field,
+        phoneNumberId,
+        messages: messages.length,
+        statuses: statuses.length,
+        contacts: contacts.length,
+      });
+
+      if (change.field !== "messages") continue;
+      if (!phoneNumberId) {
+        error = error ?? "no_phone_number_id";
+        continue;
+      }
+
+      const { data: cfg } = await serviceClient
+        .from("whatsapp_cloud_config")
+        .select("tenant_id, phone_number_id, access_token")
+        .eq("phone_number_id", phoneNumberId)
+        .maybeSingle();
+
+      if (!cfg) {
+        error = error ?? `no_tenant_for_phone_${phoneNumberId}`;
+        continue;
+      }
+
+      const tenantId = cfg.tenant_id;
+      tenantIdOut = tenantId;
+      const accessToken = cfg.access_token;
+
+      await serviceClient
+        .from("whatsapp_cloud_config")
+        .update({ ultima_mensagem_at: new Date().toISOString() })
+        .eq("phone_number_id", phoneNumberId);
+
+      for (const msg of messages) {
+        try {
+          const r = await processIncomingMessage(
+            serviceClient,
+            tenantId,
+            phoneNumberId,
+            accessToken,
+            msg,
+            contacts
+          );
+          mensagensCriadas += r.mensagemCriada ? 1 : 0;
+          conversasCriadas += r.conversaCriada ? 1 : 0;
+        } catch (e) {
+          console.error("[whatsapp-cloud-webhook] processIncomingMessage failed", e);
+          error = error ?? (e as Error).message;
+        }
+      }
+
+      for (const status of statuses) {
+        try {
+          await processStatusUpdate(serviceClient, tenantId, status);
+        } catch (e) {
+          console.error("[whatsapp-cloud-webhook] processStatusUpdate failed", e);
+        }
+      }
+    }
+  }
+
+  return { mensagensCriadas, conversasCriadas, error, tenantId: tenantIdOut };
+}
 
 // ====== Helpers ======
 
@@ -179,14 +242,14 @@ async function processIncomingMessage(
   accessToken: string,
   msg: any,
   contacts: any[]
-) {
+): Promise<{ mensagemCriada: boolean; conversaCriada: boolean }> {
   const waMessageId: string = msg.id;
   const fromPhone: string = msg.from; // E.164 sem '+'
   const type: string = msg.type;
 
   if (!waMessageId || !fromPhone) {
     console.warn("[whatsapp-cloud-webhook] missing id/from", msg);
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
   // Dedup
@@ -198,28 +261,27 @@ async function processIncomingMessage(
     .limit(1);
   if (existing && existing.length > 0) {
     console.log("[whatsapp-cloud-webhook] duplicate, skip", waMessageId);
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
   // Contact name from contacts[]
   const contactInfo = contacts.find((c: any) => c.wa_id === fromPhone);
   const contactName = contactInfo?.profile?.name || fromPhone;
 
-  // Find or create contact
   const contato = await findOrCreateContact(supabase, tenantId, fromPhone, contactName);
   if (!contato) {
     console.error("[whatsapp-cloud-webhook] could not create contact");
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
 
-  // Find or create conversation (canal='whatsapp_cloud')
-  const conversa = await findOrCreateConversa(supabase, tenantId, contato.id, phoneNumberId);
-  if (!conversa) {
+  const convResult = await findOrCreateConversa(supabase, tenantId, contato.id, phoneNumberId);
+  if (!convResult?.conversa) {
     console.error("[whatsapp-cloud-webhook] could not create conversa");
-    return;
+    return { mensagemCriada: false, conversaCriada: false };
   }
+  const conversa = convResult.conversa;
+  const conversaCriada = convResult.created;
 
-  // Parse content per type
   const { conteudo, tipo, previewText, mediaInfo } = await parseMetaMessage(
     msg,
     type,
@@ -228,7 +290,6 @@ async function processIncomingMessage(
     tenantId
   );
 
-  // Insert message
   await supabase.from("mensagens").insert({
     conversa_id: conversa.id,
     tenant_id: tenantId,
@@ -243,7 +304,6 @@ async function processIncomingMessage(
     },
   });
 
-  // Update conversation
   const { data: cur } = await supabase
     .from("conversas")
     .select("nao_lidas")
@@ -261,6 +321,7 @@ async function processIncomingMessage(
     .eq("id", conversa.id);
 
   console.log("[whatsapp-cloud-webhook] message saved", { conversa: conversa.id, type });
+  return { mensagemCriada: true, conversaCriada };
 }
 
 async function parseMetaMessage(
@@ -442,8 +503,7 @@ async function findOrCreateConversa(
   tenantId: string,
   contatoId: string,
   phoneNumberId: string
-) {
-  // Find latest conversation for contact on canal=whatsapp_cloud
+): Promise<{ conversa: any; created: boolean } | null> {
   const { data: existing } = await supabase
     .from("conversas")
     .select("id, status, canal")
@@ -461,10 +521,9 @@ async function findOrCreateConversa(
         .update({ status: "aberta", nao_lidas: 0 })
         .eq("id", existing.id);
     }
-    return existing;
+    return { conversa: existing, created: false };
   }
 
-  // Create new
   const { data: defaultDepto } = await supabase
     .from("departamentos")
     .select("id")
@@ -510,7 +569,6 @@ async function findOrCreateConversa(
       contatoId,
       phoneNumberId,
     });
-    // Retry: maybe a conversation already exists in another canal-state — try to find any open conversa for this contact
     const { data: fallback } = await supabase
       .from("conversas")
       .select("id, status, canal")
@@ -522,7 +580,7 @@ async function findOrCreateConversa(
       .maybeSingle();
     if (fallback) {
       console.log("[whatsapp-cloud-webhook] using fallback conversa", fallback.id);
-      return fallback;
+      return { conversa: fallback, created: false };
     }
     return null;
   }
@@ -551,5 +609,5 @@ async function findOrCreateConversa(
     });
   }
 
-  return newConversa;
+  return newConversa ? { conversa: newConversa, created: true } : null;
 }

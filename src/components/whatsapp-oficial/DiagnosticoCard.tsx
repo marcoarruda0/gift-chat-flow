@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -14,6 +14,9 @@ interface Props {
   /** Re-assinar campo `messages` no WABA via Graph API */
   onSubscribeMessages?: () => void | Promise<void>;
   subscribing?: boolean;
+  /** Reprocessa o último evento bruto recebido */
+  onReprocessLast?: () => void | Promise<void>;
+  reprocessing?: boolean;
 }
 
 function formatRelative(iso: string | null): string {
@@ -37,6 +40,8 @@ export function DiagnosticoCard({
   onRefresh,
   onSubscribeMessages,
   subscribing,
+  onReprocessLast,
+  reprocessing,
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
@@ -81,14 +86,31 @@ export function DiagnosticoCard({
               Confirma se a Meta está realmente chamando o nosso endpoint
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={diagLoading}>
-            {diagLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-1" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-1" />
+          <div className="flex items-center gap-2">
+            {onReprocessLast && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onReprocessLast()}
+                disabled={reprocessing}
+              >
+                {reprocessing ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                )}
+                Reprocessar último
+              </Button>
             )}
-            Atualizar
-          </Button>
+            <Button variant="outline" size="sm" onClick={onRefresh} disabled={diagLoading}>
+              {diagLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Atualizar
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

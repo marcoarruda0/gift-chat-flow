@@ -471,7 +471,60 @@ export default function Conversas() {
     }
   };
 
-  const handleClose = async () => {
+  // Send approved template (used to reopen the 24h window on Cloud channel)
+  const handleSendTemplate = async (payload: {
+    name: string;
+    language: string;
+    components: any[];
+    previewText: string;
+  }) => {
+    if (!selectedId || !tenantId || !selected?.contato_telefone) {
+      toast.error("Conversa inválida para envio de template");
+      return;
+    }
+    try {
+      // Insert local message first to get its id
+      const { data: inserted, error } = await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: payload.previewText,
+        remetente: "atendente" as any,
+        tipo: "texto" as any,
+        metadata: {
+          wa_template_name: payload.name,
+          wa_template_language: payload.language,
+        },
+      }).select("id").maybeSingle();
+      if (error) { toast.error("Erro ao registrar mensagem"); return; }
+
+      await supabase.from("conversas").update({
+        ultimo_texto: "Você: " + payload.previewText.slice(0, 90),
+        ultima_msg_at: new Date().toISOString(),
+      }).eq("id", selectedId);
+
+      // Send to Meta
+      const result = await callCloud("messages", "POST", {
+        messaging_product: "whatsapp",
+        to: formatPhone(selected.contato_telefone),
+        type: "template",
+        template: {
+          name: payload.name,
+          language: { code: payload.language },
+          ...(payload.components.length > 0 ? { components: payload.components } : {}),
+        },
+      });
+      if (result?.error) {
+        console.error("WhatsApp Cloud template error:", result.error);
+        toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+      } else {
+        if (inserted?.id) await persistWaMessageId(inserted.id, result);
+        toast.success("Template enviado");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao enviar template");
+    }
+  };
     if (!selectedId) return;
     await supabase.from("conversas").update({
       status: "fechada",

@@ -42,6 +42,10 @@ export default function WhatsappOficialConfig() {
   const [sending, setSending] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [alertaTaxaErroPct, setAlertaTaxaErroPct] = useState<number>(20);
+  const [alertaMinEventos, setAlertaMinEventos] = useState<number>(10);
+  const [savingAlerta, setSavingAlerta] = useState(false);
+  const [ultimoAlertaAt, setUltimoAlertaAt] = useState<string | null>(null);
 
   const loadDiagnostico = useCallback(async () => {
     if (!tenantId) return;

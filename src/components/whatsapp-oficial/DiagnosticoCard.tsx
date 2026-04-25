@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -14,6 +14,9 @@ interface Props {
   /** Re-assinar campo `messages` no WABA via Graph API */
   onSubscribeMessages?: () => void | Promise<void>;
   subscribing?: boolean;
+  /** Reprocessa o último evento bruto recebido */
+  onReprocessLast?: () => void | Promise<void>;
+  reprocessing?: boolean;
 }
 
 function formatRelative(iso: string | null): string {

@@ -94,3 +94,101 @@ export function calcularCompraMinima(
   const m = Number(multiplicador) || 0;
   return s * m;
 }
+
+/**
+ * Ação que será aplicada sobre o ÚNICO giftback ativo do cliente
+ * (se existir) ao registrar uma nova compra.
+ *
+ * - "nenhum"             → cliente não tinha ativo; não há nada a fazer.
+ * - "usar"               → cliente optou por aplicar; ativo vira `usado`.
+ * - "substituir"         → cliente NÃO usou e a compra gera novo crédito;
+ *                          ativo antigo vira `inativo` (motivo: substituido).
+ * - "invalidar_nao_uso"  → cliente NÃO usou e a compra NÃO gera novo;
+ *                          ativo antigo vira `inativo` (motivo: nao_utilizado).
+ */
+export type AcaoSobreAtivo =
+  | "nenhum"
+  | "usar"
+  | "substituir"
+  | "invalidar_nao_uso";
+
+export interface ResultadoTransacao {
+  gbUsado: number; // 0 ou valor INTEGRAL do ativo (tudo-ou-nada)
+  gbGerado: number; // valor do novo crédito (0 se compra < mínimo)
+  acaoSobreAtivo: AcaoSobreAtivo;
+  novoSaldo: number; // sempre = gbGerado (já que vira o único ativo)
+  compraMinimaParaGerar: number;
+  /**
+   * Se preenchido, a operação NÃO pode ser executada — a UI deve
+   * bloquear a confirmação e exibir esta mensagem ao operador.
+   * Ex.: tentativa de resgate parcial (compra < valor do giftback ativo).
+   */
+  erroValidacao: string | null;
+}
+
+export interface CalcularTransacaoInput {
+  saldoAtivo: number; // valor do ÚNICO giftback ativo (0 se não houver)
+  valorCompra: number;
+  aplicarGiftback: boolean;
+  multiplicador: number;
+  percentual: number;
+}
+
+/**
+ * Calcula o resultado da transação seguindo a regra
+ * "1 giftback ativo por cliente" + resgate tudo-ou-nada.
+ *
+ * Função pura (sem side-effects), usada tanto pela UI do caixa
+ * quanto pelos testes.
+ */
+export function calcularTransacaoGiftback(
+  input: CalcularTransacaoInput,
+): ResultadoTransacao {
+  const saldoAtivo = Math.max(0, Number(input.saldoAtivo) || 0);
+  const valorCompra = Math.max(0, Number(input.valorCompra) || 0);
+  const multiplicador = Math.max(0, Number(input.multiplicador) || 0);
+  const percentual = Math.max(0, Number(input.percentual) || 0);
+  const aplicar = !!input.aplicarGiftback && saldoAtivo > 0;
+
+  const compraMinimaParaGerar = saldoAtivo * multiplicador;
+  const gerouNovo = valorCompra > 0 && valorCompra >= compraMinimaParaGerar;
+  const gbGerado = gerouNovo ? valorCompra * (percentual / 100) : 0;
+
+  // Resgate tudo-ou-nada: a compra precisa cobrir o valor INTEGRAL do ativo.
+  if (aplicar && valorCompra < saldoAtivo) {
+    return {
+      gbUsado: 0,
+      gbGerado: 0,
+      acaoSobreAtivo: "nenhum",
+      novoSaldo: saldoAtivo,
+      compraMinimaParaGerar,
+      erroValidacao: `Resgate é tudo-ou-nada: a compra precisa ser ≥ R$ ${saldoAtivo.toFixed(
+        2,
+      )} para utilizar o giftback ativo integralmente.`,
+    };
+  }
+
+  let acao: AcaoSobreAtivo = "nenhum";
+  let gbUsado = 0;
+
+  if (saldoAtivo > 0) {
+    if (aplicar) {
+      gbUsado = saldoAtivo;
+      acao = "usar";
+    } else if (gerouNovo) {
+      acao = "substituir";
+    } else {
+      // Cliente fez nova compra e não usou o ativo → perde.
+      acao = "invalidar_nao_uso";
+    }
+  }
+
+  return {
+    gbUsado,
+    gbGerado,
+    acaoSobreAtivo: acao,
+    novoSaldo: gbGerado, // sempre o valor do novo único ativo (0 se não gerou)
+    compraMinimaParaGerar,
+    erroValidacao: null,
+  };
+}

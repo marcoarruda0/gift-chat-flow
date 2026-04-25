@@ -5,16 +5,24 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Gift, CheckCircle, ArrowLeft } from "lucide-react";
+import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
+  calcularTransacaoGiftback,
   type GiftbackConfigRfvOverride,
+  type AcaoSobreAtivo,
 } from "@/lib/giftback-rules";
 import { SEGMENTOS, type SegmentoKey } from "@/lib/rfv-segments";
 
@@ -29,6 +37,13 @@ interface Contato {
   rfv_valor: number | null;
 }
 
+interface GiftbackAtivo {
+  id: string;
+  valor: number;
+  validade: string | null; // YYYY-MM-DD
+  created_at: string;
+}
+
 interface Resumo {
   valorCompra: number;
   giftbackUsado: number;
@@ -40,7 +55,16 @@ interface Resumo {
   multiplicadorAplicado: number;
   compraMinimaParaGerar: number;
   origem: "override" | "global";
+  acaoSobreAtivo: AcaoSobreAtivo;
+  valorAtivoAnterior: number;
 }
+
+const acaoLabel: Record<AcaoSobreAtivo, string> = {
+  nenhum: "Nenhum giftback ativo anterior",
+  usar: "Utilizado integralmente",
+  substituir: "Substituído pelo novo (não utilizado)",
+  invalidar_nao_uso: "Invalidado (não utilizado nesta compra)",
+};
 
 export default function GiftbackCaixa() {
   const { profile, user } = useAuth();
@@ -49,9 +73,9 @@ export default function GiftbackCaixa() {
 
   const [busca, setBusca] = useState("");
   const [contato, setContato] = useState<Contato | null>(null);
+  const [giftbackAtivo, setGiftbackAtivo] = useState<GiftbackAtivo | null>(null);
   const [valorCompra, setValorCompra] = useState("");
   const [aplicarGiftback, setAplicarGiftback] = useState(false);
-  const [valorGiftback, setValorGiftback] = useState("");
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [buscando, setBuscando] = useState(false);
 
@@ -67,7 +91,10 @@ export default function GiftbackCaixa() {
   const { data: overrides } = useQuery({
     queryKey: ["giftback-config-rfv"],
     queryFn: async () => {
-      const { data } = await supabase.from("giftback_config_rfv").select("*").order("segmento");
+      const { data } = await supabase
+        .from("giftback_config_rfv")
+        .select("*")
+        .order("segmento");
       return (data || []) as unknown as GiftbackConfigRfvOverride[];
     },
     enabled: !!profile?.tenant_id,
@@ -81,11 +108,13 @@ export default function GiftbackCaixa() {
       })
     : null;
 
+  const saldoAtivo = giftbackAtivo ? Number(giftbackAtivo.valor) : 0;
+
   const compraMinimaAtual = regrasAtuais
-    ? calcularCompraMinima(contato!.saldo_giftback, regrasAtuais.multiplicador_compra_minima)
+    ? calcularCompraMinima(saldoAtivo, regrasAtuais.multiplicador_compra_minima)
     : 0;
 
-  // Validação das regras: bloqueia confirmação se a configuração estiver inválida.
+  // Validação das regras configuradas
   const regrasInvalidas: string[] = [];
   if (regrasAtuais) {
     if (
@@ -113,35 +142,119 @@ export default function GiftbackCaixa() {
       regrasInvalidas.push("Validade em dias inválida (deve ser > 0).");
     }
   }
-  if (contato && (Number.isNaN(Number(contato.saldo_giftback)) || Number(contato.saldo_giftback) < 0)) {
-    regrasInvalidas.push("Saldo de giftback do cliente inválido (negativo ou ausente).");
-  }
   const regrasOk = regrasInvalidas.length === 0;
 
+  /**
+   * Busca contato + giftback ativo. Faz lazy-expire: se o ativo
+   * já passou da validade, marca como `expirado` e zera o saldo.
+   */
   const buscarContato = async () => {
     if (!busca.trim()) return;
     setBuscando(true);
-    const { data } = await supabase
-      .from("contatos")
-      .select("id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor")
-      .or(`cpf.eq.${busca},telefone.eq.${busca}`)
-      .single();
-    setBuscando(false);
-    if (data) {
-      setContato(data);
+    try {
+      const { data: cData } = await supabase
+        .from("contatos")
+        .select(
+          "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
+        )
+        .or(`cpf.eq.${busca},telefone.eq.${busca}`)
+        .single();
+
+      if (!cData) {
+        toast({ title: "Contato não encontrado", variant: "destructive" });
+        setContato(null);
+        setGiftbackAtivo(null);
+        return;
+      }
+
+      // Buscar único movimento ativo de crédito
+      const { data: mov } = await supabase
+        .from("giftback_movimentos")
+        .select("id, valor, validade, created_at")
+        .eq("contato_id", cData.id)
+        .eq("tipo", "credito")
+        .eq("status", "ativo")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let ativo: GiftbackAtivo | null = mov
+        ? {
+            id: mov.id,
+            valor: Number(mov.valor),
+            validade: mov.validade,
+            created_at: mov.created_at,
+          }
+        : null;
+
+      // Lazy expire
+      if (ativo?.validade) {
+        const hoje = new Date().toISOString().split("T")[0];
+        if (ativo.validade < hoje) {
+          await supabase
+            .from("giftback_movimentos")
+            .update({
+              status: "expirado",
+              motivo_inativacao: "expirado",
+            })
+            .eq("id", ativo.id);
+          await supabase
+            .from("contatos")
+            .update({ saldo_giftback: 0 })
+            .eq("id", cData.id);
+          toast({
+            title: "Giftback expirado",
+            description: `O giftback de R$ ${ativo.valor.toFixed(
+              2,
+            )} venceu em ${ativo.validade.split("-").reverse().join("/")} e foi marcado como expirado.`,
+          });
+          ativo = null;
+          cData.saldo_giftback = 0;
+        }
+      }
+
+      // Sincronizar saldo do contato com o ativo (defesa contra dessync)
+      const saldoEsperado = ativo ? ativo.valor : 0;
+      if (Number(cData.saldo_giftback || 0) !== saldoEsperado) {
+        await supabase
+          .from("contatos")
+          .update({ saldo_giftback: saldoEsperado })
+          .eq("id", cData.id);
+        cData.saldo_giftback = saldoEsperado;
+      }
+
+      setContato(cData);
+      setGiftbackAtivo(ativo);
+      setAplicarGiftback(false);
       setResumo(null);
-    } else {
-      toast({ title: "Contato não encontrado", variant: "destructive" });
+    } finally {
+      setBuscando(false);
     }
   };
+
+  // Cálculo da transação atual (preview em tempo real)
+  const valorCompraNum = parseFloat(valorCompra) || 0;
+  const previewTransacao =
+    contato && regrasAtuais
+      ? calcularTransacaoGiftback({
+          saldoAtivo,
+          valorCompra: valorCompraNum,
+          aplicarGiftback,
+          multiplicador: regrasAtuais.multiplicador_compra_minima,
+          percentual: regrasAtuais.percentual,
+        })
+      : null;
+
+  const erroResgate = previewTransacao?.erroValidacao ?? null;
+  const podeConfirmar =
+    regrasOk && valorCompraNum > 0 && !erroResgate;
 
   const registrarMutation = useMutation({
     mutationFn: async () => {
       if (!regrasOk) {
         throw new Error(`Regras inválidas: ${regrasInvalidas.join(" ")}`);
       }
-      const valor = parseFloat(valorCompra);
-      if (!Number.isFinite(valor) || valor <= 0) {
+      if (!Number.isFinite(valorCompraNum) || valorCompraNum <= 0) {
         throw new Error("Valor da compra inválido.");
       }
       const regras = resolverRegrasGiftback({
@@ -150,35 +263,65 @@ export default function GiftbackCaixa() {
         contato: contato!,
       });
 
-      const compraMinimaParaGerar = calcularCompraMinima(
-        contato!.saldo_giftback,
-        regras.multiplicador_compra_minima,
-      );
+      const transacao = calcularTransacaoGiftback({
+        saldoAtivo,
+        valorCompra: valorCompraNum,
+        aplicarGiftback,
+        multiplicador: regras.multiplicador_compra_minima,
+        percentual: regras.percentual,
+      });
 
-      // Resgate: limitado a min(saldo, valor da compra)
-      const gbUsadoSolicitado = aplicarGiftback ? parseFloat(valorGiftback) || 0 : 0;
-      const gbUsado = Math.min(gbUsadoSolicitado, contato!.saldo_giftback, valor);
+      if (transacao.erroValidacao) {
+        throw new Error(transacao.erroValidacao);
+      }
 
-      // Geração: só se a compra atinge o mínimo (saldo × multiplicador).
-      const gbGerado = valor >= compraMinimaParaGerar ? valor * (regras.percentual / 100) : 0;
-
-      // Insert compra
+      // 1) Insert da compra
       const { data: compra, error: compraErr } = await supabase
         .from("compras")
         .insert({
           tenant_id: profile!.tenant_id!,
           contato_id: contato!.id,
-          valor,
-          giftback_gerado: gbGerado,
-          giftback_usado: gbUsado,
+          valor: valorCompraNum,
+          giftback_gerado: transacao.gbGerado,
+          giftback_usado: transacao.gbUsado,
           operador_id: user!.id,
         })
         .select()
         .single();
       if (compraErr) throw compraErr;
 
-      // Insert credit movement (com auditoria de segmento/regra)
-      if (gbGerado > 0) {
+      // 2) Tratar o ativo antigo (se houver)
+      if (giftbackAtivo && transacao.acaoSobreAtivo !== "nenhum") {
+        const { acaoSobreAtivo } = transacao;
+
+        if (acaoSobreAtivo === "usar") {
+          // Marcar ativo como usado + criar movimento de débito
+          await supabase
+            .from("giftback_movimentos")
+            .update({ status: "usado", motivo_inativacao: "usado" })
+            .eq("id", giftbackAtivo.id);
+
+          await supabase.from("giftback_movimentos").insert({
+            tenant_id: profile!.tenant_id!,
+            contato_id: contato!.id,
+            compra_id: compra.id,
+            tipo: "debito" as const,
+            valor: transacao.gbUsado,
+            status: "usado" as const,
+          });
+        } else {
+          // substituir | invalidar_nao_uso → marcar como inativo
+          const motivo =
+            acaoSobreAtivo === "substituir" ? "substituido" : "nao_utilizado";
+          await supabase
+            .from("giftback_movimentos")
+            .update({ status: "inativo", motivo_inativacao: motivo })
+            .eq("id", giftbackAtivo.id);
+        }
+      }
+
+      // 3) Inserir novo crédito (se gerou)
+      if (transacao.gbGerado > 0) {
         const validade = new Date();
         validade.setDate(validade.getDate() + regras.validade_dias);
         await supabase.from("giftback_movimentos").insert({
@@ -186,7 +329,7 @@ export default function GiftbackCaixa() {
           contato_id: contato!.id,
           compra_id: compra.id,
           tipo: "credito" as const,
-          valor: gbGerado,
+          valor: transacao.gbGerado,
           validade: validade.toISOString().split("T")[0],
           status: "ativo" as const,
           segmento_rfv: regras.segmentoAplicado,
@@ -194,46 +337,38 @@ export default function GiftbackCaixa() {
         });
       }
 
-      // Insert debit movement
-      if (gbUsado > 0) {
-        await supabase.from("giftback_movimentos").insert({
-          tenant_id: profile!.tenant_id!,
-          contato_id: contato!.id,
-          compra_id: compra.id,
-          tipo: "debito" as const,
-          valor: gbUsado,
-          status: "usado" as const,
-        });
-      }
-
-      // Update saldo
-      const novoSaldo = (contato!.saldo_giftback || 0) - gbUsado + gbGerado;
-      await supabase.from("contatos").update({ saldo_giftback: novoSaldo }).eq("id", contato!.id);
+      // 4) Atualizar saldo agregado do contato (= valor do novo ativo, ou 0)
+      await supabase
+        .from("contatos")
+        .update({ saldo_giftback: transacao.novoSaldo })
+        .eq("id", contato!.id);
 
       return {
-        valorCompra: valor,
-        giftbackUsado: gbUsado,
-        giftbackGerado: gbGerado,
-        novoSaldo,
+        valorCompra: valorCompraNum,
+        giftbackUsado: transacao.gbUsado,
+        giftbackGerado: transacao.gbGerado,
+        novoSaldo: transacao.novoSaldo,
         segmentoAplicado: regras.segmentoAplicado,
         percentualAplicado: regras.percentual,
         validadeDiasAplicada: regras.validade_dias,
         multiplicadorAplicado: regras.multiplicador_compra_minima,
-        compraMinimaParaGerar,
+        compraMinimaParaGerar: transacao.compraMinimaParaGerar,
         origem: regras.origem,
+        acaoSobreAtivo: transacao.acaoSobreAtivo,
+        valorAtivoAnterior: saldoAtivo,
       } satisfies Resumo;
     },
     onSuccess: (data) => {
       setResumo(data);
       setContato({ ...contato!, saldo_giftback: data.novoSaldo });
+      setGiftbackAtivo(null); // será refeito ao buscar de novo
       setValorCompra("");
-      setValorGiftback("");
       setAplicarGiftback(false);
       queryClient.invalidateQueries({ queryKey: ["contatos"] });
       queryClient.invalidateQueries({ queryKey: ["giftback-movimentos"] });
       toast({ title: "Compra registrada com sucesso!" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
   });
@@ -241,21 +376,30 @@ export default function GiftbackCaixa() {
   const nomeSegmentoResumo = (key: SegmentoKey | null) =>
     key ? SEGMENTOS[key].nome : "Sem RFV";
 
-  // Limites de resgate exibidos na UI
-  const valorCompraNum = parseFloat(valorCompra) || 0;
-  const maxResgate = contato
-    ? Math.min(contato.saldo_giftback, valorCompraNum || contato.saldo_giftback)
-    : 0;
+  const validadeFormatada = (iso: string | null) =>
+    iso ? iso.split("-").reverse().join("/") : "—";
+
+  const diasRestantes = (iso: string | null) => {
+    if (!iso) return null;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const v = new Date(iso + "T00:00:00");
+    return Math.ceil((v.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+  };
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/giftback"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link to="/giftback">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div>
           <h1 className="text-xl font-bold">Painel do Caixa</h1>
-          <p className="text-sm text-muted-foreground">Registre compras e aplique giftback</p>
+          <p className="text-sm text-muted-foreground">
+            Registre compras e aplique giftback
+          </p>
         </div>
       </div>
 
@@ -297,28 +441,56 @@ export default function GiftbackCaixa() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Bloco do giftback ativo */}
             <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
               <Gift className="h-5 w-5 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Saldo Giftback</p>
-                <p className="text-xl font-bold text-primary">R$ {Number(contato.saldo_giftback).toFixed(2)}</p>
+              <div className="flex-1">
+                <p className="text-sm text-muted-foreground">
+                  Giftback ativo (único)
+                </p>
+                <p className="text-xl font-bold text-primary">
+                  R$ {saldoAtivo.toFixed(2)}
+                </p>
+                {giftbackAtivo && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Válido até {validadeFormatada(giftbackAtivo.validade)}
+                    {(() => {
+                      const d = diasRestantes(giftbackAtivo.validade);
+                      if (d === null) return null;
+                      if (d <= 0) return " • vence hoje";
+                      if (d === 1) return " • vence amanhã";
+                      return ` • ${d} dias restantes`;
+                    })()}
+                  </p>
+                )}
+                {!giftbackAtivo && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Cliente não possui giftback ativo no momento.
+                  </p>
+                )}
               </div>
             </div>
+
             {regrasAtuais && (
               <div className="text-xs text-muted-foreground border rounded-md p-2 space-y-0.5">
                 <div>
-                  <span className="font-medium text-foreground">Regra aplicada:</span>{" "}
+                  <span className="font-medium text-foreground">
+                    Regra aplicada:
+                  </span>{" "}
                   {regrasAtuais.origem === "override"
                     ? `${nomeSegmentoResumo(regrasAtuais.segmentoAplicado)} (personalizada)`
                     : "Padrão (global)"}
                 </div>
                 <div>
-                  {regrasAtuais.percentual}% de retorno · validade {regrasAtuais.validade_dias} dias · multiplicador {regrasAtuais.multiplicador_compra_minima}×
+                  {regrasAtuais.percentual}% de retorno · validade{" "}
+                  {regrasAtuais.validade_dias} dias · multiplicador{" "}
+                  {regrasAtuais.multiplicador_compra_minima}×
                 </div>
                 {compraMinimaAtual > 0 ? (
                   <div>
                     Para gerar novo giftback, compra precisa ser ≥{" "}
-                    <strong>R$ {compraMinimaAtual.toFixed(2)}</strong> (saldo R$ {Number(contato.saldo_giftback).toFixed(2)} ×{" "}
+                    <strong>R$ {compraMinimaAtual.toFixed(2)}</strong> (ativo R${" "}
+                    {saldoAtivo.toFixed(2)} ×{" "}
                     {regrasAtuais.multiplicador_compra_minima})
                   </div>
                 ) : (
@@ -337,12 +509,10 @@ export default function GiftbackCaixa() {
             <CardTitle className="text-lg">Registrar Compra</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Bloqueio quando regras estão inválidas */}
             {!regrasOk && (
               <div
                 className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
                 role="alert"
-                aria-live="polite"
                 data-testid="regras-invalidas-alert"
               >
                 <p className="font-medium">Não é possível registrar a compra:</p>
@@ -352,12 +522,19 @@ export default function GiftbackCaixa() {
                   ))}
                 </ul>
                 <p className="mt-2 text-xs">
-                  Ajuste a configuração em <strong>Giftback → Configuração</strong> antes de continuar.
+                  Ajuste a configuração em{" "}
+                  <strong>Giftback → Configuração</strong> antes de continuar.
                 </p>
               </div>
             )}
 
-            <form onSubmit={(e) => { e.preventDefault(); registrarMutation.mutate(); }} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                registrarMutation.mutate();
+              }}
+              className="space-y-4"
+            >
               <div className="space-y-2">
                 <Label>Valor da Compra (R$)</Label>
                 <Input
@@ -369,70 +546,109 @@ export default function GiftbackCaixa() {
                   required
                   disabled={!regrasOk}
                 />
-                {valorCompraNum > 0 && compraMinimaAtual > 0 && valorCompraNum < compraMinimaAtual && (
-                  <div
-                    className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground space-y-1"
-                    role="status"
-                    data-testid="aviso-abaixo-minimo"
-                  >
-                    <p className="font-medium">
-                      ⚠️ Compra abaixo do mínimo para gerar giftback
-                    </p>
-                    <p>
-                      Faltam <strong>R$ {(compraMinimaAtual - valorCompraNum).toFixed(2)}</strong> para
-                      atingir o mínimo de <strong>R$ {compraMinimaAtual.toFixed(2)}</strong>
-                      {regrasAtuais && regrasAtuais.multiplicador_compra_minima > 0 && (
-                        <> ({regrasAtuais.multiplicador_compra_minima}× o saldo atual de R$ {Number(contato.saldo_giftback).toFixed(2)})</>
-                      )}.
-                    </p>
-                    <p>
-                      Efeito: <strong>nenhum giftback novo será gerado</strong> nesta compra
-                      {regrasAtuais && (
-                        <>
-                          {" "}(deixaria de creditar R$ {(valorCompraNum * (regrasAtuais.percentual / 100)).toFixed(2)} ao saldo)
-                        </>
-                      )}.
-                      {aplicarGiftback && (
-                        <> O resgate continua permitido até R$ {maxResgate.toFixed(2)}.</>
-                      )}
-                    </p>
-                  </div>
-                )}
+
+                {/* Aviso: compra abaixo do mínimo (não vai gerar) */}
+                {valorCompraNum > 0 &&
+                  compraMinimaAtual > 0 &&
+                  valorCompraNum < compraMinimaAtual && (
+                    <div
+                      className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground space-y-1"
+                      role="status"
+                      data-testid="aviso-abaixo-minimo"
+                    >
+                      <p className="font-medium">
+                        ⚠️ Compra abaixo do mínimo para gerar giftback
+                      </p>
+                      <p>
+                        Faltam{" "}
+                        <strong>
+                          R$ {(compraMinimaAtual - valorCompraNum).toFixed(2)}
+                        </strong>{" "}
+                        para atingir o mínimo de{" "}
+                        <strong>R$ {compraMinimaAtual.toFixed(2)}</strong>
+                        {regrasAtuais &&
+                          regrasAtuais.multiplicador_compra_minima > 0 && (
+                            <>
+                              {" "}
+                              ({regrasAtuais.multiplicador_compra_minima}× o
+                              ativo de R$ {saldoAtivo.toFixed(2)})
+                            </>
+                          )}
+                        .
+                      </p>
+                      <p>
+                        Efeito:{" "}
+                        <strong>nenhum giftback novo será gerado</strong>
+                        {regrasAtuais && (
+                          <>
+                            {" "}
+                            (deixaria de creditar R${" "}
+                            {(
+                              valorCompraNum * (regrasAtuais.percentual / 100)
+                            ).toFixed(2)}
+                            )
+                          </>
+                        )}
+                        .
+                      </p>
+                    </div>
+                  )}
               </div>
-              {contato.saldo_giftback > 0 && (
-                <>
+
+              {/* Toggle de aplicação — somente quando há ativo */}
+              {giftbackAtivo && saldoAtivo > 0 && (
+                <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={aplicarGiftback}
                       onCheckedChange={setAplicarGiftback}
                       disabled={!regrasOk}
                     />
-                    <Label>Aplicar giftback?</Label>
+                    <Label>
+                      Aplicar giftback de{" "}
+                      <strong>R$ {saldoAtivo.toFixed(2)}</strong> (uso integral)
+                    </Label>
                   </div>
-                  {aplicarGiftback && (
-                    <div className="space-y-2">
-                      <Label>
-                        Valor a utilizar (máx: R$ {maxResgate.toFixed(2)})
-                      </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max={maxResgate}
-                        value={valorGiftback}
-                        onChange={(e) => setValorGiftback(e.target.value)}
-                        disabled={!regrasOk}
-                      />
+
+                  {/* Erro: tentando resgate parcial */}
+                  {aplicarGiftback && erroResgate && (
+                    <div
+                      className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex gap-2"
+                      role="alert"
+                      data-testid="erro-resgate-parcial"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{erroResgate}</span>
                     </div>
                   )}
-                </>
+
+                  {/* Aviso: NÃO aplicar perde o ativo */}
+                  {!aplicarGiftback && (
+                    <div
+                      className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground"
+                      role="status"
+                      data-testid="aviso-perda-ativo"
+                    >
+                      ⚠️ O giftback ativo de{" "}
+                      <strong>R$ {saldoAtivo.toFixed(2)}</strong> será{" "}
+                      <strong>invalidado</strong> ao confirmar esta compra
+                      (regra: 1 ativo por cliente — perde se não usado em nova
+                      compra).
+                    </div>
+                  )}
+                </div>
               )}
+
               <Button
                 type="submit"
                 className="w-full"
-                disabled={registrarMutation.isPending || !regrasOk}
+                disabled={
+                  registrarMutation.isPending || !podeConfirmar
+                }
               >
-                {registrarMutation.isPending ? "Registrando..." : "Confirmar Compra"}
+                {registrarMutation.isPending
+                  ? "Registrando..."
+                  : "Confirmar Compra"}
               </Button>
             </form>
           </CardContent>
@@ -449,22 +665,64 @@ export default function GiftbackCaixa() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between"><span>Valor da compra</span><span className="font-medium">R$ {resumo.valorCompra.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>Giftback utilizado</span><span className="font-medium text-destructive">- R$ {resumo.giftbackUsado.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>Giftback gerado</span><span className="font-medium text-primary">+ R$ {resumo.giftbackGerado.toFixed(2)}</span></div>
+            <div className="flex justify-between">
+              <span>Valor da compra</span>
+              <span className="font-medium">
+                R$ {resumo.valorCompra.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Giftback utilizado</span>
+              <span className="font-medium text-destructive">
+                - R$ {resumo.giftbackUsado.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Giftback gerado</span>
+              <span className="font-medium text-primary">
+                + R$ {resumo.giftbackGerado.toFixed(2)}
+              </span>
+            </div>
             <hr />
-            <div className="flex justify-between font-bold"><span>Novo saldo</span><span>R$ {resumo.novoSaldo.toFixed(2)}</span></div>
+            <div className="flex justify-between font-bold">
+              <span>Novo saldo ativo</span>
+              <span>R$ {resumo.novoSaldo.toFixed(2)}</span>
+            </div>
+
+            {/* Status do ativo anterior */}
+            <div
+              className="rounded-md border bg-muted/40 p-3 text-xs space-y-1"
+              data-testid="resumo-acao-ativo"
+            >
+              <p className="font-medium text-foreground">
+                Giftback ativo anterior
+              </p>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Valor</span>
+                <span>R$ {resumo.valorAtivoAnterior.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Resultado</span>
+                <span className="text-foreground">
+                  {acaoLabel[resumo.acaoSobreAtivo]}
+                </span>
+              </div>
+            </div>
 
             {/* Bloco de auditoria — regras aplicadas */}
             <div
               className="rounded-md border bg-muted/40 p-3 mt-2 space-y-1 text-xs"
               data-testid="auditoria-regras"
             >
-              <p className="font-medium text-foreground">Regras aplicadas (auditoria)</p>
+              <p className="font-medium text-foreground">
+                Regras aplicadas (auditoria)
+              </p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
                 <span>Origem</span>
                 <span className="text-right text-foreground">
-                  {resumo.origem === "override" ? "Override por RFV" : "Configuração global"}
+                  {resumo.origem === "override"
+                    ? "Override por RFV"
+                    : "Configuração global"}
                 </span>
 
                 <span>Segmento</span>
@@ -473,10 +731,14 @@ export default function GiftbackCaixa() {
                 </span>
 
                 <span>Percentual de retorno</span>
-                <span className="text-right text-foreground">{resumo.percentualAplicado}%</span>
+                <span className="text-right text-foreground">
+                  {resumo.percentualAplicado}%
+                </span>
 
                 <span>Validade do crédito</span>
-                <span className="text-right text-foreground">{resumo.validadeDiasAplicada} dias</span>
+                <span className="text-right text-foreground">
+                  {resumo.validadeDiasAplicada} dias
+                </span>
 
                 <span>Multiplicador</span>
                 <span className="text-right text-foreground">
@@ -492,7 +754,16 @@ export default function GiftbackCaixa() {
               </div>
             </div>
 
-            <Button variant="outline" className="w-full mt-2" onClick={() => { setResumo(null); setContato(null); setBusca(""); }}>
+            <Button
+              variant="outline"
+              className="w-full mt-2"
+              onClick={() => {
+                setResumo(null);
+                setContato(null);
+                setGiftbackAtivo(null);
+                setBusca("");
+              }}
+            >
               Nova Operação
             </Button>
           </CardContent>

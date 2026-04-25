@@ -14,15 +14,16 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
-  MessageSquare, Mail,
+  MessageSquare, Mail, Sparkles, CheckCircle2, Eye as EyeIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
 import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
+import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
-type Canal = "whatsapp" | "email";
+type Canal = "whatsapp" | "whatsapp_cloud" | "email";
 
 const atrasoConfig: Record<AtrasoTipo, { label: string; desc: string }> = {
   muito_curto: { label: "Muito Curto", desc: "1s a 5s" },
@@ -51,6 +52,11 @@ type Campanha = {
   email_assunto: string | null;
   email_html: string | null;
   email_preview: string | null;
+  template_id: string | null;
+  template_name: string | null;
+  template_language: string | null;
+  template_components: any;
+  template_variaveis: any;
 };
 
 type Contato = {
@@ -145,6 +151,15 @@ export default function Campanhas() {
   const [rfvMinV, setRfvMinV] = useState("0");
   const [rfvSegmento, setRfvSegmento] = useState<"custom" | SegmentoKey>("custom");
 
+  // WhatsApp Cloud (oficial) — template state
+  const [templateId, setTemplateId] = useState<string>("");
+  const [templateName, setTemplateName] = useState<string>("");
+  const [templateLanguage, setTemplateLanguage] = useState<string>("");
+  const [templateComponents, setTemplateComponents] = useState<any[]>([]);
+  const [templateVariaveis, setTemplateVariaveis] = useState<Record<string, string>>({});
+  const [optInConfirmado, setOptInConfirmado] = useState(false);
+  const [cloudConectado, setCloudConectado] = useState(false);
+
   // Tenant email config (for live preview in EmailEditor)
   const [tenantEmail, setTenantEmail] = useState<{
     nome: string | null;
@@ -169,6 +184,19 @@ export default function Campanhas() {
             signature: (data as any).email_assinatura || null,
           });
         }
+      });
+  }, [tenantId]);
+
+  // Check if WhatsApp Cloud is connected for this tenant
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase
+      .from("whatsapp_cloud_config")
+      .select("status")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setCloudConectado(data?.status === "conectado");
       });
   }, [tenantId]);
 
@@ -284,6 +312,36 @@ export default function Campanhas() {
         toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
         return;
       }
+    } else if (canal === "whatsapp_cloud") {
+      if (!cloudConectado) {
+        toast({ title: "WhatsApp Oficial não está conectado", description: "Vá em Configurações › WhatsApp Oficial.", variant: "destructive" });
+        return;
+      }
+      if (!templateId || !templateName) {
+        toast({ title: "Selecione um template aprovado", variant: "destructive" });
+        return;
+      }
+      // All {{n}} placeholders must be mapped
+      const requiredKeys: string[] = [];
+      for (const comp of templateComponents) {
+        const type = String(comp.type || "").toUpperCase();
+        if (type === "BODY" || (type === "HEADER" && String(comp.format || "TEXT").toUpperCase() === "TEXT")) {
+          const text = String(comp.text || "");
+          const matches = text.matchAll(/\{\{(\d+)\}\}/g);
+          for (const m of matches) {
+            requiredKeys.push(`${type === "HEADER" ? "header" : "body"}.${m[1]}`);
+          }
+        }
+      }
+      const missing = requiredKeys.filter((k) => !(templateVariaveis[k] || "").trim());
+      if (missing.length > 0) {
+        toast({ title: "Preencha todas as variáveis do template", variant: "destructive" });
+        return;
+      }
+      if (!optInConfirmado) {
+        toast({ title: "Confirme o opt-in dos destinatários", variant: "destructive" });
+        return;
+      }
     } else {
       if (!emailAssunto.trim()) {
         toast({ title: "Preencha o assunto do e-mail", variant: "destructive" });
@@ -315,7 +373,12 @@ export default function Campanhas() {
         .insert({
           tenant_id: tenantId,
           nome: nome.trim(),
-          mensagem: canal === "whatsapp" ? mensagem.trim() : (emailAssunto.trim() || ""),
+          mensagem:
+            canal === "whatsapp"
+              ? mensagem.trim()
+              : canal === "whatsapp_cloud"
+                ? `[Template: ${templateName}]`
+                : (emailAssunto.trim() || ""),
           tipo_filtro: tipoFiltro as any,
           filtro_valor:
             tipoFiltro === "tag"
@@ -336,6 +399,11 @@ export default function Campanhas() {
           email_assunto: canal === "email" ? emailAssunto.trim() : null,
           email_html: canal === "email" ? emailHtml : null,
           email_preview: canal === "email" ? emailPreview.trim() : null,
+          template_id: canal === "whatsapp_cloud" ? templateId : null,
+          template_name: canal === "whatsapp_cloud" ? templateName : null,
+          template_language: canal === "whatsapp_cloud" ? templateLanguage : null,
+          template_components: canal === "whatsapp_cloud" ? templateComponents : [],
+          template_variaveis: canal === "whatsapp_cloud" ? templateVariaveis : {},
         } as any)
         .select()
         .single();
@@ -373,7 +441,8 @@ export default function Campanhas() {
         });
         return;
       }
-      const { error } = await supabase.functions.invoke("enviar-campanha", {
+      const fnName = campanhaCanal === "whatsapp_cloud" ? "enviar-campanha-cloud" : "enviar-campanha";
+      const { error } = await supabase.functions.invoke(fnName, {
         body: { campanha_id: campanhaId },
       });
       if (error) throw error;
@@ -399,6 +468,21 @@ export default function Campanhas() {
     setDestinatariosDetail((data as any[]) || []);
   }
 
+  // Realtime: refresh detail dialog when destinatarios change for the open campaign
+  useEffect(() => {
+    if (!detailDialog) return;
+    const channel = supabase
+      .channel(`camp-dest-${detailDialog}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "campanha_destinatarios", filter: `campanha_id=eq.${detailDialog}` },
+        () => { openDetail(detailDialog); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailDialog]);
+
   function resetForm() {
     setCanal("whatsapp");
     setNome("");
@@ -419,6 +503,12 @@ export default function Campanhas() {
     setRfvMinF("0");
     setRfvMinV("0");
     setRfvSegmento("custom");
+    setTemplateId("");
+    setTemplateName("");
+    setTemplateLanguage("");
+    setTemplateComponents([]);
+    setTemplateVariaveis({});
+    setOptInConfirmado(false);
   }
 
   function toggleTag(tag: string) {
@@ -457,7 +547,10 @@ export default function Campanhas() {
         <TabsList>
           <TabsTrigger value="todas">Todas</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-1">
-            <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+            <MessageSquare className="h-3.5 w-3.5" /> Z-API
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp_cloud" className="gap-1">
+            <Sparkles className="h-3.5 w-3.5" /> Oficial
           </TabsTrigger>
           <TabsTrigger value="email" className="gap-1">
             <Mail className="h-3.5 w-3.5" /> E-mail
@@ -505,15 +598,24 @@ export default function Campanhas() {
                           <Badge variant="outline" className="gap-1">
                             <Mail className="h-3 w-3" /> E-mail
                           </Badge>
+                        ) : cn === "whatsapp_cloud" ? (
+                          <Badge className="gap-1 bg-green-600 hover:bg-green-600">
+                            <Sparkles className="h-3 w-3" /> Oficial
+                          </Badge>
                         ) : (
                           <Badge variant="outline" className="gap-1">
-                            <MessageSquare className="h-3 w-3" /> WhatsApp
+                            <MessageSquare className="h-3 w-3" /> Z-API
                           </Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1 text-muted-foreground capitalize">
-                          {cn === "email" ? <FileText className="h-4 w-4" /> : midiaIcon[tm]} {cn === "email" ? "html" : tm}
+                          {cn === "email"
+                            ? <><FileText className="h-4 w-4" /> html</>
+                            : cn === "whatsapp_cloud"
+                              ? <><Sparkles className="h-4 w-4" /> {c.template_name || "template"}</>
+                              : <>{midiaIcon[tm]} {tm}</>
+                          }
                         </span>
                       </TableCell>
                       <TableCell>
@@ -567,7 +669,7 @@ export default function Campanhas() {
           <div className="space-y-4">
             <div>
               <Label className="mb-2 block">Canal de envio</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => setCanal("whatsapp")}
@@ -576,8 +678,22 @@ export default function Campanhas() {
                   }`}
                 >
                   <MessageSquare className={`h-6 w-6 mb-2 ${canal === "whatsapp" ? "text-primary" : "text-muted-foreground"}`} />
-                  <div className="font-medium">WhatsApp</div>
-                  <div className="text-xs text-muted-foreground">Texto, imagem, vídeo, áudio ou documento</div>
+                  <div className="font-medium">WhatsApp (Z-API)</div>
+                  <div className="text-xs text-muted-foreground">Texto livre + mídia</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCanal("whatsapp_cloud")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "whatsapp_cloud" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <Sparkles className={`h-6 w-6 mb-2 ${canal === "whatsapp_cloud" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium flex items-center gap-1">
+                    Oficial
+                    <Badge className="bg-green-600 hover:bg-green-600 text-[10px] py-0 px-1">META</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Templates aprovados</div>
                 </button>
                 <button
                   type="button"
@@ -588,9 +704,14 @@ export default function Campanhas() {
                 >
                   <Mail className={`h-6 w-6 mb-2 ${canal === "email" ? "text-primary" : "text-muted-foreground"}`} />
                   <div className="font-medium">E-mail</div>
-                  <div className="text-xs text-muted-foreground">Editor rich-text com assunto, links e imagens</div>
+                  <div className="text-xs text-muted-foreground">Editor rich-text</div>
                 </button>
               </div>
+              {canal === "whatsapp_cloud" && !cloudConectado && (
+                <p className="text-xs text-destructive mt-2">
+                  WhatsApp Oficial não está conectado. Vá em Configurações › WhatsApp Oficial.
+                </p>
+              )}
             </div>
 
             <div>
@@ -671,6 +792,42 @@ export default function Campanhas() {
                     placeholder="Olá {nome}, temos uma oferta especial..."
                     rows={3}
                   />
+                </div>
+              </>
+            )}
+
+            {canal === "whatsapp_cloud" && (
+              <>
+                <TemplateCampanhaPicker
+                  templateId={templateId}
+                  variaveis={templateVariaveis}
+                  sampleContact={contatosFiltrados[0]}
+                  onChange={(d) => {
+                    setTemplateId(d.templateId);
+                    setTemplateName(d.templateName);
+                    setTemplateLanguage(d.templateLanguage);
+                    setTemplateComponents(d.templateComponents);
+                    setTemplateVariaveis(d.variaveis);
+                  }}
+                />
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-2">
+                  <p className="text-amber-600 dark:text-amber-400 font-medium">
+                    Importante sobre disparos via API Oficial
+                  </p>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                    <li>Cada conversa iniciada por template é tarifada pela Meta conforme a categoria.</li>
+                    <li>Templates da categoria <strong>Marketing</strong> têm limite de frequência por destinatário.</li>
+                    <li>O envio respeita os tiers de mensagens da sua conta WABA (250/1k/10k/100k por 24h).</li>
+                  </ul>
+                  <label className="flex items-start gap-2 mt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={optInConfirmado}
+                      onChange={(e) => setOptInConfirmado(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>Confirmo que os destinatários deram <strong>opt-in</strong> para receber mensagens.</span>
+                  </label>
                 </div>
               </>
             )}
@@ -826,7 +983,7 @@ export default function Campanhas() {
               </div>
             )}
 
-            {canal === "whatsapp" && (
+            {(canal === "whatsapp" || canal === "whatsapp_cloud") && (
               <div>
                 <Label>Atraso Inteligente</Label>
                 <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>
@@ -878,23 +1035,64 @@ export default function Campanhas() {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Destinatários da Campanha</DialogTitle>
             <DialogDescription>Status individual de cada destinatário.</DialogDescription>
           </DialogHeader>
+
+          {/* Funil de entrega (apenas quando há status_entrega — canal Oficial) */}
+          {(() => {
+            const total = destinatariosDetail.length;
+            if (total === 0) return null;
+            const sent = destinatariosDetail.filter((d) => d.status === "enviado").length;
+            const delivered = destinatariosDetail.filter((d) => ["delivered", "read"].includes(d.status_entrega || "")).length;
+            const read = destinatariosDetail.filter((d) => d.status_entrega === "read").length;
+            const failed = destinatariosDetail.filter((d) => d.status === "falha" || d.status_entrega === "failed").length;
+            const hasOficialMetrics = destinatariosDetail.some((d) => d.status_entrega || d.wa_message_id);
+            if (!hasOficialMetrics) return null;
+            return (
+              <div className="grid grid-cols-4 gap-2 text-center mb-2">
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Enviados</div>
+                  <div className="text-lg font-semibold">{sent}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Entregues</div>
+                  <div className="text-lg font-semibold">{delivered}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Lidos</div>
+                  <div className="text-lg font-semibold">{read}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Falhas</div>
+                  <div className="text-lg font-semibold text-destructive">{failed}</div>
+                </div>
+              </div>
+            );
+          })()}
+
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Contato</TableHead>
                 <TableHead>Destino</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Entrega</TableHead>
                 <TableHead>Data/Hora</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {destinatariosDetail.map((d) => {
                 const ds = destStatusBadge[d.status] || { label: d.status, variant: "secondary" as const };
+                const entrega = d.status_entrega as string | null;
+                const entregaLabel: Record<string, string> = {
+                  sent: "Enviado",
+                  delivered: "Entregue",
+                  read: "Lido",
+                  failed: "Falha",
+                };
                 return (
                   <TableRow key={d.id}>
                     <TableCell>{(d.contatos as any)?.nome || "—"}</TableCell>
@@ -902,6 +1100,15 @@ export default function Campanhas() {
                     <TableCell>
                       <Badge variant={ds.variant}>{ds.label}</Badge>
                       {d.erro && <p className="text-xs text-destructive mt-1">{d.erro}</p>}
+                    </TableCell>
+                    <TableCell>
+                      {entrega ? (
+                        <Badge variant={entrega === "failed" ? "destructive" : entrega === "read" ? "default" : "outline"}>
+                          {entregaLabel[entrega] || entrega}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {d.enviado_at ? new Date(d.enviado_at).toLocaleString("pt-BR") : "—"}
@@ -911,7 +1118,7 @@ export default function Campanhas() {
               })}
               {destinatariosDetail.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
                 </TableRow>
               )}
             </TableBody>

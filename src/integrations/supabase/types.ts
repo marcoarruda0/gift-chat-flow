@@ -1368,9 +1368,11 @@ export type Database = {
         Row: {
           conversas_criadas: number
           erro_mensagem: string | null
+          hmac_valido: boolean | null
           id: string
           mensagens_criadas: number
           payload: Json
+          payload_hash: string | null
           phone_number_id: string | null
           processado_at: string | null
           recebido_at: string
@@ -1381,9 +1383,11 @@ export type Database = {
         Insert: {
           conversas_criadas?: number
           erro_mensagem?: string | null
+          hmac_valido?: boolean | null
           id?: string
           mensagens_criadas?: number
           payload: Json
+          payload_hash?: string | null
           phone_number_id?: string | null
           processado_at?: string | null
           recebido_at?: string
@@ -1394,9 +1398,11 @@ export type Database = {
         Update: {
           conversas_criadas?: number
           erro_mensagem?: string | null
+          hmac_valido?: boolean | null
           id?: string
           mensagens_criadas?: number
           payload?: Json
+          payload_hash?: string | null
           phone_number_id?: string | null
           processado_at?: string | null
           recebido_at?: string

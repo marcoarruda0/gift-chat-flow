@@ -273,10 +273,26 @@ export default function GiftbackCaixa() {
 
   const registrarMutation = useMutation({
     mutationFn: async () => {
+      if (!profile?.tenant_id || !user?.id) {
+        throw new Error("Sessão inválida — faça login novamente.");
+      }
+      if (!contato) {
+        throw new Error("Selecione um contato antes de continuar.");
+      }
+      if (configCarregando) {
+        throw new Error("Configuração ainda está carregando.");
+      }
+      if (configAusente) {
+        throw new Error(
+          "Configuração de giftback ausente. Crie em Giftback → Configuração.",
+        );
+      }
       if (!regrasOk) {
         throw new Error(`Regras inválidas: ${regrasInvalidas.join(" ")}`);
       }
-      if (!Number.isFinite(valorCompraNum) || valorCompraNum <= 0) {
+      const { valor: valorValidado, erro: erroValValid } = parseValorCompra(valorCompra);
+      if (erroValValid) throw new Error(erroValValid);
+      if (!Number.isFinite(valorValidado) || valorValidado <= 0) {
         throw new Error("Valor da compra inválido.");
       }
       const regras = resolverRegrasGiftback({

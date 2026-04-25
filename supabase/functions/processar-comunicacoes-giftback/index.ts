@@ -95,6 +95,35 @@ function montarComponents(
   return out;
 }
 
+type SegmentoRfvKey =
+  | "campeoes" | "leais" | "potenciais" | "atencao" | "em_risco" | "perdidos" | "sem_dados";
+
+function segmentoFromSoma(
+  r: number | null | undefined,
+  f: number | null | undefined,
+  v: number | null | undefined,
+): SegmentoRfvKey {
+  if (r == null || f == null || v == null) return "sem_dados";
+  const soma = r + f + v;
+  if (soma >= 13) return "campeoes";
+  if (soma >= 10) return "leais";
+  if (soma >= 8) return "potenciais";
+  if (soma >= 6) return "atencao";
+  if (soma >= 4) return "em_risco";
+  return "perdidos";
+}
+
+function passaFiltroRfv(
+  seg: SegmentoRfvKey,
+  modo: string | null | undefined,
+  permitidos: string[] | null | undefined,
+): boolean {
+  if (modo !== "incluir") return true;
+  const lista = permitidos || [];
+  if (lista.length === 0) return true;
+  return lista.includes(seg);
+}
+
 function tenantDeveRodarAgora(horario: string, agoraBRT: Date): boolean {
   const [hStr, mStr] = (horario || "").split(":");
   const h = parseInt(hStr, 10);

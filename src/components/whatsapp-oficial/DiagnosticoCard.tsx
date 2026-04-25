@@ -235,11 +235,11 @@ export function DiagnosticoCard({
         )}
 
         {/* HMAC status */}
-        <div className="flex items-center gap-2 pt-2 border-t">
+        <div className="flex items-center gap-2 pt-2 border-t flex-wrap">
           {hmacStatus === null ? (
             <Badge variant="secondary" className="gap-1">
               <ShieldOff className="h-3 w-3" />
-              HMAC desativado (sem META_APP_SECRET)
+              HMAC: não validado (nenhum evento ainda ou META_APP_SECRET ausente)
             </Badge>
           ) : hmacStatus ? (
             <Badge
@@ -247,14 +247,20 @@ export function DiagnosticoCard({
               className="gap-1 bg-primary/15 text-primary border-primary/30 hover:bg-primary/15"
             >
               <ShieldCheck className="h-3 w-3" />
-              HMAC válido no último evento
+              HMAC: válido no último evento
             </Badge>
           ) : (
             <Badge variant="destructive" className="gap-1">
               <ShieldAlert className="h-3 w-3" />
-              HMAC inválido — verifique o App Secret
+              HMAC: inválido — verifique o META_APP_SECRET
             </Badge>
           )}
+          <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+            <Link to="/configuracoes/whatsapp-oficial?tab=auditoria">
+              <Bell className="h-3 w-3 mr-1" />
+              Ver alertas disparados
+            </Link>
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 pt-2 border-t">

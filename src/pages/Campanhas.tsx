@@ -468,6 +468,21 @@ export default function Campanhas() {
     setDestinatariosDetail((data as any[]) || []);
   }
 
+  // Realtime: refresh detail dialog when destinatarios change for the open campaign
+  useEffect(() => {
+    if (!detailDialog) return;
+    const channel = supabase
+      .channel(`camp-dest-${detailDialog}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "campanha_destinatarios", filter: `campanha_id=eq.${detailDialog}` },
+        () => { openDetail(detailDialog); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailDialog]);
+
   function resetForm() {
     setCanal("whatsapp");
     setNome("");

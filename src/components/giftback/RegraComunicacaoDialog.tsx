@@ -97,6 +97,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
       setTipoGatilho(regra.tipo_gatilho);
       setDiasOffset(String(regra.dias_offset ?? 0));
       setVariaveis((regra.template_variaveis as Record<string, string>) || {});
+      setFiltroRfvModo((regra.filtro_rfv_modo as "todos" | "incluir") || "todos");
+      setFiltroRfvSegmentos((regra.filtro_rfv_segmentos as string[]) || []);
       // Procura template pelo nome+lang
       const match = (templates || []).find(
         (t: any) => t.name === regra.template_name && t.language === regra.template_language,
@@ -109,6 +111,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
       setDiasOffset("0");
       setTemplateId("");
       setVariaveis({});
+      setFiltroRfvModo("todos");
+      setFiltroRfvSegmentos([]);
     }
   }, [open, regra, templates]);
 

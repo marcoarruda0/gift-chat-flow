@@ -186,6 +186,8 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
         template_language: templateAtual.language,
         template_components: templateAtual.components,
         template_variaveis: variaveis,
+        filtro_rfv_modo: filtroRfvModo,
+        filtro_rfv_segmentos: filtroRfvModo === "incluir" ? filtroRfvSegmentos : [],
       };
 
       if (regra?.id) {

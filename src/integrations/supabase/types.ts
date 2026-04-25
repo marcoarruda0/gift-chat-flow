@@ -1313,6 +1313,48 @@ export type Database = {
           },
         ]
       }
+      whatsapp_webhook_eventos: {
+        Row: {
+          conversas_criadas: number
+          erro_mensagem: string | null
+          id: string
+          mensagens_criadas: number
+          payload: Json
+          phone_number_id: string | null
+          processado_at: string | null
+          recebido_at: string
+          reprocessado_em: string | null
+          status: string
+          tenant_id: string | null
+        }
+        Insert: {
+          conversas_criadas?: number
+          erro_mensagem?: string | null
+          id?: string
+          mensagens_criadas?: number
+          payload: Json
+          phone_number_id?: string | null
+          processado_at?: string | null
+          recebido_at?: string
+          reprocessado_em?: string | null
+          status?: string
+          tenant_id?: string | null
+        }
+        Update: {
+          conversas_criadas?: number
+          erro_mensagem?: string | null
+          id?: string
+          mensagens_criadas?: number
+          payload?: Json
+          phone_number_id?: string | null
+          processado_at?: string | null
+          recebido_at?: string
+          reprocessado_em?: string | null
+          status?: string
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
       zapi_config: {
         Row: {
           client_token: string

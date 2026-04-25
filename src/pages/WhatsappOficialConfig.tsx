@@ -536,6 +536,10 @@ export default function WhatsappOficialConfig() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="templates" className="mt-0">
+          <TemplatesCard tenantId={tenantId ?? null} wabaId={wabaId} />
+        </TabsContent>
+
         <TabsContent value="auditoria" className="mt-0">
           <AuditoriaCard tenantId={tenantId ?? null} />
         </TabsContent>

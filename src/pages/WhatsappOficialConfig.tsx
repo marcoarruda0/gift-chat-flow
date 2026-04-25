@@ -37,6 +37,7 @@ export default function WhatsappOficialConfig() {
   const [testNumber, setTestNumber] = useState("");
   const [sending, setSending] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
 
   const loadDiagnostico = useCallback(async () => {
     if (!tenantId) return;

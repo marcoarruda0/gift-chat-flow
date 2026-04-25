@@ -126,14 +126,26 @@ export function AppSidebar() {
               {(hasRole("admin_tenant") || hasRole("admin_master")) && (
                 <>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={isActive("/relatorios")}>
+                    <SidebarMenuButton asChild isActive={isActive("/relatorios/atendimento")}>
                       <NavLink
                         to="/relatorios/atendimento"
                         className="hover:bg-sidebar-accent"
                         activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                       >
                         <BarChart3 className="h-4 w-4" />
-                        {!collapsed && <span>Relatórios</span>}
+                        {!collapsed && <span>Relatório Atendimento</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/relatorios/giftback")}>
+                      <NavLink
+                        to="/relatorios/giftback"
+                        className="hover:bg-sidebar-accent"
+                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                        {!collapsed && <span>Relatório Giftback</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

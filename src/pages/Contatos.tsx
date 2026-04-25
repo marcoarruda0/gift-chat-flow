@@ -13,8 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Upload, Download, Pencil, Trash2, MessageSquarePlus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import CamposDinamicos, { campoKey } from "@/components/contatos/CamposDinamicos";
+import { GENERO_OPCOES } from "@/lib/giftback-relatorio";
 import RfvBadge from "@/components/giftback/RfvBadge";
 
 interface ContatoForm {
@@ -23,6 +25,7 @@ interface ContatoForm {
   cpf: string;
   email: string;
   data_nascimento: string;
+  genero: string;
   endereco: string;
   notas: string;
   tags: string;
@@ -34,6 +37,7 @@ const emptyForm: ContatoForm = {
   cpf: "",
   email: "",
   data_nascimento: "",
+  genero: "",
   endereco: "",
   notas: "",
   tags: "",
@@ -87,6 +91,7 @@ export default function Contatos() {
         cpf: formData.cpf || null,
         email: formData.email || null,
         data_nascimento: formData.data_nascimento || null,
+        genero: formData.genero || null,
         endereco: formData.endereco || null,
         notas: formData.notas || null,
         tags: formData.tags ? formData.tags.split(",").map((t) => t.trim()) : [],
@@ -134,6 +139,7 @@ export default function Contatos() {
       cpf: contato.cpf || "",
       email: contato.email || "",
       data_nascimento: contato.data_nascimento || "",
+      genero: contato.genero || "",
       endereco: contato.endereco || "",
       notas: contato.notas || "",
       tags: (contato.tags || []).join(", "),

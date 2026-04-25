@@ -1,7 +1,23 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw, ShieldCheck, ShieldAlert, ShieldOff } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Link } from "react-router-dom";
+import {
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
+  AlertTriangle,
+  Zap,
+  RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldOff,
+  Bell,
+  ListChecks,
+} from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -23,6 +39,13 @@ interface Props {
   /** Reprocessa o último evento bruto recebido */
   onReprocessLast?: () => void | Promise<void>;
   reprocessing?: boolean;
+  /** Limite percentual configurável de erro (0-100) */
+  alertaTaxaErroPct: number;
+  /** Quantidade mínima de eventos em 24h para considerar o cálculo */
+  alertaMinEventos: number;
+  /** Salvar configuração de alerta */
+  onSaveAlertaConfig?: (taxaPct: number, minEventos: number) => void | Promise<void>;
+  savingAlerta?: boolean;
 }
 
 function formatRelative(iso: string | null): string {
@@ -51,6 +74,10 @@ export function DiagnosticoCard({
   subscribing,
   onReprocessLast,
   reprocessing,
+  alertaTaxaErroPct,
+  alertaMinEventos,
+  onSaveAlertaConfig,
+  savingAlerta,
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
@@ -58,6 +85,10 @@ export function DiagnosticoCard({
     totalEventos24h > 0
       ? Math.round(((totalEventos24h - errosWebhook24h) / totalEventos24h) * 100)
       : null;
+  const taxaErro =
+    totalEventos24h > 0 ? (errosWebhook24h / totalEventos24h) * 100 : 0;
+  const alertaAtivo =
+    totalEventos24h >= alertaMinEventos && taxaErro > alertaTaxaErroPct;
 
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
   let statusClass = "";
@@ -127,12 +158,33 @@ export function DiagnosticoCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={statusColor} className={`gap-1 ${statusClass}`}>
             {statusIcon}
             {statusLabel}
           </Badge>
+          <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+            <Link to="/configuracoes/whatsapp-oficial/eventos">
+              <ListChecks className="h-3 w-3 mr-1" />
+              Ver eventos
+            </Link>
+          </Button>
         </div>
+
+        {alertaAtivo && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 flex gap-2 items-start">
+            <Bell className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-sm">
+              <p className="font-medium text-destructive">
+                Taxa de erro acima do limite ({alertaTaxaErroPct}%)
+              </p>
+              <p className="text-destructive/90 text-xs mt-0.5">
+                {errosWebhook24h} de {totalEventos24h} eventos falharam nas últimas 24h (
+                {taxaErro.toFixed(1)}%). Verifique a página de eventos para investigar.
+              </p>
+            </div>
+          </div>
+        )}
 
         {instrucao && (
           <p className="text-sm text-muted-foreground border-l-2 border-primary/40 pl-3">
@@ -235,7 +287,78 @@ export function DiagnosticoCard({
             </p>
           </div>
         </div>
+
+        {onSaveAlertaConfig && (
+          <AlertaConfigInline
+            initialPct={alertaTaxaErroPct}
+            initialMin={alertaMinEventos}
+            onSave={onSaveAlertaConfig}
+            saving={!!savingAlerta}
+          />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+import { useState as useStateHook } from "react";
+
+function AlertaConfigInline({
+  initialPct,
+  initialMin,
+  onSave,
+  saving,
+}: {
+  initialPct: number;
+  initialMin: number;
+  onSave: (pct: number, min: number) => void | Promise<void>;
+  saving: boolean;
+}) {
+  const [pct, setPct] = useStateHook<number>(initialPct);
+  const [minEv, setMinEv] = useStateHook<number>(initialMin);
+  const dirty = pct !== initialPct || minEv !== initialMin;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Bell className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm font-medium">Alerta de taxa de erro</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Limite (%)</label>
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={pct}
+            onChange={(e) => setPct(Math.max(1, Math.min(100, Number(e.target.value) || 0)))}
+            className="h-9"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Mínimo de eventos (24h)</label>
+          <Input
+            type="number"
+            min={1}
+            value={minEv}
+            onChange={(e) => setMinEv(Math.max(1, Number(e.target.value) || 0))}
+            className="h-9"
+          />
+        </div>
+        <Button
+          size="sm"
+          onClick={() => onSave(pct, minEv)}
+          disabled={!dirty || saving}
+        >
+          {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+          Salvar
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Dispara aviso e registra na auditoria quando a taxa de erro do webhook ultrapassa o
+        limite e há ao menos o mínimo de eventos no período.
+      </p>
+    </div>
   );
 }

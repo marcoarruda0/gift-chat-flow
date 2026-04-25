@@ -1260,9 +1260,55 @@ export type Database = {
           },
         ]
       }
+      whatsapp_alertas: {
+        Row: {
+          created_at: string
+          detalhe: string | null
+          id: string
+          limite_pct: number
+          taxa_erro_pct: number
+          tenant_id: string
+          tipo: string
+          total_erros: number
+          total_eventos: number
+        }
+        Insert: {
+          created_at?: string
+          detalhe?: string | null
+          id?: string
+          limite_pct: number
+          taxa_erro_pct: number
+          tenant_id: string
+          tipo: string
+          total_erros: number
+          total_eventos: number
+        }
+        Update: {
+          created_at?: string
+          detalhe?: string | null
+          id?: string
+          limite_pct?: number
+          taxa_erro_pct?: number
+          tenant_id?: string
+          tipo?: string
+          total_erros?: number
+          total_eventos?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_alertas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_cloud_config: {
         Row: {
           access_token: string
+          alerta_min_eventos: number
+          alerta_taxa_erro_pct: number
           created_at: string
           display_phone: string | null
           id: string
@@ -1279,6 +1325,8 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          alerta_min_eventos?: number
+          alerta_taxa_erro_pct?: number
           created_at?: string
           display_phone?: string | null
           id?: string
@@ -1295,6 +1343,8 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          alerta_min_eventos?: number
+          alerta_taxa_erro_pct?: number
           created_at?: string
           display_phone?: string | null
           id?: string

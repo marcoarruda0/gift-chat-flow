@@ -42,6 +42,10 @@ export default function WhatsappOficialConfig() {
   const [sending, setSending] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [alertaTaxaErroPct, setAlertaTaxaErroPct] = useState<number>(20);
+  const [alertaMinEventos, setAlertaMinEventos] = useState<number>(10);
+  const [savingAlerta, setSavingAlerta] = useState(false);
+  const [ultimoAlertaAt, setUltimoAlertaAt] = useState<string | null>(null);
 
   const loadDiagnostico = useCallback(async () => {
     if (!tenantId) return;
@@ -58,6 +62,8 @@ export default function WhatsappOficialConfig() {
       setUltimaVerificacaoAt(d.ultima_verificacao_at || null);
       setUltimaMensagemAt(d.ultima_mensagem_at || null);
       setStatus(d.status || "desconectado");
+      if (typeof d.alerta_taxa_erro_pct === "number") setAlertaTaxaErroPct(d.alerta_taxa_erro_pct);
+      if (typeof d.alerta_min_eventos === "number") setAlertaMinEventos(d.alerta_min_eventos);
     }
 
     // Count incoming messages last 24h on canal=whatsapp_cloud
@@ -77,7 +83,8 @@ export default function WhatsappOficialConfig() {
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
       .gte("recebido_at", since);
-    setTotalEventos24h(totalEv || 0);
+    const totalEventos = totalEv || 0;
+    setTotalEventos24h(totalEventos);
 
     const { count: errosEv } = await supabase
       .from("whatsapp_webhook_eventos" as any)
@@ -85,7 +92,8 @@ export default function WhatsappOficialConfig() {
       .eq("tenant_id", tenantId)
       .eq("status", "erro")
       .gte("recebido_at", since);
-    setErrosWebhook24h(errosEv || 0);
+    const totalErros = errosEv || 0;
+    setErrosWebhook24h(totalErros);
 
     // Last HMAC status (most recent event with hmac_valido not null)
     const { data: lastHmac } = await supabase
@@ -98,8 +106,39 @@ export default function WhatsappOficialConfig() {
       .maybeSingle();
     setHmacStatus(lastHmac ? ((lastHmac as any).hmac_valido as boolean) : null);
 
+    // Latest recorded alert (used to debounce)
+    const { data: latestAlerta } = await supabase
+      .from("whatsapp_alertas" as any)
+      .select("created_at")
+      .eq("tenant_id", tenantId)
+      .eq("tipo", "taxa_erro_webhook")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastAlertaIso = (latestAlerta as any)?.created_at || null;
+    setUltimoAlertaAt(lastAlertaIso);
+
+    // Trigger alert audit if threshold breached and we haven't logged in last hour
+    const limiteAtual = (data as any)?.alerta_taxa_erro_pct ?? alertaTaxaErroPct;
+    const minAtual = (data as any)?.alerta_min_eventos ?? alertaMinEventos;
+    const taxaErroPct = totalEventos > 0 ? (totalErros / totalEventos) * 100 : 0;
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const recentAlert = lastAlertaIso && new Date(lastAlertaIso).getTime() > oneHourAgo;
+    if (totalEventos >= minAtual && taxaErroPct > limiteAtual && !recentAlert) {
+      await supabase.from("whatsapp_alertas" as any).insert({
+        tenant_id: tenantId,
+        tipo: "taxa_erro_webhook",
+        taxa_erro_pct: Number(taxaErroPct.toFixed(2)),
+        limite_pct: limiteAtual,
+        total_eventos: totalEventos,
+        total_erros: totalErros,
+        detalhe: `${totalErros}/${totalEventos} eventos com erro nas últimas 24h`,
+      });
+      setUltimoAlertaAt(new Date().toISOString());
+    }
+
     setDiagLoading(false);
-  }, [tenantId]);
+  }, [tenantId, alertaTaxaErroPct, alertaMinEventos]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -233,6 +272,30 @@ export default function WhatsappOficialConfig() {
     setReprocessing(false);
     loadDiagnostico();
   }, [loadDiagnostico]);
+
+  const handleSaveAlertaConfig = useCallback(
+    async (pct: number, minEv: number) => {
+      if (!existingId) {
+        toast.error("Salve as credenciais antes de configurar alertas");
+        return;
+      }
+      setSavingAlerta(true);
+      const { error } = await supabase
+        .from("whatsapp_cloud_config" as any)
+        .update({ alerta_taxa_erro_pct: pct, alerta_min_eventos: minEv })
+        .eq("id", existingId);
+      setSavingAlerta(false);
+      if (error) {
+        toast.error("Erro ao salvar: " + error.message);
+      } else {
+        setAlertaTaxaErroPct(pct);
+        setAlertaMinEventos(minEv);
+        toast.success("Configuração de alerta salva");
+        loadDiagnostico();
+      }
+    },
+    [existingId, loadDiagnostico]
+  );
 
   const handleSendTest = async () => {
     if (!testNumber.trim()) {
@@ -528,6 +591,10 @@ export default function WhatsappOficialConfig() {
             subscribing={subscribing}
             onReprocessLast={handleReprocessLast}
             reprocessing={reprocessing}
+            alertaTaxaErroPct={alertaTaxaErroPct}
+            alertaMinEventos={alertaMinEventos}
+            onSaveAlertaConfig={handleSaveAlertaConfig}
+            savingAlerta={savingAlerta}
           />
 
           {/* Testar envio */}

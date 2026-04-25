@@ -818,12 +818,64 @@ export type Database = {
           },
         ]
       }
+      giftback_config_rfv: {
+        Row: {
+          ativo: boolean
+          compra_minima: number | null
+          created_at: string
+          credito_maximo: number | null
+          id: string
+          max_resgate_pct: number | null
+          percentual: number | null
+          segmento: string
+          tenant_id: string
+          updated_at: string
+          validade_dias: number | null
+        }
+        Insert: {
+          ativo?: boolean
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          segmento: string
+          tenant_id: string
+          updated_at?: string
+          validade_dias?: number | null
+        }
+        Update: {
+          ativo?: boolean
+          compra_minima?: number | null
+          created_at?: string
+          credito_maximo?: number | null
+          id?: string
+          max_resgate_pct?: number | null
+          percentual?: number | null
+          segmento?: string
+          tenant_id?: string
+          updated_at?: string
+          validade_dias?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "giftback_config_rfv_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       giftback_movimentos: {
         Row: {
           compra_id: string | null
           contato_id: string
           created_at: string
           id: string
+          regra_percentual: number | null
+          segmento_rfv: string | null
           status: Database["public"]["Enums"]["giftback_status"] | null
           tenant_id: string
           tipo: Database["public"]["Enums"]["giftback_tipo"]
@@ -835,6 +887,8 @@ export type Database = {
           contato_id: string
           created_at?: string
           id?: string
+          regra_percentual?: number | null
+          segmento_rfv?: string | null
           status?: Database["public"]["Enums"]["giftback_status"] | null
           tenant_id: string
           tipo: Database["public"]["Enums"]["giftback_tipo"]
@@ -846,6 +900,8 @@ export type Database = {
           contato_id?: string
           created_at?: string
           id?: string
+          regra_percentual?: number | null
+          segmento_rfv?: string | null
           status?: Database["public"]["Enums"]["giftback_status"] | null
           tenant_id?: string
           tipo?: Database["public"]["Enums"]["giftback_tipo"]

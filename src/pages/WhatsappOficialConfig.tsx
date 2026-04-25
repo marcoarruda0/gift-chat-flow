@@ -591,6 +591,10 @@ export default function WhatsappOficialConfig() {
             subscribing={subscribing}
             onReprocessLast={handleReprocessLast}
             reprocessing={reprocessing}
+            alertaTaxaErroPct={alertaTaxaErroPct}
+            alertaMinEventos={alertaMinEventos}
+            onSaveAlertaConfig={handleSaveAlertaConfig}
+            savingAlerta={savingAlerta}
           />
 
           {/* Testar envio */}

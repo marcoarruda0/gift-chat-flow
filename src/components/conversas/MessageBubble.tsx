@@ -150,6 +150,7 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
           isOutgoing ? "opacity-70" : "text-muted-foreground"
         )}>
           {format(new Date(createdAt), "HH:mm")}
+          {renderDeliveryIcon()}
         </span>
       </div>
     </div>

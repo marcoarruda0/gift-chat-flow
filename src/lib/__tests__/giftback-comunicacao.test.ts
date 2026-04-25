@@ -5,6 +5,8 @@ import {
   montarComponentsTemplate,
   buildPreviewText,
   tenantDeveRodarAgora,
+  segmentoFromSoma,
+  contatoPassaFiltroRfv,
 } from "../giftback-comunicacao";
 
 describe("buildVarsMap", () => {

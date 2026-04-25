@@ -18,6 +18,7 @@ import {
   ShieldOff,
   ChevronDown,
   ChevronRight,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -134,39 +135,68 @@ export default function WhatsappWebhookEventos() {
   const hmacBadge = (v: boolean | null) => {
     if (v === null)
       return (
-        <span title="HMAC não validado" className="inline-flex items-center">
-          <ShieldOff className="h-3.5 w-3.5 text-muted-foreground" />
-        </span>
+        <Badge variant="secondary" className="gap-1 text-[10px] py-0 h-5">
+          <ShieldOff className="h-3 w-3" />
+          HMAC: não validado
+        </Badge>
       );
     if (v)
       return (
-        <span title="HMAC válido" className="inline-flex items-center">
-          <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-        </span>
+        <Badge
+          variant="default"
+          className="gap-1 text-[10px] py-0 h-5 bg-primary/15 text-primary border-primary/30 hover:bg-primary/15"
+        >
+          <ShieldCheck className="h-3 w-3" />
+          HMAC: válido
+        </Badge>
       );
     return (
-      <span title="HMAC inválido" className="inline-flex items-center">
-        <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
-      </span>
+      <Badge variant="destructive" className="gap-1 text-[10px] py-0 h-5">
+        <ShieldAlert className="h-3 w-3" />
+        HMAC: inválido
+      </Badge>
     );
   };
 
-  const previewPayload = (payload: any): string => {
+  const copyPhone = (phone: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(phone);
+    toast.success("phone_number_id copiado");
+  };
+
+  const summarizePayload = (payload: any): string[] => {
     try {
       const change = payload?.entry?.[0]?.changes?.[0];
       const value = change?.value || {};
-      const parts: string[] = [];
-      if (value.metadata?.display_phone_number)
-        parts.push(`from: ${value.metadata.display_phone_number}`);
-      if (value.messages?.length) parts.push(`${value.messages.length} msg`);
-      if (value.statuses?.length) parts.push(`${value.statuses.length} status`);
-      if (value.contacts?.length) parts.push(`${value.contacts.length} contact`);
-      if (parts.length === 0) return JSON.stringify(payload).slice(0, 80) + "…";
-      return parts.join(" · ");
+      const lines: string[] = [];
+      if (value.metadata?.display_phone_number) {
+        lines.push(`📞 De: ${value.metadata.display_phone_number}`);
+      }
+      if (value.contacts?.length) {
+        const c = value.contacts[0];
+        lines.push(`👤 ${c.profile?.name || "—"} (${c.wa_id || "?"})`);
+      }
+      (value.messages || []).forEach((m: any, i: number) => {
+        const tipo = m.type || "?";
+        const preview =
+          m.text?.body ||
+          m.button?.text ||
+          m.interactive?.button_reply?.title ||
+          m.interactive?.list_reply?.title ||
+          (m[tipo]?.caption ?? "") ||
+          `[${tipo}]`;
+        lines.push(`💬 #${i + 1} ${tipo}: ${String(preview).slice(0, 140)}`);
+      });
+      (value.statuses || []).forEach((s: any, i: number) => {
+        lines.push(`✅ status #${i + 1}: ${s.status}`);
+      });
+      return lines.length ? lines : [JSON.stringify(payload).slice(0, 80) + "…"];
     } catch {
-      return "—";
+      return ["—"];
     }
   };
+
+  const previewPayload = (payload: any): string => summarizePayload(payload)[0] || "—";
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -272,9 +302,22 @@ export default function WhatsappWebhookEventos() {
                             {new Date(ev.recebido_at).toLocaleString("pt-BR")}
                           </span>
                           {ev.phone_number_id && (
-                            <code className="text-xs bg-muted px-1 rounded">
-                              {ev.phone_number_id}
-                            </code>
+                            <span
+                              className="inline-flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <code className="text-xs bg-muted px-1 rounded font-mono">
+                                {ev.phone_number_id}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={(e) => copyPhone(ev.phone_number_id!, e)}
+                                className="text-muted-foreground hover:text-foreground"
+                                title="Copiar phone_number_id"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </span>
                           )}
                           <span className="text-xs text-muted-foreground">
                             msgs: {ev.mensagens_criadas} · conv: {ev.conversas_criadas}
@@ -311,19 +354,38 @@ export default function WhatsappWebhookEventos() {
                   </div>
                   {isExpanded && (
                     <div className="border-t border-border bg-background">
-                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border flex items-center justify-between">
+                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border flex items-center justify-between flex-wrap gap-2">
                         <span>
                           ID: <code className="bg-muted px-1 rounded">{ev.id}</code>
                         </span>
                         {ev.payload_hash && (
                           <span>
-                            hash: <code className="bg-muted px-1 rounded">{ev.payload_hash.slice(0, 16)}…</code>
+                            hash:{" "}
+                            <code className="bg-muted px-1 rounded">
+                              {ev.payload_hash.slice(0, 16)}…
+                            </code>
                           </span>
                         )}
                       </div>
-                      <pre className="text-xs p-3 overflow-x-auto max-h-96">
-                        {JSON.stringify(ev.payload, null, 2)}
-                      </pre>
+                      <div className="px-3 py-2 border-b border-border bg-muted/20 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                          Resumo
+                        </p>
+                        {summarizePayload(ev.payload).map((line, i) => (
+                          <p key={i} className="text-xs">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                      <details className="group">
+                        <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground select-none border-b border-border bg-background">
+                          <span className="group-open:hidden">▸ Mostrar payload completo (JSON)</span>
+                          <span className="hidden group-open:inline">▾ Ocultar payload completo (JSON)</span>
+                        </summary>
+                        <pre className="text-xs p-3 overflow-x-auto max-h-96 bg-background">
+                          {JSON.stringify(ev.payload, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   )}
                 </div>

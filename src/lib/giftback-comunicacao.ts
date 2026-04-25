@@ -149,6 +149,50 @@ export function tenantDeveRodarAgora(
   return diff <= toleranciaMin;
 }
 
+/**
+ * Deriva o segmento RFV a partir das três notas (recência, frequência, valor).
+ * Mantida em sincronia com src/lib/rfv-segments.ts → getSegmentoBySoma.
+ * Retorna a chave do segmento (string) para uso em filtros.
+ */
+export type SegmentoRfvKey =
+  | "campeoes"
+  | "leais"
+  | "potenciais"
+  | "atencao"
+  | "em_risco"
+  | "perdidos"
+  | "sem_dados";
+
+export function segmentoFromSoma(
+  r: number | null | undefined,
+  f: number | null | undefined,
+  v: number | null | undefined,
+): SegmentoRfvKey {
+  if (r == null || f == null || v == null) return "sem_dados";
+  const soma = r + f + v;
+  if (soma >= 13) return "campeoes";
+  if (soma >= 10) return "leais";
+  if (soma >= 8) return "potenciais";
+  if (soma >= 6) return "atencao";
+  if (soma >= 4) return "em_risco";
+  return "perdidos";
+}
+
+/**
+ * Verifica se um contato passa pelo filtro de segmento RFM da regra.
+ * @param modo "todos" = passa sempre; "incluir" = só passa se segmento estiver na lista
+ */
+export function contatoPassaFiltroRfv(
+  segmentoContato: SegmentoRfvKey,
+  modo: string | null | undefined,
+  segmentosPermitidos: string[] | null | undefined,
+): boolean {
+  if (modo !== "incluir") return true;
+  const lista = segmentosPermitidos || [];
+  if (lista.length === 0) return true;
+  return lista.includes(segmentoContato);
+}
+
 export const VARIAVEIS_DISPONIVEIS: Array<{ key: string; label: string; exemplo: string }> = [
   { key: "nome_cliente", label: "Nome do cliente", exemplo: "Maria Silva" },
   { key: "nome_empresa", label: "Nome da empresa/loja", exemplo: "Loja Exemplo" },

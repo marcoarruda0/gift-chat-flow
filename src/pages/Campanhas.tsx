@@ -187,6 +187,19 @@ export default function Campanhas() {
       });
   }, [tenantId]);
 
+  // Check if WhatsApp Cloud is connected for this tenant
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase
+      .from("whatsapp_cloud_config")
+      .select("status")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setCloudConectado(data?.status === "conectado");
+      });
+  }, [tenantId]);
+
   const allTags = useMemo(() => {
     const set = new Set<string>();
     contatos.forEach((c) => c.tags?.forEach((t) => set.add(t)));

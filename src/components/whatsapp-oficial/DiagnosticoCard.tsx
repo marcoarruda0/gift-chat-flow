@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw, ShieldCheck, ShieldAlert, ShieldOff } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -9,6 +9,12 @@ interface Props {
   ultimaAtividadeAt: string | null;
   /** Mensagens reais de cliente recebidas nas últimas 24h */
   msgsRecebidas24h: number;
+  /** Eventos com status=erro nas últimas 24h */
+  errosWebhook24h: number;
+  /** Total de eventos nas últimas 24h (denominador da taxa) */
+  totalEventos24h: number;
+  /** Estado do HMAC: null=sem secret configurado, true=último válido, false=último inválido */
+  hmacStatus: boolean | null;
   diagLoading: boolean;
   onRefresh: () => void;
   /** Re-assinar campo `messages` no WABA via Graph API */

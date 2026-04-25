@@ -781,6 +781,42 @@ export default function Campanhas() {
               </>
             )}
 
+            {canal === "whatsapp_cloud" && (
+              <>
+                <TemplateCampanhaPicker
+                  templateId={templateId}
+                  variaveis={templateVariaveis}
+                  sampleContact={contatosFiltrados[0]}
+                  onChange={(d) => {
+                    setTemplateId(d.templateId);
+                    setTemplateName(d.templateName);
+                    setTemplateLanguage(d.templateLanguage);
+                    setTemplateComponents(d.templateComponents);
+                    setTemplateVariaveis(d.variaveis);
+                  }}
+                />
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-2">
+                  <p className="text-amber-600 dark:text-amber-400 font-medium">
+                    Importante sobre disparos via API Oficial
+                  </p>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                    <li>Cada conversa iniciada por template é tarifada pela Meta conforme a categoria.</li>
+                    <li>Templates da categoria <strong>Marketing</strong> têm limite de frequência por destinatário.</li>
+                    <li>O envio respeita os tiers de mensagens da sua conta WABA (250/1k/10k/100k por 24h).</li>
+                  </ul>
+                  <label className="flex items-start gap-2 mt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={optInConfirmado}
+                      onChange={(e) => setOptInConfirmado(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>Confirmo que os destinatários deram <strong>opt-in</strong> para receber mensagens.</span>
+                  </label>
+                </div>
+              </>
+            )}
+
             {canal === "email" && (
               <>
                 <div>

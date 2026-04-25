@@ -21,6 +21,7 @@ import {
   resolverRegrasGiftback,
   calcularCompraMinima,
   calcularTransacaoGiftback,
+  parseValorCompra,
   type GiftbackConfigRfvOverride,
   type AcaoSobreAtivo,
 } from "@/lib/giftback-rules";

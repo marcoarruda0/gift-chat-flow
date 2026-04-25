@@ -31,6 +31,9 @@ export default function WhatsappOficialConfig() {
   const [ultimaVerificacaoAt, setUltimaVerificacaoAt] = useState<string | null>(null);
   const [ultimaMensagemAt, setUltimaMensagemAt] = useState<string | null>(null);
   const [msgsRecebidas24h, setMsgsRecebidas24h] = useState<number>(0);
+  const [errosWebhook24h, setErrosWebhook24h] = useState<number>(0);
+  const [totalEventos24h, setTotalEventos24h] = useState<number>(0);
+  const [hmacStatus, setHmacStatus] = useState<boolean | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [existingId, setExistingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +70,34 @@ export default function WhatsappOficialConfig() {
       .gte("created_at", since)
       .not("metadata->>wa_message_id", "is", null);
     setMsgsRecebidas24h(count || 0);
+
+    // Webhook event metrics (24h)
+    const { count: totalEv } = await supabase
+      .from("whatsapp_webhook_eventos" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .gte("recebido_at", since);
+    setTotalEventos24h(totalEv || 0);
+
+    const { count: errosEv } = await supabase
+      .from("whatsapp_webhook_eventos" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("status", "erro")
+      .gte("recebido_at", since);
+    setErrosWebhook24h(errosEv || 0);
+
+    // Last HMAC status (most recent event with hmac_valido not null)
+    const { data: lastHmac } = await supabase
+      .from("whatsapp_webhook_eventos" as any)
+      .select("hmac_valido")
+      .eq("tenant_id", tenantId)
+      .not("hmac_valido", "is", null)
+      .order("recebido_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setHmacStatus(lastHmac ? ((lastHmac as any).hmac_valido as boolean) : null);
+
     setDiagLoading(false);
   }, [tenantId]);
 
@@ -488,6 +519,9 @@ export default function WhatsappOficialConfig() {
             ultimaVerificacaoAt={ultimaVerificacaoAt}
             ultimaAtividadeAt={ultimaMensagemAt}
             msgsRecebidas24h={msgsRecebidas24h}
+            errosWebhook24h={errosWebhook24h}
+            totalEventos24h={totalEventos24h}
+            hmacStatus={hmacStatus}
             diagLoading={diagLoading}
             onRefresh={loadDiagnostico}
             onSubscribeMessages={handleSubscribeMessages}

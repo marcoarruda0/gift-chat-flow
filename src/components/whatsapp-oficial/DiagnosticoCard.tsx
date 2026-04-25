@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw, ShieldCheck, ShieldAlert, ShieldOff } from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -9,6 +9,12 @@ interface Props {
   ultimaAtividadeAt: string | null;
   /** Mensagens reais de cliente recebidas nas últimas 24h */
   msgsRecebidas24h: number;
+  /** Eventos com status=erro nas últimas 24h */
+  errosWebhook24h: number;
+  /** Total de eventos nas últimas 24h (denominador da taxa) */
+  totalEventos24h: number;
+  /** Estado do HMAC: null=sem secret configurado, true=último válido, false=último inválido */
+  hmacStatus: boolean | null;
   diagLoading: boolean;
   onRefresh: () => void;
   /** Re-assinar campo `messages` no WABA via Graph API */
@@ -36,6 +42,9 @@ export function DiagnosticoCard({
   ultimaVerificacaoAt,
   ultimaAtividadeAt,
   msgsRecebidas24h,
+  errosWebhook24h,
+  totalEventos24h,
+  hmacStatus,
   diagLoading,
   onRefresh,
   onSubscribeMessages,
@@ -45,6 +54,10 @@ export function DiagnosticoCard({
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
+  const taxaSucesso =
+    totalEventos24h > 0
+      ? Math.round(((totalEventos24h - errosWebhook24h) / totalEventos24h) * 100)
+      : null;
 
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
   let statusClass = "";
@@ -169,18 +182,57 @@ export function DiagnosticoCard({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">
+        {/* HMAC status */}
+        <div className="flex items-center gap-2 pt-2 border-t">
+          {hmacStatus === null ? (
+            <Badge variant="secondary" className="gap-1">
+              <ShieldOff className="h-3 w-3" />
+              HMAC desativado (sem META_APP_SECRET)
+            </Badge>
+          ) : hmacStatus ? (
+            <Badge
+              variant="default"
+              className="gap-1 bg-primary/15 text-primary border-primary/30 hover:bg-primary/15"
+            >
+              <ShieldCheck className="h-3 w-3" />
+              HMAC válido no último evento
+            </Badge>
+          ) : (
+            <Badge variant="destructive" className="gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              HMAC inválido — verifique o App Secret
+            </Badge>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 pt-2 border-t">
           <div>
-            <p className="text-xs text-muted-foreground">Última verificação (GET)</p>
+            <p className="text-xs text-muted-foreground">Última verificação</p>
             <p className="text-sm font-medium">{formatRelative(ultimaVerificacaoAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Última atividade (POST)</p>
+            <p className="text-xs text-muted-foreground">Última atividade</p>
             <p className="text-sm font-medium">{formatRelative(ultimaAtividadeAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Mensagens reais (24h)</p>
+            <p className="text-xs text-muted-foreground">Msgs reais (24h)</p>
             <p className="text-sm font-medium">{msgsRecebidas24h}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Erros webhook (24h)</p>
+            <p
+              className={`text-sm font-medium ${
+                errosWebhook24h > 0 ? "text-destructive" : ""
+              }`}
+            >
+              {errosWebhook24h}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Taxa de sucesso</p>
+            <p className="text-sm font-medium">
+              {taxaSucesso === null ? "—" : `${taxaSucesso}%`}
+            </p>
           </div>
         </div>
       </CardContent>

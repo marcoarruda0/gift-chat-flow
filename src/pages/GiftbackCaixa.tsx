@@ -319,7 +319,7 @@ export default function GiftbackCaixa() {
         .insert({
           tenant_id: profile!.tenant_id!,
           contato_id: contato!.id,
-          valor: valorCompraNum,
+          valor: valorValidado,
           giftback_gerado: transacao.gbGerado,
           giftback_usado: transacao.gbUsado,
           operador_id: user!.id,

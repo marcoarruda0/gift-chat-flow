@@ -258,6 +258,23 @@ export default function Contatos() {
                     <Input type="date" value={form.data_nascimento} onChange={(e) => setForm({ ...form, data_nascimento: e.target.value })} />
                   </div>
                   <div className="space-y-2">
+                    <Label>Gênero</Label>
+                    <Select
+                      value={form.genero || "__none__"}
+                      onValueChange={(v) => setForm({ ...form, genero: v === "__none__" ? "" : v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Não selecionado</SelectItem>
+                        {GENERO_OPCOES.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label>Tags (separadas por vírgula)</Label>
                     <Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="vip, cliente novo" />
                   </div>

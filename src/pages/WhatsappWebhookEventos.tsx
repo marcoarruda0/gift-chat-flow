@@ -302,9 +302,22 @@ export default function WhatsappWebhookEventos() {
                             {new Date(ev.recebido_at).toLocaleString("pt-BR")}
                           </span>
                           {ev.phone_number_id && (
-                            <code className="text-xs bg-muted px-1 rounded">
-                              {ev.phone_number_id}
-                            </code>
+                            <span
+                              className="inline-flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <code className="text-xs bg-muted px-1 rounded font-mono">
+                                {ev.phone_number_id}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={(e) => copyPhone(ev.phone_number_id!, e)}
+                                className="text-muted-foreground hover:text-foreground"
+                                title="Copiar phone_number_id"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </span>
                           )}
                           <span className="text-xs text-muted-foreground">
                             msgs: {ev.mensagens_criadas} · conv: {ev.conversas_criadas}
@@ -341,19 +354,38 @@ export default function WhatsappWebhookEventos() {
                   </div>
                   {isExpanded && (
                     <div className="border-t border-border bg-background">
-                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border flex items-center justify-between">
+                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border flex items-center justify-between flex-wrap gap-2">
                         <span>
                           ID: <code className="bg-muted px-1 rounded">{ev.id}</code>
                         </span>
                         {ev.payload_hash && (
                           <span>
-                            hash: <code className="bg-muted px-1 rounded">{ev.payload_hash.slice(0, 16)}…</code>
+                            hash:{" "}
+                            <code className="bg-muted px-1 rounded">
+                              {ev.payload_hash.slice(0, 16)}…
+                            </code>
                           </span>
                         )}
                       </div>
-                      <pre className="text-xs p-3 overflow-x-auto max-h-96">
-                        {JSON.stringify(ev.payload, null, 2)}
-                      </pre>
+                      <div className="px-3 py-2 border-b border-border bg-muted/20 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                          Resumo
+                        </p>
+                        {summarizePayload(ev.payload).map((line, i) => (
+                          <p key={i} className="text-xs">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                      <details className="group">
+                        <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground select-none border-b border-border bg-background">
+                          <span className="group-open:hidden">▸ Mostrar payload completo (JSON)</span>
+                          <span className="hidden group-open:inline">▾ Ocultar payload completo (JSON)</span>
+                        </summary>
+                        <pre className="text-xs p-3 overflow-x-auto max-h-96 bg-background">
+                          {JSON.stringify(ev.payload, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   )}
                 </div>

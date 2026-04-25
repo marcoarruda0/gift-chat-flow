@@ -103,7 +103,7 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
     let txt = bodyComponent.text as string;
     for (const n of bodyPlaceholders) {
       const val = vars[String(n)] || `{{${n}}}`;
-      txt = txt.replaceAll(`{{${n}}}`, val);
+      txt = txt.split(`{{${n}}}`).join(val);
     }
     return txt;
   }, [bodyComponent, bodyPlaceholders, vars]);

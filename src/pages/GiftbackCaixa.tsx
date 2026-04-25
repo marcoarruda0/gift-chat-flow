@@ -11,7 +11,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Search, Gift, CheckCircle, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
-import { resolverRegrasGiftback, type GiftbackConfigRfvOverride } from "@/lib/giftback-rules";
+import {
+  resolverRegrasGiftback,
+  calcularCompraMinima,
+  type GiftbackConfigRfvOverride,
+} from "@/lib/giftback-rules";
 import { SEGMENTOS, type SegmentoKey } from "@/lib/rfv-segments";
 
 interface Contato {
@@ -32,6 +36,8 @@ interface Resumo {
   novoSaldo: number;
   segmentoAplicado: SegmentoKey | null;
   percentualAplicado: number;
+  multiplicadorAplicado: number;
+  compraMinimaParaGerar: number;
   origem: "override" | "global";
 }
 
@@ -61,7 +67,7 @@ export default function GiftbackCaixa() {
     queryKey: ["giftback-config-rfv"],
     queryFn: async () => {
       const { data } = await supabase.from("giftback_config_rfv").select("*").order("segmento");
-      return (data || []) as GiftbackConfigRfvOverride[];
+      return (data || []) as unknown as GiftbackConfigRfvOverride[];
     },
     enabled: !!profile?.tenant_id,
   });
@@ -73,6 +79,10 @@ export default function GiftbackCaixa() {
         contato,
       })
     : null;
+
+  const compraMinimaAtual = regrasAtuais
+    ? calcularCompraMinima(contato!.saldo_giftback, regrasAtuais.multiplicador_compra_minima)
+    : 0;
 
   const buscarContato = async () => {
     if (!busca.trim()) return;
@@ -100,22 +110,17 @@ export default function GiftbackCaixa() {
         contato: contato!,
       });
 
-      // Validações de regras resolvidas
-      if (valor < regras.compra_minima) {
-        throw new Error(`Compra mínima para este cliente: R$ ${regras.compra_minima.toFixed(2)}`);
-      }
+      const compraMinimaParaGerar = calcularCompraMinima(
+        contato!.saldo_giftback,
+        regras.multiplicador_compra_minima,
+      );
 
+      // Resgate: limitado a min(saldo, valor da compra)
       const gbUsadoSolicitado = aplicarGiftback ? parseFloat(valorGiftback) || 0 : 0;
-      const limiteResgate = (valor * regras.max_resgate_pct) / 100;
-      const gbUsado = Math.min(gbUsadoSolicitado, contato!.saldo_giftback, limiteResgate);
+      const gbUsado = Math.min(gbUsadoSolicitado, contato!.saldo_giftback, valor);
 
-      if (gbUsadoSolicitado > limiteResgate) {
-        throw new Error(
-          `Resgate máximo permitido: R$ ${limiteResgate.toFixed(2)} (${regras.max_resgate_pct}% da compra)`,
-        );
-      }
-
-      const gbGerado = Math.min(valor * (regras.percentual / 100), regras.credito_maximo);
+      // Geração: só se a compra atinge o mínimo (saldo × multiplicador).
+      const gbGerado = valor >= compraMinimaParaGerar ? valor * (regras.percentual / 100) : 0;
 
       // Insert compra
       const { data: compra, error: compraErr } = await supabase
@@ -172,8 +177,10 @@ export default function GiftbackCaixa() {
         novoSaldo,
         segmentoAplicado: regras.segmentoAplicado,
         percentualAplicado: regras.percentual,
+        multiplicadorAplicado: regras.multiplicador_compra_minima,
+        compraMinimaParaGerar,
         origem: regras.origem,
-      };
+      } satisfies Resumo;
     },
     onSuccess: (data) => {
       setResumo(data);
@@ -192,6 +199,12 @@ export default function GiftbackCaixa() {
 
   const nomeSegmentoResumo = (key: SegmentoKey | null) =>
     key ? SEGMENTOS[key].nome : "Sem RFV";
+
+  // Limites de resgate exibidos na UI
+  const valorCompraNum = parseFloat(valorCompra) || 0;
+  const maxResgate = contato
+    ? Math.min(contato.saldo_giftback, valorCompraNum || contato.saldo_giftback)
+    : 0;
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
@@ -259,10 +272,16 @@ export default function GiftbackCaixa() {
                     : "Padrão (global)"}
                 </div>
                 <div>
-                  {regrasAtuais.percentual}% de retorno · validade {regrasAtuais.validade_dias} dias · resgate até {regrasAtuais.max_resgate_pct}%
+                  {regrasAtuais.percentual}% de retorno · validade {regrasAtuais.validade_dias} dias · multiplicador {regrasAtuais.multiplicador_compra_minima}×
                 </div>
-                {regrasAtuais.compra_minima > 0 && (
-                  <div>Compra mínima: R$ {regrasAtuais.compra_minima.toFixed(2)}</div>
+                {compraMinimaAtual > 0 ? (
+                  <div>
+                    Para gerar novo giftback, compra precisa ser ≥{" "}
+                    <strong>R$ {compraMinimaAtual.toFixed(2)}</strong> (saldo R$ {Number(contato.saldo_giftback).toFixed(2)} ×{" "}
+                    {regrasAtuais.multiplicador_compra_minima})
+                  </div>
+                ) : (
+                  <div>Qualquer compra gera giftback</div>
                 )}
               </div>
             )}
@@ -281,6 +300,11 @@ export default function GiftbackCaixa() {
               <div className="space-y-2">
                 <Label>Valor da Compra (R$)</Label>
                 <Input type="number" step="0.01" min="0.01" value={valorCompra} onChange={(e) => setValorCompra(e.target.value)} required />
+                {valorCompraNum > 0 && compraMinimaAtual > 0 && valorCompraNum < compraMinimaAtual && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ Esta compra não atinge o mínimo de R$ {compraMinimaAtual.toFixed(2)} — não gerará novo giftback.
+                  </p>
+                )}
               </div>
               {contato.saldo_giftback > 0 && (
                 <>
@@ -291,14 +315,13 @@ export default function GiftbackCaixa() {
                   {aplicarGiftback && (
                     <div className="space-y-2">
                       <Label>
-                        Valor a utilizar (máx: R$ {Number(contato.saldo_giftback).toFixed(2)}
-                        {regrasAtuais && ` · até ${regrasAtuais.max_resgate_pct}% da compra`})
+                        Valor a utilizar (máx: R$ {maxResgate.toFixed(2)})
                       </Label>
                       <Input
                         type="number"
                         step="0.01"
                         min="0"
-                        max={contato.saldo_giftback}
+                        max={maxResgate}
                         value={valorGiftback}
                         onChange={(e) => setValorGiftback(e.target.value)}
                       />
@@ -332,6 +355,14 @@ export default function GiftbackCaixa() {
               <span>
                 {nomeSegmentoResumo(resumo.segmentoAplicado)} ({resumo.percentualAplicado}%
                 {resumo.origem === "global" ? " · padrão" : ""})
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Compra mínima p/ gerar</span>
+              <span>
+                {resumo.compraMinimaParaGerar > 0
+                  ? `R$ ${resumo.compraMinimaParaGerar.toFixed(2)} (${resumo.multiplicadorAplicado}× saldo anterior)`
+                  : "Sem mínimo"}
               </span>
             </div>
             <hr />

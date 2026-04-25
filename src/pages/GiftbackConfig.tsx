@@ -23,9 +23,7 @@ export default function GiftbackConfig() {
 
   const [percentual, setPercentual] = useState("10");
   const [validadeDias, setValidadeDias] = useState("30");
-  const [compraMinima, setCompraMinima] = useState("0");
-  const [creditoMaximo, setCreditoMaximo] = useState("9999");
-  const [maxResgatePct, setMaxResgatePct] = useState("100");
+  const [multiplicador, setMultiplicador] = useState("4");
 
   const { data: config, isLoading } = useQuery({
     queryKey: ["giftback-config"],
@@ -40,9 +38,7 @@ export default function GiftbackConfig() {
     if (config) {
       setPercentual(config.percentual?.toString() || "10");
       setValidadeDias(config.validade_dias?.toString() || "30");
-      setCompraMinima(config.compra_minima?.toString() || "0");
-      setCreditoMaximo(config.credito_maximo?.toString() || "9999");
-      setMaxResgatePct(config.max_resgate_pct?.toString() || "100");
+      setMultiplicador(config.multiplicador_compra_minima?.toString() ?? "4");
     }
   }, [config]);
 
@@ -65,9 +61,7 @@ export default function GiftbackConfig() {
         tenant_id: profile!.tenant_id!,
         percentual: parseFloat(percentual),
         validade_dias: parseInt(validadeDias),
-        compra_minima: parseFloat(compraMinima),
-        credito_maximo: parseFloat(creditoMaximo),
-        max_resgate_pct: parseFloat(maxResgatePct),
+        multiplicador_compra_minima: parseInt(multiplicador) || 0,
       };
       if (config?.id) {
         const { error } = await supabase.from("giftback_config").update(payload).eq("id", config.id);
@@ -131,7 +125,7 @@ export default function GiftbackConfig() {
             <CardContent>
               {isLoading ? (
                 <div className="space-y-4">
-                  {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4">
@@ -144,17 +138,21 @@ export default function GiftbackConfig() {
                       <Label>Validade (dias)</Label>
                       <Input type="number" value={validadeDias} onChange={(e) => setValidadeDias(e.target.value)} />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Compra Mínima (R$)</Label>
-                      <Input type="number" step="0.01" value={compraMinima} onChange={(e) => setCompraMinima(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Crédito Máximo por Transação (R$)</Label>
-                      <Input type="number" step="0.01" value={creditoMaximo} onChange={(e) => setCreditoMaximo(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>% Máximo de Resgate por Compra</Label>
-                      <Input type="number" step="0.01" value={maxResgatePct} onChange={(e) => setMaxResgatePct(e.target.value)} />
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label>Multiplicador da compra mínima</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={multiplicador}
+                        onChange={(e) => setMultiplicador(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Para gerar novo giftback, a compra precisa ser de pelo menos{" "}
+                        <strong>multiplicador × saldo de giftback do cliente</strong>. Ex.: cliente com R$ 100 de
+                        saldo e multiplicador <strong>4</strong> precisa gastar ≥ R$ 400. Use <strong>0</strong>{" "}
+                        para desativar a regra (qualquer compra gera giftback).
+                      </p>
                     </div>
                   </div>
                   <Button type="submit" disabled={saveMutation.isPending}>

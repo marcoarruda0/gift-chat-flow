@@ -373,7 +373,12 @@ export default function Campanhas() {
         .insert({
           tenant_id: tenantId,
           nome: nome.trim(),
-          mensagem: canal === "whatsapp" ? mensagem.trim() : (emailAssunto.trim() || ""),
+          mensagem:
+            canal === "whatsapp"
+              ? mensagem.trim()
+              : canal === "whatsapp_cloud"
+                ? `[Template: ${templateName}]`
+                : (emailAssunto.trim() || ""),
           tipo_filtro: tipoFiltro as any,
           filtro_valor:
             tipoFiltro === "tag"
@@ -394,6 +399,11 @@ export default function Campanhas() {
           email_assunto: canal === "email" ? emailAssunto.trim() : null,
           email_html: canal === "email" ? emailHtml : null,
           email_preview: canal === "email" ? emailPreview.trim() : null,
+          template_id: canal === "whatsapp_cloud" ? templateId : null,
+          template_name: canal === "whatsapp_cloud" ? templateName : null,
+          template_language: canal === "whatsapp_cloud" ? templateLanguage : null,
+          template_components: canal === "whatsapp_cloud" ? templateComponents : [],
+          template_variaveis: canal === "whatsapp_cloud" ? templateVariaveis : {},
         } as any)
         .select()
         .single();

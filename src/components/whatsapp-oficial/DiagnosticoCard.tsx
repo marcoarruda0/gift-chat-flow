@@ -42,6 +42,9 @@ export function DiagnosticoCard({
   ultimaVerificacaoAt,
   ultimaAtividadeAt,
   msgsRecebidas24h,
+  errosWebhook24h,
+  totalEventos24h,
+  hmacStatus,
   diagLoading,
   onRefresh,
   onSubscribeMessages,
@@ -51,6 +54,10 @@ export function DiagnosticoCard({
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;
+  const taxaSucesso =
+    totalEventos24h > 0
+      ? Math.round(((totalEventos24h - errosWebhook24h) / totalEventos24h) * 100)
+      : null;
 
   let statusColor: "destructive" | "secondary" | "default" = "destructive";
   let statusClass = "";

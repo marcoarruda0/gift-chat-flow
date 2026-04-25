@@ -192,7 +192,7 @@ export function DiagnosticoCard({
           ) : hmacStatus ? (
             <Badge
               variant="default"
-              className="gap-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15"
+              className="gap-1 bg-primary/15 text-primary border-primary/30 hover:bg-primary/15"
             >
               <ShieldCheck className="h-3 w-3" />
               HMAC válido no último evento

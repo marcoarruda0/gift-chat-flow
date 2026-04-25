@@ -31,6 +31,9 @@ export default function WhatsappOficialConfig() {
   const [ultimaVerificacaoAt, setUltimaVerificacaoAt] = useState<string | null>(null);
   const [ultimaMensagemAt, setUltimaMensagemAt] = useState<string | null>(null);
   const [msgsRecebidas24h, setMsgsRecebidas24h] = useState<number>(0);
+  const [errosWebhook24h, setErrosWebhook24h] = useState<number>(0);
+  const [totalEventos24h, setTotalEventos24h] = useState<number>(0);
+  const [hmacStatus, setHmacStatus] = useState<boolean | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [existingId, setExistingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

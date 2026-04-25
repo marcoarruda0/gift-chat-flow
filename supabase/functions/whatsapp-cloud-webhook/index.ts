@@ -486,7 +486,7 @@ async function findOrCreateConversa(
     if (nextAgent) atendenteId = nextAgent;
   }
 
-  const { data: newConversa } = await supabase
+  const { data: newConversa, error: convErr } = await supabase
     .from("conversas")
     .insert({
       tenant_id: tenantId,
@@ -498,7 +498,34 @@ async function findOrCreateConversa(
       atendente_id: atendenteId,
     })
     .select("id, status, canal")
-    .single();
+    .maybeSingle();
+
+  if (convErr) {
+    console.error("[whatsapp-cloud-webhook] insert conversa FAILED", {
+      code: convErr.code,
+      message: convErr.message,
+      details: convErr.details,
+      hint: convErr.hint,
+      tenantId,
+      contatoId,
+      phoneNumberId,
+    });
+    // Retry: maybe a conversation already exists in another canal-state — try to find any open conversa for this contact
+    const { data: fallback } = await supabase
+      .from("conversas")
+      .select("id, status, canal")
+      .eq("tenant_id", tenantId)
+      .eq("contato_id", contatoId)
+      .neq("status", "encerrada")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (fallback) {
+      console.log("[whatsapp-cloud-webhook] using fallback conversa", fallback.id);
+      return fallback;
+    }
+    return null;
+  }
 
   if (newConversa && atendenteId) {
     const { data: agentProfile } = await supabase

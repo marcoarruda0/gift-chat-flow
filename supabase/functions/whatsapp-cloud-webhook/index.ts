@@ -73,10 +73,36 @@ Deno.serve(async (req) => {
     let auditId: string | null = null;
     let auditTenantId: string | null = null;
     let auditPhoneNumberId: string | null = null;
+    let payloadHash: string | null = null;
+    let hmacValido: boolean | null = null;
 
     try {
       rawBody = await req.text();
       console.log("[whatsapp-cloud-webhook] POST raw", rawBody.slice(0, 1200));
+
+      // ---- HMAC validation (only if META_APP_SECRET is configured) ----
+      const appSecret = Deno.env.get("META_APP_SECRET");
+      if (appSecret) {
+        const sigHeader =
+          req.headers.get("x-hub-signature-256") ||
+          req.headers.get("X-Hub-Signature-256") ||
+          "";
+        hmacValido = await verifyHmac(rawBody, appSecret, sigHeader);
+        console.log("[whatsapp-cloud-webhook] hmac", { sigPresent: !!sigHeader, valid: hmacValido });
+        if (!hmacValido) {
+          // Still log to audit and return 200 (Meta should not retry; we drop silently)
+          payloadHash = await sha256(rawBody);
+          await serviceClient.from("whatsapp_webhook_eventos").insert({
+            payload: rawBody ? safeJson(rawBody) : {},
+            status: "erro",
+            erro_mensagem: "hmac_invalido",
+            payload_hash: payloadHash,
+            hmac_valido: false,
+            processado_at: new Date().toISOString(),
+          });
+          return new Response("ok", { status: 200 });
+        }
+      }
 
       try {
         body = rawBody ? JSON.parse(rawBody) : {};
@@ -98,6 +124,33 @@ Deno.serve(async (req) => {
         auditTenantId = cfgEarly?.tenant_id ?? null;
       }
 
+      // ---- Idempotency: check if same payload already processed ----
+      payloadHash = await sha256(rawBody);
+      if (auditTenantId && payloadHash) {
+        const { data: dup } = await serviceClient
+          .from("whatsapp_webhook_eventos")
+          .select("id, status")
+          .eq("tenant_id", auditTenantId)
+          .eq("payload_hash", payloadHash)
+          .in("status", ["processado", "duplicado"])
+          .limit(1)
+          .maybeSingle();
+        if (dup) {
+          console.log("[whatsapp-cloud-webhook] duplicate payload, skipping", dup.id);
+          await serviceClient.from("whatsapp_webhook_eventos").insert({
+            tenant_id: auditTenantId,
+            phone_number_id: auditPhoneNumberId,
+            payload: body,
+            status: "duplicado",
+            payload_hash: payloadHash,
+            hmac_valido: hmacValido,
+            erro_mensagem: `dup_of_${dup.id}`,
+            processado_at: new Date().toISOString(),
+          });
+          return new Response("ok", { status: 200 });
+        }
+      }
+
       // Insert audit row BEFORE processing
       const { data: auditRow } = await serviceClient
         .from("whatsapp_webhook_eventos")
@@ -106,6 +159,8 @@ Deno.serve(async (req) => {
           phone_number_id: auditPhoneNumberId,
           payload: body,
           status: "recebido",
+          payload_hash: payloadHash,
+          hmac_valido: hmacValido,
         })
         .select("id")
         .maybeSingle();
@@ -145,6 +200,44 @@ Deno.serve(async (req) => {
 
   return new Response("Method Not Allowed", { status: 405 });
 });
+
+// ====== HMAC + hash helpers ======
+
+async function sha256(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function verifyHmac(rawBody: string, secret: string, sigHeader: string): Promise<boolean> {
+  if (!sigHeader.startsWith("sha256=")) return false;
+  const expected = sigHeader.slice("sha256=".length).toLowerCase();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const hex = Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  // constant-time compare
+  if (hex.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+function safeJson(s: string): any {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return { _raw: s.slice(0, 2000) };
+  }
+}
 
 // Exported for reuse by reprocessing function (called via direct import in Deno)
 export async function processWebhookPayload(

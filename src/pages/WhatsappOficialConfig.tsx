@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
 import { DiagnosticoCard } from "@/components/whatsapp-oficial/DiagnosticoCard";
 import { AuditoriaCard } from "@/components/whatsapp-oficial/AuditoriaCard";
+import { TemplatesCard } from "@/components/whatsapp-oficial/TemplatesCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;

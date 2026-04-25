@@ -241,6 +241,95 @@ export default function WhatsappOficialConfig() {
 
       if (msgId) {
         toast.success(`✅ Template enviado! Message ID: ${msgId}`);
+
+        // Persist outbound message in mensagens (so it shows up in /conversas)
+        try {
+          const phoneClean = testNumber.trim().replace(/\D/g, "");
+
+          // 1. Find or create contact
+          let contatoId: string | null = null;
+          const { data: existingContato } = await supabase
+            .from("contatos")
+            .select("id")
+            .eq("tenant_id", tenantId!)
+            .eq("telefone", phoneClean)
+            .maybeSingle();
+          if (existingContato) {
+            contatoId = existingContato.id;
+          } else {
+            const { data: novoContato } = await supabase
+              .from("contatos")
+              .insert({
+                tenant_id: tenantId!,
+                nome: phoneClean,
+                telefone: phoneClean,
+              })
+              .select("id")
+              .maybeSingle();
+            contatoId = novoContato?.id ?? null;
+          }
+
+          if (contatoId) {
+            // 2. Find or create whatsapp_cloud conversation
+            let conversaId: string | null = null;
+            const { data: existingConv } = await supabase
+              .from("conversas")
+              .select("id")
+              .eq("tenant_id", tenantId!)
+              .eq("contato_id", contatoId)
+              .eq("canal", "whatsapp_cloud")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (existingConv) {
+              conversaId = existingConv.id;
+              await supabase
+                .from("conversas")
+                .update({
+                  status: "aberta",
+                  ultima_msg_at: new Date().toISOString(),
+                  ultimo_texto: "[template hello_world]",
+                  whatsapp_cloud_phone_id: phoneNumberId,
+                })
+                .eq("id", conversaId);
+            } else {
+              const { data: novaConv } = await supabase
+                .from("conversas")
+                .insert({
+                  tenant_id: tenantId!,
+                  contato_id: contatoId,
+                  canal: "whatsapp_cloud",
+                  status: "aberta",
+                  whatsapp_cloud_phone_id: phoneNumberId,
+                  ultimo_texto: "[template hello_world]",
+                  ultima_msg_at: new Date().toISOString(),
+                })
+                .select("id")
+                .maybeSingle();
+              conversaId = novaConv?.id ?? null;
+            }
+
+            // 3. Insert outbound message
+            if (conversaId) {
+              await supabase.from("mensagens").insert({
+                tenant_id: tenantId!,
+                conversa_id: conversaId,
+                remetente: "atendente",
+                tipo: "texto",
+                conteudo: "[template hello_world]",
+                metadata: {
+                  wa_message_id: msgId,
+                  wa_type: "template",
+                  template_name: "hello_world",
+                  outbound_test: true,
+                },
+              });
+            }
+          }
+        } catch (persistErr: any) {
+          console.error("Falha ao persistir mensagem outbound:", persistErr);
+          toast.error("Mensagem enviada na Meta, mas não foi gravada localmente: " + persistErr.message);
+        }
       } else {
         toast.error(`Erro Meta: ${errorMsg || JSON.stringify(result)}`);
       }

@@ -28,18 +28,14 @@ interface RegraLocal {
   ativo: boolean;
   percentual: string;
   validade_dias: string;
-  compra_minima: string;
-  credito_maximo: string;
-  max_resgate_pct: string;
+  multiplicador_compra_minima: string;
 }
 
 interface Props {
   configGlobal: {
     percentual: number | null;
     validade_dias: number | null;
-    compra_minima: number | null;
-    credito_maximo: number | null;
-    max_resgate_pct: number | null;
+    multiplicador_compra_minima: number | null;
   } | null | undefined;
 }
 
@@ -73,9 +69,7 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
           ativo: r.ativo,
           percentual: r.percentual?.toString() ?? "",
           validade_dias: r.validade_dias?.toString() ?? "",
-          compra_minima: r.compra_minima?.toString() ?? "",
-          credito_maximo: r.credito_maximo?.toString() ?? "",
-          max_resgate_pct: r.max_resgate_pct?.toString() ?? "",
+          multiplicador_compra_minima: r.multiplicador_compra_minima?.toString() ?? "",
         })),
       );
     }
@@ -93,9 +87,7 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
         ativo: true,
         percentual: "",
         validade_dias: "",
-        compra_minima: "",
-        credito_maximo: "",
-        max_resgate_pct: "",
+        multiplicador_compra_minima: "",
       },
     ]);
   };
@@ -138,10 +130,14 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
         segmento: r.segmento,
         ativo: r.ativo,
         percentual: parseOptional(r.percentual),
-        validade_dias: parseOptional(r.validade_dias) === null ? null : Math.round(parseOptional(r.validade_dias)!),
-        compra_minima: parseOptional(r.compra_minima),
-        credito_maximo: parseOptional(r.credito_maximo),
-        max_resgate_pct: parseOptional(r.max_resgate_pct),
+        validade_dias:
+          parseOptional(r.validade_dias) === null
+            ? null
+            : Math.round(parseOptional(r.validade_dias)!),
+        multiplicador_compra_minima:
+          parseOptional(r.multiplicador_compra_minima) === null
+            ? null
+            : Math.round(parseOptional(r.multiplicador_compra_minima)!),
       }));
       if (payload.length === 0) return;
       const { error } = await supabase
@@ -162,9 +158,7 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
     const map: Record<keyof typeof DEFAULT_PH, number | null | undefined> = {
       percentual: configGlobal.percentual,
       validade_dias: configGlobal.validade_dias,
-      compra_minima: configGlobal.compra_minima,
-      credito_maximo: configGlobal.credito_maximo,
-      max_resgate_pct: configGlobal.max_resgate_pct,
+      multiplicador_compra_minima: configGlobal.multiplicador_compra_minima,
     };
     const v = map[campo];
     return v != null ? `herda: ${v}` : DEFAULT_PH[campo];
@@ -252,7 +246,7 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
                         </Button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="space-y-1">
                         <Label className="text-xs">% Retorno</Label>
                         <Input
@@ -273,33 +267,16 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Compra mín. (R$)</Label>
+                        <Label className="text-xs">Multiplicador compra mín.</Label>
                         <Input
                           type="number"
-                          step="0.01"
-                          placeholder={placeholderGlobal("compra_minima")}
-                          value={r.compra_minima}
-                          onChange={(e) => atualizarCampo(r.segmento, "compra_minima", e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Crédito máx. (R$)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder={placeholderGlobal("credito_maximo")}
-                          value={r.credito_maximo}
-                          onChange={(e) => atualizarCampo(r.segmento, "credito_maximo", e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">% Máx. resgate</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder={placeholderGlobal("max_resgate_pct")}
-                          value={r.max_resgate_pct}
-                          onChange={(e) => atualizarCampo(r.segmento, "max_resgate_pct", e.target.value)}
+                          min="0"
+                          step="1"
+                          placeholder={placeholderGlobal("multiplicador_compra_minima")}
+                          value={r.multiplicador_compra_minima}
+                          onChange={(e) =>
+                            atualizarCampo(r.segmento, "multiplicador_compra_minima", e.target.value)
+                          }
                         />
                       </div>
                     </div>
@@ -319,7 +296,5 @@ export default function RegrasRfvConfig({ configGlobal }: Props) {
 const DEFAULT_PH = {
   percentual: "10",
   validade_dias: "30",
-  compra_minima: "0",
-  credito_maximo: "9999",
-  max_resgate_pct: "100",
+  multiplicador_compra_minima: "4",
 };

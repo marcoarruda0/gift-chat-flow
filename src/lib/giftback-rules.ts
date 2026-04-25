@@ -3,9 +3,7 @@ import { getSegmentoBySoma, type SegmentoKey } from "./rfv-segments";
 export interface GiftbackConfigGlobal {
   percentual: number | null;
   validade_dias: number | null;
-  compra_minima: number | null;
-  credito_maximo: number | null;
-  max_resgate_pct: number | null;
+  multiplicador_compra_minima: number | null;
 }
 
 export interface GiftbackConfigRfvOverride {
@@ -13,30 +11,22 @@ export interface GiftbackConfigRfvOverride {
   ativo: boolean;
   percentual: number | null;
   validade_dias: number | null;
-  compra_minima: number | null;
-  credito_maximo: number | null;
-  max_resgate_pct: number | null;
+  multiplicador_compra_minima: number | null;
 }
 
 export interface RegrasGiftbackResolvidas {
   percentual: number;
   validade_dias: number;
-  compra_minima: number;
-  credito_maximo: number;
-  max_resgate_pct: number;
+  multiplicador_compra_minima: number;
   segmentoAplicado: SegmentoKey | null;
   origem: "override" | "global";
 }
 
-const DEFAULTS: Required<{
-  [K in keyof Omit<GiftbackConfigGlobal, never>]: number;
-}> = {
+const DEFAULTS = {
   percentual: 10,
   validade_dias: 30,
-  compra_minima: 0,
-  credito_maximo: 9999,
-  max_resgate_pct: 100,
-};
+  multiplicador_compra_minima: 4,
+} as const;
 
 interface ResolverParams {
   configGlobal: GiftbackConfigGlobal | null | undefined;
@@ -53,7 +43,6 @@ interface ResolverParams {
  * 1. Identifica o segmento RFV do contato (se calculado).
  * 2. Procura override ATIVO para esse segmento.
  * 3. Faz merge campo a campo: override ?? global ?? default.
- * 4. Se não houver dados RFV ou override, retorna apenas o global.
  */
 export function resolverRegrasGiftback({
   configGlobal,
@@ -73,7 +62,7 @@ export function resolverRegrasGiftback({
       ? overrides.find((o) => o.segmento === segmentoKey && o.ativo)
       : undefined;
 
-  const pick = (campo: keyof GiftbackConfigGlobal): number => {
+  const pick = (campo: keyof typeof DEFAULTS): number => {
     if (override) {
       const v = override[campo as keyof GiftbackConfigRfvOverride];
       if (v !== null && v !== undefined && typeof v === "number") return v;
@@ -86,10 +75,22 @@ export function resolverRegrasGiftback({
   return {
     percentual: pick("percentual"),
     validade_dias: pick("validade_dias"),
-    compra_minima: pick("compra_minima"),
-    credito_maximo: pick("credito_maximo"),
-    max_resgate_pct: pick("max_resgate_pct"),
+    multiplicador_compra_minima: pick("multiplicador_compra_minima"),
     segmentoAplicado: segmentoKey,
     origem: override ? "override" : "global",
   };
+}
+
+/**
+ * Calcula a compra mínima necessária para que o cliente gere novo giftback.
+ * Regra: saldo atual × multiplicador. Se saldo = 0 ou multiplicador = 0,
+ * a barreira desaparece (qualquer compra gera giftback).
+ */
+export function calcularCompraMinima(
+  saldoGiftback: number | null | undefined,
+  multiplicador: number | null | undefined,
+): number {
+  const s = Number(saldoGiftback) || 0;
+  const m = Number(multiplicador) || 0;
+  return s * m;
 }

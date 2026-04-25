@@ -14,6 +14,8 @@ interface Mensagem {
   tipo: string;
   created_at: string;
   metadata?: Record<string, any> | null;
+  status_entrega?: string | null;
+  status_entrega_at?: string | null;
 }
 
 interface ChatPanelProps {

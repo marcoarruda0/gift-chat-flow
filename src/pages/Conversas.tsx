@@ -525,6 +525,8 @@ export default function Conversas() {
       toast.error("Erro ao enviar template");
     }
   };
+
+  const handleClose = async () => {
     if (!selectedId) return;
     await supabase.from("conversas").update({
       status: "fechada",

@@ -1,7 +1,23 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Zap, RotateCcw, ShieldCheck, ShieldAlert, ShieldOff } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Link } from "react-router-dom";
+import {
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
+  AlertTriangle,
+  Zap,
+  RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldOff,
+  Bell,
+  ListChecks,
+} from "lucide-react";
 
 interface Props {
   ultimaVerificacaoAt: string | null;
@@ -23,6 +39,13 @@ interface Props {
   /** Reprocessa o último evento bruto recebido */
   onReprocessLast?: () => void | Promise<void>;
   reprocessing?: boolean;
+  /** Limite percentual configurável de erro (0-100) */
+  alertaTaxaErroPct: number;
+  /** Quantidade mínima de eventos em 24h para considerar o cálculo */
+  alertaMinEventos: number;
+  /** Salvar configuração de alerta */
+  onSaveAlertaConfig?: (taxaPct: number, minEventos: number) => void | Promise<void>;
+  savingAlerta?: boolean;
 }
 
 function formatRelative(iso: string | null): string {

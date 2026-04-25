@@ -707,6 +707,7 @@ export default function Conversas() {
             isAssignedToMe={selected.atendente_id === user?.id}
             canal={selected.canal || "zapi"}
             cloudWindowBlocked={cloudWindowBlocked}
+            onSendTemplate={() => setTemplateDialogOpen(true)}
             onPull={handlePull}
           />
         ) : (
@@ -733,6 +734,11 @@ export default function Conversas() {
         open={syncDialogOpen}
         onOpenChange={setSyncDialogOpen}
         onComplete={fetchConversas}
+      />
+      <EnviarTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSend={handleSendTemplate}
       />
     </div>
   );

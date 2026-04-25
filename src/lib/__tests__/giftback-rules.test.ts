@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
+  calcularTransacaoGiftback,
   type GiftbackConfigGlobal,
   type GiftbackConfigRfvOverride,
 } from "@/lib/giftback-rules";

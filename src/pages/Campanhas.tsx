@@ -312,6 +312,36 @@ export default function Campanhas() {
         toast({ title: "Faça upload do arquivo de mídia", variant: "destructive" });
         return;
       }
+    } else if (canal === "whatsapp_cloud") {
+      if (!cloudConectado) {
+        toast({ title: "WhatsApp Oficial não está conectado", description: "Vá em Configurações › WhatsApp Oficial.", variant: "destructive" });
+        return;
+      }
+      if (!templateId || !templateName) {
+        toast({ title: "Selecione um template aprovado", variant: "destructive" });
+        return;
+      }
+      // All {{n}} placeholders must be mapped
+      const requiredKeys: string[] = [];
+      for (const comp of templateComponents) {
+        const type = String(comp.type || "").toUpperCase();
+        if (type === "BODY" || (type === "HEADER" && String(comp.format || "TEXT").toUpperCase() === "TEXT")) {
+          const text = String(comp.text || "");
+          const matches = text.matchAll(/\{\{(\d+)\}\}/g);
+          for (const m of matches) {
+            requiredKeys.push(`${type === "HEADER" ? "header" : "body"}.${m[1]}`);
+          }
+        }
+      }
+      const missing = requiredKeys.filter((k) => !(templateVariaveis[k] || "").trim());
+      if (missing.length > 0) {
+        toast({ title: "Preencha todas as variáveis do template", variant: "destructive" });
+        return;
+      }
+      if (!optInConfirmado) {
+        toast({ title: "Confirme o opt-in dos destinatários", variant: "destructive" });
+        return;
+      }
     } else {
       if (!emailAssunto.trim()) {
         toast({ title: "Preencha o assunto do e-mail", variant: "destructive" });

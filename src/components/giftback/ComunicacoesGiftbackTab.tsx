@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,19 +13,35 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AlertCircle, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { AlertCircle, Plus, Pencil, Trash2, FileDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { RegraComunicacaoDialog } from "./RegraComunicacaoDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  exportarLogsCSV,
+  exportarLogsPDF,
+  type LogExport,
+} from "@/lib/giftback-comunicacao-export";
 
 const GATILHO_LABELS: Record<string, string> = {
   criado: "Giftback criado",
   vencendo: "Saldo vencendo",
   expirado: "Giftback expirado",
 };
+
+const STATUS_OPTS = ["enviado", "falha", "sem_telefone"];
+
+function isoNDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0];
+}
 
 export default function ComunicacoesGiftbackTab() {
   const { profile } = useAuth();
@@ -36,6 +52,13 @@ export default function ComunicacoesGiftbackTab() {
 
   const [horario, setHorario] = useState("09:00");
   const [ativo, setAtivo] = useState(true);
+
+  // Filtros do histórico
+  const [filtroRegra, setFiltroRegra] = useState<string>("__todas__");
+  const [filtroGatilho, setFiltroGatilho] = useState<string>("__todos__");
+  const [filtroStatus, setFiltroStatus] = useState<string>("__todos__");
+  const [periodoInicio, setPeriodoInicio] = useState<string>(isoNDaysAgo(30));
+  const [periodoFim, setPeriodoFim] = useState<string>(new Date().toISOString().split("T")[0]);
 
   // Config Cloud
   const { data: cloudCfg } = useQuery({
@@ -63,7 +86,16 @@ export default function ComunicacoesGiftbackTab() {
     enabled: !!profile?.tenant_id,
   });
 
-  // Carrega valores iniciais quando cfg chega
+  // Tenant nome (para PDF)
+  const { data: tenantRow } = useQuery({
+    queryKey: ["tenant-nome", profile?.tenant_id],
+    queryFn: async () => {
+      const { data } = await supabase.from("tenants").select("nome").maybeSingle();
+      return data;
+    },
+    enabled: !!profile?.tenant_id,
+  });
+
   useEffect(() => {
     if (cfg) {
       setHorario(String(cfg.horario_envio).slice(0, 5));
@@ -84,19 +116,92 @@ export default function ComunicacoesGiftbackTab() {
     enabled: !!profile?.tenant_id,
   });
 
-  // Logs recentes
-  const { data: logs } = useQuery({
-    queryKey: ["gb-com-logs"],
+  // Logs filtrados (com join para regra/contato via FK)
+  const { data: logs, isLoading: logsLoading } = useQuery({
+    queryKey: [
+      "gb-com-logs",
+      filtroRegra, filtroGatilho, filtroStatus, periodoInicio, periodoFim,
+    ],
     queryFn: async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("giftback_comunicacao_log")
-        .select("id, status, enviado_em, erro, regra_id, contato_id")
+        .select(`
+          id, status, enviado_em, erro, regra_id, contato_id, wa_message_id, is_teste,
+          regra:giftback_comunicacao_regras(nome, tipo_gatilho),
+          contato:contatos(nome, telefone)
+        `)
         .order("enviado_em", { ascending: false })
-        .limit(20);
-      return data || [];
+        .limit(5000);
+
+      if (filtroRegra !== "__todas__") q = q.eq("regra_id", filtroRegra);
+      if (filtroStatus !== "__todos__") q = q.eq("status", filtroStatus);
+      if (periodoInicio) q = q.gte("enviado_em", `${periodoInicio}T00:00:00.000Z`);
+      if (periodoFim) q = q.lte("enviado_em", `${periodoFim}T23:59:59.999Z`);
+
+      const { data } = await q;
+      let result = data || [];
+
+      // Filtro por gatilho aplica via regra embutida
+      if (filtroGatilho !== "__todos__") {
+        result = result.filter((l: any) => l.regra?.tipo_gatilho === filtroGatilho);
+      }
+      return result;
     },
     enabled: !!profile?.tenant_id,
   });
+
+  const logsExportaveis: LogExport[] = useMemo(
+    () =>
+      (logs || []).map((l: any) => ({
+        enviado_em: l.enviado_em,
+        status: l.status,
+        erro: l.erro,
+        wa_message_id: l.wa_message_id,
+        is_teste: l.is_teste,
+        regra_nome: l.regra?.nome || "—",
+        regra_gatilho: l.regra?.tipo_gatilho || "",
+        contato_nome: l.contato?.nome || "—",
+        contato_telefone: l.contato?.telefone || "—",
+      })),
+    [logs],
+  );
+
+  function getFiltrosTexto() {
+    const regraNome =
+      filtroRegra === "__todas__"
+        ? undefined
+        : (regras || []).find((r: any) => r.id === filtroRegra)?.nome;
+    return {
+      regra: regraNome,
+      gatilho: filtroGatilho === "__todos__" ? undefined : filtroGatilho,
+      status: filtroStatus === "__todos__" ? undefined : filtroStatus,
+      periodoInicio,
+      periodoFim,
+    };
+  }
+
+  function handleExportCSV() {
+    if (logsExportaveis.length === 0) {
+      toast({ title: "Sem dados para exportar", variant: "destructive" });
+      return;
+    }
+    const stamp = new Date().toISOString().split("T")[0];
+    exportarLogsCSV(logsExportaveis, `comunicacoes-giftback-${stamp}.csv`);
+  }
+
+  function handleExportPDF() {
+    if (logsExportaveis.length === 0) {
+      toast({ title: "Sem dados para exportar", variant: "destructive" });
+      return;
+    }
+    const stamp = new Date().toISOString().split("T")[0];
+    exportarLogsPDF(
+      logsExportaveis,
+      getFiltrosTexto(),
+      tenantRow?.nome || "",
+      `comunicacoes-giftback-${stamp}.pdf`,
+    );
+  }
 
   const saveCfgMutation = useMutation({
     mutationFn: async () => {
@@ -212,7 +317,7 @@ export default function ComunicacoesGiftbackTab() {
           <div>
             <CardTitle>Regras de comunicação</CardTitle>
             <CardDescription>
-              Cada regra associa um gatilho (criado / vencendo / expirado) a um template aprovado.
+              Cada regra associa um gatilho (criado / vencendo / expirado) a um template aprovado, com filtro RFM opcional.
             </CardDescription>
           </div>
           <Button
@@ -236,6 +341,7 @@ export default function ComunicacoesGiftbackTab() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Gatilho</TableHead>
                   <TableHead>Quando</TableHead>
+                  <TableHead>RFM</TableHead>
                   <TableHead>Template</TableHead>
                   <TableHead>Ativa</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -254,6 +360,11 @@ export default function ComunicacoesGiftbackTab() {
                         : r.tipo_gatilho === "vencendo"
                         ? `${r.dias_offset}d antes`
                         : `${r.dias_offset}d depois`}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {r.filtro_rfv_modo === "incluir" && (r.filtro_rfv_segmentos?.length || 0) > 0
+                        ? `${r.filtro_rfv_segmentos.length} seg.`
+                        : "Todos"}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{r.template_name}</TableCell>
                     <TableCell>
@@ -299,42 +410,143 @@ export default function ComunicacoesGiftbackTab() {
         </CardContent>
       </Card>
 
-      {(logs?.length ?? 0) > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Últimos envios</CardTitle>
-            <CardDescription>Histórico recente para auditoria.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Erro</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {logs!.map((l: any) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="text-sm">
-                      {new Date(l.enviado_em).toLocaleString("pt-BR")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={l.status === "enviado" ? "default" : "destructive"}>
-                        {l.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-md truncate">
-                      {l.erro || "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      {/* Histórico com filtros e exportação */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle>Histórico de envios</CardTitle>
+              <CardDescription>
+                Auditoria com filtros e exportação. Limite de 5.000 linhas por consulta.
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <FileDown className="h-4 w-4 mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPDF}>
+                <FileText className="h-4 w-4 mr-1" /> PDF
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Filtros */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Regra</Label>
+              <Select value={filtroRegra} onValueChange={setFiltroRegra}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todas__">Todas</SelectItem>
+                  {(regras || []).map((r: any) => (
+                    <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Gatilho</Label>
+              <Select value={filtroGatilho} onValueChange={setFiltroGatilho}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos__">Todos</SelectItem>
+                  <SelectItem value="criado">Giftback criado</SelectItem>
+                  <SelectItem value="vencendo">Saldo vencendo</SelectItem>
+                  <SelectItem value="expirado">Giftback expirado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
+              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos__">Todos</SelectItem>
+                  {STATUS_OPTS.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">De</Label>
+              <Input type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Até</Label>
+              <Input type="date" value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Tabela */}
+          {logsLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : logsExportaveis.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Nenhum envio encontrado para os filtros selecionados.
+            </p>
+          ) : (
+            <>
+              <div className="text-xs text-muted-foreground">
+                {logsExportaveis.length} envio{logsExportaveis.length !== 1 ? "s" : ""} encontrado{logsExportaveis.length !== 1 ? "s" : ""}
+                {logsExportaveis.length === 5000 && (
+                  <span className="text-destructive ml-1">
+                    (limite atingido — refine o período para ver mais)
+                  </span>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Regra</TableHead>
+                      <TableHead>Gatilho</TableHead>
+                      <TableHead>Contato</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Erro</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logsExportaveis.slice(0, 200).map((l, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {new Date(l.enviado_em).toLocaleString("pt-BR")}
+                          {l.is_teste && (
+                            <Badge variant="outline" className="ml-1 text-[10px]">teste</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">{l.regra_nome}</TableCell>
+                        <TableCell className="text-xs">
+                          {GATILHO_LABELS[l.regra_gatilho] || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div>{l.contato_nome}</div>
+                          <div className="text-xs text-muted-foreground">{l.contato_telefone}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={l.status === "enviado" ? "default" : "destructive"}>
+                            {l.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-md truncate">
+                          {l.erro || "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {logsExportaveis.length > 200 && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Exibindo as primeiras 200 linhas. Use a exportação para ver todas.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <RegraComunicacaoDialog
         open={dialogOpen}

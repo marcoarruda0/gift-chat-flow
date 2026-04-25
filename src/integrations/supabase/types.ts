@@ -862,6 +862,7 @@ export type Database = {
           contato_id: string
           created_at: string
           id: string
+          motivo_inativacao: string | null
           regra_percentual: number | null
           segmento_rfv: string | null
           status: Database["public"]["Enums"]["giftback_status"] | null
@@ -875,6 +876,7 @@ export type Database = {
           contato_id: string
           created_at?: string
           id?: string
+          motivo_inativacao?: string | null
           regra_percentual?: number | null
           segmento_rfv?: string | null
           status?: Database["public"]["Enums"]["giftback_status"] | null
@@ -888,6 +890,7 @@ export type Database = {
           contato_id?: string
           created_at?: string
           id?: string
+          motivo_inativacao?: string | null
           regra_percentual?: number | null
           segmento_rfv?: string | null
           status?: Database["public"]["Enums"]["giftback_status"] | null
@@ -1606,7 +1609,7 @@ export type Database = {
         | "concluida"
         | "cancelada"
       destinatario_status: "pendente" | "enviado" | "falha"
-      giftback_status: "ativo" | "usado" | "expirado"
+      giftback_status: "ativo" | "usado" | "expirado" | "inativo"
       giftback_tipo: "credito" | "debito" | "expiracao"
       ia_emojis: "nao" | "pouco" | "sim"
       ia_tom: "formal" | "amigavel" | "casual"
@@ -1749,7 +1752,7 @@ export const Constants = {
         "cancelada",
       ],
       destinatario_status: ["pendente", "enviado", "falha"],
-      giftback_status: ["ativo", "usado", "expirado"],
+      giftback_status: ["ativo", "usado", "expirado", "inativo"],
       giftback_tipo: ["credito", "debito", "expiracao"],
       ia_emojis: ["nao", "pouco", "sim"],
       ia_tom: ["formal", "amigavel", "casual"],

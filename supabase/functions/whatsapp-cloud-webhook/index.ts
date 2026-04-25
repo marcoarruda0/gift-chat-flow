@@ -503,8 +503,7 @@ async function findOrCreateConversa(
   tenantId: string,
   contatoId: string,
   phoneNumberId: string
-) {
-  // Find latest conversation for contact on canal=whatsapp_cloud
+): Promise<{ conversa: any; created: boolean } | null> {
   const { data: existing } = await supabase
     .from("conversas")
     .select("id, status, canal")
@@ -522,10 +521,9 @@ async function findOrCreateConversa(
         .update({ status: "aberta", nao_lidas: 0 })
         .eq("id", existing.id);
     }
-    return existing;
+    return { conversa: existing, created: false };
   }
 
-  // Create new
   const { data: defaultDepto } = await supabase
     .from("departamentos")
     .select("id")
@@ -571,7 +569,6 @@ async function findOrCreateConversa(
       contatoId,
       phoneNumberId,
     });
-    // Retry: maybe a conversation already exists in another canal-state — try to find any open conversa for this contact
     const { data: fallback } = await supabase
       .from("conversas")
       .select("id, status, canal")
@@ -583,7 +580,7 @@ async function findOrCreateConversa(
       .maybeSingle();
     if (fallback) {
       console.log("[whatsapp-cloud-webhook] using fallback conversa", fallback.id);
-      return fallback;
+      return { conversa: fallback, created: false };
     }
     return null;
   }
@@ -612,5 +609,5 @@ async function findOrCreateConversa(
     });
   }
 
-  return newConversa;
+  return newConversa ? { conversa: newConversa, created: true } : null;
 }

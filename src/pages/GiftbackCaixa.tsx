@@ -21,6 +21,7 @@ import {
   resolverRegrasGiftback,
   calcularCompraMinima,
   calcularTransacaoGiftback,
+  parseValorCompra,
   type GiftbackConfigRfvOverride,
   type AcaoSobreAtivo,
 } from "@/lib/giftback-rules";
@@ -233,7 +234,10 @@ export default function GiftbackCaixa() {
   };
 
   // Cálculo da transação atual (preview em tempo real)
-  const valorCompraNum = parseFloat(valorCompra) || 0;
+  const { valor: valorCompraNum, erro: erroValor } = parseValorCompra(valorCompra);
+  const configCarregando = configGlobal === undefined;
+  const configAusente = configGlobal === null;
+
   const previewTransacao =
     contato && regrasAtuais
       ? calcularTransacaoGiftback({
@@ -247,14 +251,48 @@ export default function GiftbackCaixa() {
 
   const erroResgate = previewTransacao?.erroValidacao ?? null;
   const podeConfirmar =
-    regrasOk && valorCompraNum > 0 && !erroResgate;
+    regrasOk &&
+    !configAusente &&
+    !configCarregando &&
+    valorCompraNum > 0 &&
+    !erroValor &&
+    !erroResgate;
+
+  // Lista consolidada de motivos de bloqueio (UI)
+  const motivosBloqueio: string[] = [];
+  if (configCarregando) motivosBloqueio.push("Carregando configuração de giftback…");
+  if (configAusente)
+    motivosBloqueio.push(
+      "Configuração de giftback ausente — crie em Giftback → Configuração.",
+    );
+  if (!regrasOk) motivosBloqueio.push("Regras de giftback inválidas.");
+  if (erroValor) motivosBloqueio.push(erroValor);
+  else if (valorCompraNum <= 0 && valorCompra.trim() !== "")
+    motivosBloqueio.push("Informe um valor de compra maior que zero.");
+  if (erroResgate) motivosBloqueio.push(erroResgate);
 
   const registrarMutation = useMutation({
     mutationFn: async () => {
+      if (!profile?.tenant_id || !user?.id) {
+        throw new Error("Sessão inválida — faça login novamente.");
+      }
+      if (!contato) {
+        throw new Error("Selecione um contato antes de continuar.");
+      }
+      if (configCarregando) {
+        throw new Error("Configuração ainda está carregando.");
+      }
+      if (configAusente) {
+        throw new Error(
+          "Configuração de giftback ausente. Crie em Giftback → Configuração.",
+        );
+      }
       if (!regrasOk) {
         throw new Error(`Regras inválidas: ${regrasInvalidas.join(" ")}`);
       }
-      if (!Number.isFinite(valorCompraNum) || valorCompraNum <= 0) {
+      const { valor: valorValidado, erro: erroValValid } = parseValorCompra(valorCompra);
+      if (erroValValid) throw new Error(erroValValid);
+      if (!Number.isFinite(valorValidado) || valorValidado <= 0) {
         throw new Error("Valor da compra inválido.");
       }
       const regras = resolverRegrasGiftback({
@@ -265,7 +303,7 @@ export default function GiftbackCaixa() {
 
       const transacao = calcularTransacaoGiftback({
         saldoAtivo,
-        valorCompra: valorCompraNum,
+        valorCompra: valorValidado,
         aplicarGiftback,
         multiplicador: regras.multiplicador_compra_minima,
         percentual: regras.percentual,
@@ -281,7 +319,7 @@ export default function GiftbackCaixa() {
         .insert({
           tenant_id: profile!.tenant_id!,
           contato_id: contato!.id,
-          valor: valorCompraNum,
+          valor: valorValidado,
           giftback_gerado: transacao.gbGerado,
           giftback_usado: transacao.gbUsado,
           operador_id: user!.id,
@@ -344,7 +382,7 @@ export default function GiftbackCaixa() {
         .eq("id", contato!.id);
 
       return {
-        valorCompra: valorCompraNum,
+        valorCompra: valorValidado,
         giftbackUsado: transacao.gbUsado,
         giftbackGerado: transacao.gbGerado,
         novoSaldo: transacao.novoSaldo,
@@ -509,7 +547,33 @@ export default function GiftbackCaixa() {
             <CardTitle className="text-lg">Registrar Compra</CardTitle>
           </CardHeader>
           <CardContent>
-            {!regrasOk && (
+            {configCarregando && (
+              <div
+                className="mb-4 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground"
+                role="status"
+                data-testid="config-carregando-alert"
+              >
+                Carregando configuração de giftback…
+              </div>
+            )}
+
+            {configAusente && (
+              <div
+                className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+                data-testid="config-ausente-alert"
+              >
+                <p className="font-medium">
+                  Configuração de giftback ausente.
+                </p>
+                <p className="mt-1 text-xs">
+                  Crie em <strong>Giftback → Configuração</strong> antes de
+                  operar o caixa.
+                </p>
+              </div>
+            )}
+
+            {!regrasOk && !configAusente && (
               <div
                 className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
                 role="alert"
@@ -541,11 +605,33 @@ export default function GiftbackCaixa() {
                   type="number"
                   step="0.01"
                   min="0.01"
+                  inputMode="decimal"
                   value={valorCompra}
                   onChange={(e) => setValorCompra(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Bloqueia caracteres que HTML5 number aceita mas
+                    // não fazem sentido para um valor monetário positivo
+                    if (["e", "E", "+", "-"].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
                   required
-                  disabled={!regrasOk}
+                  disabled={!regrasOk || configAusente || configCarregando}
+                  aria-invalid={!!erroValor}
+                  data-testid="input-valor-compra"
                 />
+
+                {/* Erro de validação do valor digitado */}
+                {erroValor && (
+                  <div
+                    className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex gap-2"
+                    role="alert"
+                    data-testid="erro-valor-compra"
+                  >
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{erroValor}</span>
+                  </div>
+                )}
 
                 {/* Aviso: compra abaixo do mínimo (não vai gerar) */}
                 {valorCompraNum > 0 &&
@@ -602,7 +688,7 @@ export default function GiftbackCaixa() {
                     <Switch
                       checked={aplicarGiftback}
                       onCheckedChange={setAplicarGiftback}
-                      disabled={!regrasOk}
+                      disabled={!regrasOk || configAusente || configCarregando}
                     />
                     <Label>
                       Aplicar giftback de{" "}
@@ -636,6 +722,23 @@ export default function GiftbackCaixa() {
                       compra).
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Bloqueios consolidados */}
+              {!podeConfirmar && motivosBloqueio.length > 0 && (
+                <div
+                  className="rounded-md border border-muted-foreground/30 bg-muted/40 p-2 text-xs text-muted-foreground"
+                  data-testid="bloqueios-confirmacao"
+                >
+                  <p className="font-medium text-foreground mb-1">
+                    Para confirmar, resolva:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {motivosBloqueio.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

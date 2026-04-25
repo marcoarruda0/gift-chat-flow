@@ -3,6 +3,7 @@ import {
   resolverRegrasGiftback,
   calcularCompraMinima,
   calcularTransacaoGiftback,
+  parseValorCompra,
   type GiftbackConfigGlobal,
   type GiftbackConfigRfvOverride,
 } from "@/lib/giftback-rules";
@@ -290,5 +291,58 @@ describe("calcularTransacaoGiftback (1 ativo + tudo-ou-nada)", () => {
     expect(r.compraMinimaParaGerar).toBe(0);
     expect(r.acaoSobreAtivo).toBe("substituir");
     expect(r.gbGerado).toBe(5);
+  });
+});
+
+describe("parseValorCompra", () => {
+  it("string vazia → valor 0 sem erro (estado inicial)", () => {
+    const r = parseValorCompra("");
+    expect(r.valor).toBe(0);
+    expect(r.erro).toBeNull();
+  });
+
+  it("apenas espaços → valor 0 sem erro", () => {
+    expect(parseValorCompra("   ")).toEqual({ valor: 0, erro: null });
+  });
+
+  it("texto não numérico → erro NaN", () => {
+    const r = parseValorCompra("abc");
+    expect(r.valor).toBe(0);
+    expect(r.erro).toMatch(/inválido/i);
+  });
+
+  it("valor negativo → erro", () => {
+    const r = parseValorCompra("-50");
+    expect(r.valor).toBe(0);
+    expect(r.erro).toMatch(/negativo/i);
+  });
+
+  it("zero → erro (precisa ser > 0)", () => {
+    const r = parseValorCompra("0");
+    expect(r.valor).toBe(0);
+    expect(r.erro).toMatch(/maior que zero/i);
+  });
+
+  it("valor acima do limite → erro", () => {
+    const r = parseValorCompra("1000001");
+    expect(r.valor).toBe(0);
+    expect(r.erro).toMatch(/limite/i);
+  });
+
+  it("aceita vírgula como separador decimal", () => {
+    expect(parseValorCompra("99,90")).toEqual({ valor: 99.9, erro: null });
+  });
+
+  it("arredonda para 2 casas decimais", () => {
+    expect(parseValorCompra("12.3456")).toEqual({ valor: 12.35, erro: null });
+  });
+
+  it("valor inteiro válido", () => {
+    expect(parseValorCompra("50")).toEqual({ valor: 50, erro: null });
+  });
+
+  it("null/undefined são tratados como vazios", () => {
+    expect(parseValorCompra(null)).toEqual({ valor: 0, erro: null });
+    expect(parseValorCompra(undefined)).toEqual({ valor: 0, erro: null });
   });
 });

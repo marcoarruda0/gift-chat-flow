@@ -287,6 +287,15 @@ export function DiagnosticoCard({
             </p>
           </div>
         </div>
+
+        {onSaveAlertaConfig && (
+          <AlertaConfigInline
+            initialPct={alertaTaxaErroPct}
+            initialMin={alertaMinEventos}
+            onSave={onSaveAlertaConfig}
+            saving={!!savingAlerta}
+          />
+        )}
       </CardContent>
     </Card>
   );

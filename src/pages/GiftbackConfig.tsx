@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import RfvTab from "@/components/giftback/RfvTab";
+import RegrasRfvConfig from "@/components/giftback/RegrasRfvConfig";
 
 export default function GiftbackConfig() {
   const { profile } = useAuth();
@@ -121,7 +122,7 @@ export default function GiftbackConfig() {
           <RfvTab />
         </TabsContent>
 
-        <TabsContent value="config" className="mt-4">
+        <TabsContent value="config" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Parâmetros do Giftback</CardTitle>
@@ -163,6 +164,8 @@ export default function GiftbackConfig() {
               )}
             </CardContent>
           </Card>
+
+          <RegrasRfvConfig configGlobal={config ?? null} />
         </TabsContent>
 
         <TabsContent value="relatorio" className="mt-4 space-y-4">

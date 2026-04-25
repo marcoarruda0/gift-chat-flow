@@ -41,6 +41,8 @@ interface RegraExistente {
   template_language: string;
   template_components: any;
   template_variaveis: any;
+  filtro_rfv_modo?: string | null;
+  filtro_rfv_segmentos?: string[] | null;
 }
 
 interface RegraComunicacaoDialogProps {

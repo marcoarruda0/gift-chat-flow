@@ -214,7 +214,7 @@ export function TemplateCampanhaPicker({
                     <div className="flex items-center justify-between">
                       <Label className="text-sm">Cabeçalho {`{{${n}}}`}</Label>
                       <InsertVariableButton
-                        onPick={(token) =>
+                        onInsert={(token: string) =>
                           setVar(key, (variaveis[key] || "") + token)
                         }
                       />
@@ -242,7 +242,7 @@ export function TemplateCampanhaPicker({
                     <div className="flex items-center justify-between">
                       <Label className="text-sm">Variável {`{{${n}}}`}</Label>
                       <InsertVariableButton
-                        onPick={(token) =>
+                        onInsert={(token: string) =>
                           setVar(key, (variaveis[key] || "") + token)
                         }
                       />

@@ -36,6 +36,7 @@ interface Resumo {
   novoSaldo: number;
   segmentoAplicado: SegmentoKey | null;
   percentualAplicado: number;
+  validadeDiasAplicada: number;
   multiplicadorAplicado: number;
   compraMinimaParaGerar: number;
   origem: "override" | "global";
@@ -216,6 +217,7 @@ export default function GiftbackCaixa() {
         novoSaldo,
         segmentoAplicado: regras.segmentoAplicado,
         percentualAplicado: regras.percentual,
+        validadeDiasAplicada: regras.validade_dias,
         multiplicadorAplicado: regras.multiplicador_compra_minima,
         compraMinimaParaGerar,
         origem: regras.origem,

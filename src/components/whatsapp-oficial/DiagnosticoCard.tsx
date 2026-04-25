@@ -182,18 +182,57 @@ export function DiagnosticoCard({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t">
+        {/* HMAC status */}
+        <div className="flex items-center gap-2 pt-2 border-t">
+          {hmacStatus === null ? (
+            <Badge variant="secondary" className="gap-1">
+              <ShieldOff className="h-3 w-3" />
+              HMAC desativado (sem META_APP_SECRET)
+            </Badge>
+          ) : hmacStatus ? (
+            <Badge
+              variant="default"
+              className="gap-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15"
+            >
+              <ShieldCheck className="h-3 w-3" />
+              HMAC válido no último evento
+            </Badge>
+          ) : (
+            <Badge variant="destructive" className="gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              HMAC inválido — verifique o App Secret
+            </Badge>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 pt-2 border-t">
           <div>
-            <p className="text-xs text-muted-foreground">Última verificação (GET)</p>
+            <p className="text-xs text-muted-foreground">Última verificação</p>
             <p className="text-sm font-medium">{formatRelative(ultimaVerificacaoAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Última atividade (POST)</p>
+            <p className="text-xs text-muted-foreground">Última atividade</p>
             <p className="text-sm font-medium">{formatRelative(ultimaAtividadeAt)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Mensagens reais (24h)</p>
+            <p className="text-xs text-muted-foreground">Msgs reais (24h)</p>
             <p className="text-sm font-medium">{msgsRecebidas24h}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Erros webhook (24h)</p>
+            <p
+              className={`text-sm font-medium ${
+                errosWebhook24h > 0 ? "text-destructive" : ""
+              }`}
+            >
+              {errosWebhook24h}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Taxa de sucesso</p>
+            <p className="text-sm font-medium">
+              {taxaSucesso === null ? "—" : `${taxaSucesso}%`}
+            </p>
           </div>
         </div>
       </CardContent>

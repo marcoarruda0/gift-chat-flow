@@ -277,13 +277,16 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // 7. Buscar contatos em batch
+        // 7. Buscar contatos em batch (inclui RFV para filtro)
         const contatoIds = Array.from(new Set(movs.map((m) => m.contato_id)));
         const { data: contatos } = await supabase
           .from("contatos")
-          .select("id, nome, telefone, saldo_giftback")
+          .select("id, nome, telefone, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor")
           .in("id", contatoIds);
         const contatosMap = new Map((contatos || []).map((c) => [c.id, c]));
+
+        const filtroRfvModo = (regra as any).filtro_rfv_modo as string | undefined;
+        const filtroRfvSegs = ((regra as any).filtro_rfv_segmentos as string[] | undefined) || [];
 
         for (const mov of movs) {
           // 8. Já enviou esta regra para este movimento?

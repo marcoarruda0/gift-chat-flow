@@ -335,20 +335,76 @@ export default function GiftbackCaixa() {
             <CardTitle className="text-lg">Registrar Compra</CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Bloqueio quando regras estão inválidas */}
+            {!regrasOk && (
+              <div
+                className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+                aria-live="polite"
+                data-testid="regras-invalidas-alert"
+              >
+                <p className="font-medium">Não é possível registrar a compra:</p>
+                <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                  {regrasInvalidas.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs">
+                  Ajuste a configuração em <strong>Giftback → Configuração</strong> antes de continuar.
+                </p>
+              </div>
+            )}
+
             <form onSubmit={(e) => { e.preventDefault(); registrarMutation.mutate(); }} className="space-y-4">
               <div className="space-y-2">
                 <Label>Valor da Compra (R$)</Label>
-                <Input type="number" step="0.01" min="0.01" value={valorCompra} onChange={(e) => setValorCompra(e.target.value)} required />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={valorCompra}
+                  onChange={(e) => setValorCompra(e.target.value)}
+                  required
+                  disabled={!regrasOk}
+                />
                 {valorCompraNum > 0 && compraMinimaAtual > 0 && valorCompraNum < compraMinimaAtual && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    ⚠️ Esta compra não atinge o mínimo de R$ {compraMinimaAtual.toFixed(2)} — não gerará novo giftback.
-                  </p>
+                  <div
+                    className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground space-y-1"
+                    role="status"
+                    data-testid="aviso-abaixo-minimo"
+                  >
+                    <p className="font-medium">
+                      ⚠️ Compra abaixo do mínimo para gerar giftback
+                    </p>
+                    <p>
+                      Faltam <strong>R$ {(compraMinimaAtual - valorCompraNum).toFixed(2)}</strong> para
+                      atingir o mínimo de <strong>R$ {compraMinimaAtual.toFixed(2)}</strong>
+                      {regrasAtuais && regrasAtuais.multiplicador_compra_minima > 0 && (
+                        <> ({regrasAtuais.multiplicador_compra_minima}× o saldo atual de R$ {Number(contato.saldo_giftback).toFixed(2)})</>
+                      )}.
+                    </p>
+                    <p>
+                      Efeito: <strong>nenhum giftback novo será gerado</strong> nesta compra
+                      {regrasAtuais && (
+                        <>
+                          {" "}(deixaria de creditar R$ {(valorCompraNum * (regrasAtuais.percentual / 100)).toFixed(2)} ao saldo)
+                        </>
+                      )}.
+                      {aplicarGiftback && (
+                        <> O resgate continua permitido até R$ {maxResgate.toFixed(2)}.</>
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
               {contato.saldo_giftback > 0 && (
                 <>
                   <div className="flex items-center gap-2">
-                    <Switch checked={aplicarGiftback} onCheckedChange={setAplicarGiftback} />
+                    <Switch
+                      checked={aplicarGiftback}
+                      onCheckedChange={setAplicarGiftback}
+                      disabled={!regrasOk}
+                    />
                     <Label>Aplicar giftback?</Label>
                   </div>
                   {aplicarGiftback && (
@@ -363,12 +419,17 @@ export default function GiftbackCaixa() {
                         max={maxResgate}
                         value={valorGiftback}
                         onChange={(e) => setValorGiftback(e.target.value)}
+                        disabled={!regrasOk}
                       />
                     </div>
                   )}
                 </>
               )}
-              <Button type="submit" className="w-full" disabled={registrarMutation.isPending}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={registrarMutation.isPending || !regrasOk}
+              >
                 {registrarMutation.isPending ? "Registrando..." : "Confirmar Compra"}
               </Button>
             </form>
@@ -385,28 +446,51 @@ export default function GiftbackCaixa() {
               <CardTitle className="text-lg">Compra Registrada!</CardTitle>
             </div>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between"><span>Valor da compra</span><span className="font-medium">R$ {resumo.valorCompra.toFixed(2)}</span></div>
             <div className="flex justify-between"><span>Giftback utilizado</span><span className="font-medium text-destructive">- R$ {resumo.giftbackUsado.toFixed(2)}</span></div>
             <div className="flex justify-between"><span>Giftback gerado</span><span className="font-medium text-primary">+ R$ {resumo.giftbackGerado.toFixed(2)}</span></div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Segmento aplicado</span>
-              <span>
-                {nomeSegmentoResumo(resumo.segmentoAplicado)} ({resumo.percentualAplicado}%
-                {resumo.origem === "global" ? " · padrão" : ""})
-              </span>
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Compra mínima p/ gerar</span>
-              <span>
-                {resumo.compraMinimaParaGerar > 0
-                  ? `R$ ${resumo.compraMinimaParaGerar.toFixed(2)} (${resumo.multiplicadorAplicado}× saldo anterior)`
-                  : "Sem mínimo"}
-              </span>
-            </div>
             <hr />
             <div className="flex justify-between font-bold"><span>Novo saldo</span><span>R$ {resumo.novoSaldo.toFixed(2)}</span></div>
-            <Button variant="outline" className="w-full mt-4" onClick={() => { setResumo(null); setContato(null); setBusca(""); }}>
+
+            {/* Bloco de auditoria — regras aplicadas */}
+            <div
+              className="rounded-md border bg-muted/40 p-3 mt-2 space-y-1 text-xs"
+              data-testid="auditoria-regras"
+            >
+              <p className="font-medium text-foreground">Regras aplicadas (auditoria)</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                <span>Origem</span>
+                <span className="text-right text-foreground">
+                  {resumo.origem === "override" ? "Override por RFV" : "Configuração global"}
+                </span>
+
+                <span>Segmento</span>
+                <span className="text-right text-foreground">
+                  {nomeSegmentoResumo(resumo.segmentoAplicado)}
+                </span>
+
+                <span>Percentual de retorno</span>
+                <span className="text-right text-foreground">{resumo.percentualAplicado}%</span>
+
+                <span>Validade do crédito</span>
+                <span className="text-right text-foreground">{resumo.validadeDiasAplicada} dias</span>
+
+                <span>Multiplicador</span>
+                <span className="text-right text-foreground">
+                  {resumo.multiplicadorAplicado}×
+                </span>
+
+                <span>Compra mínima p/ gerar</span>
+                <span className="text-right text-foreground">
+                  {resumo.compraMinimaParaGerar > 0
+                    ? `R$ ${resumo.compraMinimaParaGerar.toFixed(2)}`
+                    : "Sem mínimo"}
+                </span>
+              </div>
+            </div>
+
+            <Button variant="outline" className="w-full mt-2" onClick={() => { setResumo(null); setContato(null); setBusca(""); }}>
               Nova Operação
             </Button>
           </CardContent>

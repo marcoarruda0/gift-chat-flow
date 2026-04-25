@@ -446,21 +446,46 @@ async function processStatusUpdate(supabase: any, tenantId: string, status: any)
   // Find message by wa_message_id and merge status into metadata
   const { data: msg } = await supabase
     .from("mensagens")
-    .select("id, metadata")
+    .select("id, metadata, status_entrega")
     .eq("tenant_id", tenantId)
     .eq("metadata->>wa_message_id", waMessageId)
     .maybeSingle();
 
-  if (!msg) return;
+  if (!msg) {
+    console.log("[processStatusUpdate] no matching message for", waMessageId);
+    return;
+  }
+
+  // Don't downgrade status (e.g. read -> delivered should be ignored)
+  const order = { sent: 1, delivered: 2, read: 3, failed: 4 } as Record<string, number>;
+  const currentRank = order[msg.status_entrega || ""] || 0;
+  const newRank = order[newStatus] || 0;
+  // failed always wins; otherwise only progress forward
+  if (newStatus !== "failed" && newRank > 0 && newRank < currentRank) {
+    return;
+  }
+
+  const statusAt = status.timestamp
+    ? new Date(parseInt(status.timestamp, 10) * 1000).toISOString()
+    : new Date().toISOString();
 
   const newMeta = {
     ...(msg.metadata || {}),
     wa_status: newStatus,
-    wa_status_at: new Date().toISOString(),
-    ...(status.errors ? { wa_errors: status.errors } : {}),
+    wa_status_at: statusAt,
+    ...(status.errors ? { delivery_errors: status.errors } : {}),
   };
 
-  await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", msg.id);
+  await supabase
+    .from("mensagens")
+    .update({
+      metadata: newMeta,
+      status_entrega: newStatus,
+      status_entrega_at: statusAt,
+    })
+    .eq("id", msg.id);
+
+  console.log("[processStatusUpdate] updated", { id: msg.id, newStatus });
 }
 
 async function findOrCreateContact(

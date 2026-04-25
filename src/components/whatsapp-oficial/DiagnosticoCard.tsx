@@ -40,6 +40,8 @@ export function DiagnosticoCard({
   onRefresh,
   onSubscribeMessages,
   subscribing,
+  onReprocessLast,
+  reprocessing,
 }: Props) {
   const temAtividade = !!ultimaAtividadeAt;
   const temMsgReal = msgsRecebidas24h > 0;

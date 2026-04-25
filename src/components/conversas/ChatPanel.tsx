@@ -125,6 +125,8 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
               senderName={m.metadata?.senderName}
               senderAvatar={m.metadata?.senderAvatar}
               metadata={m.metadata}
+              statusEntrega={m.status_entrega}
+              canal={canal}
             />
           ))
         )}

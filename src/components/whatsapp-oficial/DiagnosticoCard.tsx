@@ -300,3 +300,65 @@ export function DiagnosticoCard({
     </Card>
   );
 }
+
+import { useState as useStateHook } from "react";
+
+function AlertaConfigInline({
+  initialPct,
+  initialMin,
+  onSave,
+  saving,
+}: {
+  initialPct: number;
+  initialMin: number;
+  onSave: (pct: number, min: number) => void | Promise<void>;
+  saving: boolean;
+}) {
+  const [pct, setPct] = useStateHook<number>(initialPct);
+  const [minEv, setMinEv] = useStateHook<number>(initialMin);
+  const dirty = pct !== initialPct || minEv !== initialMin;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Bell className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm font-medium">Alerta de taxa de erro</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Limite (%)</label>
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={pct}
+            onChange={(e) => setPct(Math.max(1, Math.min(100, Number(e.target.value) || 0)))}
+            className="h-9"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Mínimo de eventos (24h)</label>
+          <Input
+            type="number"
+            min={1}
+            value={minEv}
+            onChange={(e) => setMinEv(Math.max(1, Number(e.target.value) || 0))}
+            className="h-9"
+          />
+        </div>
+        <Button
+          size="sm"
+          onClick={() => onSave(pct, minEv)}
+          disabled={!dirty || saving}
+        >
+          {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+          Salvar
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Dispara aviso e registra na auditoria quando a taxa de erro do webhook ultrapassa o
+        limite e há ao menos o mínimo de eventos no período.
+      </p>
+    </div>
+  );
+}

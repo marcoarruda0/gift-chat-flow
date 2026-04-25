@@ -18,32 +18,44 @@ export type Database = {
         Row: {
           campanha_id: string
           contato_id: string
+          delivery_error: Json | null
           enviado_at: string | null
           erro: string | null
           id: string
           status: Database["public"]["Enums"]["destinatario_status"]
+          status_entrega: string | null
+          status_entrega_at: string | null
           telefone: string
           tenant_id: string
+          wa_message_id: string | null
         }
         Insert: {
           campanha_id: string
           contato_id: string
+          delivery_error?: Json | null
           enviado_at?: string | null
           erro?: string | null
           id?: string
           status?: Database["public"]["Enums"]["destinatario_status"]
+          status_entrega?: string | null
+          status_entrega_at?: string | null
           telefone: string
           tenant_id: string
+          wa_message_id?: string | null
         }
         Update: {
           campanha_id?: string
           contato_id?: string
+          delivery_error?: Json | null
           enviado_at?: string | null
           erro?: string | null
           id?: string
           status?: Database["public"]["Enums"]["destinatario_status"]
+          status_entrega?: string | null
+          status_entrega_at?: string | null
           telefone?: string
           tenant_id?: string
+          wa_message_id?: string | null
         }
         Relationships: [
           {
@@ -85,6 +97,11 @@ export type Database = {
           midia_url: string | null
           nome: string
           status: Database["public"]["Enums"]["campanha_status"]
+          template_components: Json
+          template_id: string | null
+          template_language: string | null
+          template_name: string | null
+          template_variaveis: Json
           tenant_id: string
           tipo_filtro: Database["public"]["Enums"]["campanha_filtro"]
           tipo_midia: string
@@ -108,6 +125,11 @@ export type Database = {
           midia_url?: string | null
           nome: string
           status?: Database["public"]["Enums"]["campanha_status"]
+          template_components?: Json
+          template_id?: string | null
+          template_language?: string | null
+          template_name?: string | null
+          template_variaveis?: Json
           tenant_id: string
           tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
           tipo_midia?: string
@@ -131,6 +153,11 @@ export type Database = {
           midia_url?: string | null
           nome?: string
           status?: Database["public"]["Enums"]["campanha_status"]
+          template_components?: Json
+          template_id?: string | null
+          template_language?: string | null
+          template_name?: string | null
+          template_variaveis?: Json
           tenant_id?: string
           tipo_filtro?: Database["public"]["Enums"]["campanha_filtro"]
           tipo_midia?: string

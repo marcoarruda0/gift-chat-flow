@@ -8,6 +8,7 @@ import { NovaConversaDialog } from "@/components/conversas/NovaConversaDialog";
 import { TransferirDialog } from "@/components/conversas/TransferirDialog";
 import { ImportarConversasDialog } from "@/components/conversas/ImportarConversasDialog";
 import { SincronizarWhatsappDialog } from "@/components/conversas/SincronizarWhatsappDialog";
+import { EnviarTemplateDialog } from "@/components/conversas/EnviarTemplateDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 
@@ -52,6 +53,7 @@ export default function Conversas() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});
@@ -296,6 +298,19 @@ export default function Conversas() {
     return result.id as string;
   };
 
+  // Helper: persist wa_message_id from Meta response into mensagens.metadata
+  const persistWaMessageId = async (mensagemId: string, result: any) => {
+    const waId = result?.messages?.[0]?.id;
+    if (!waId) return;
+    const { data: cur } = await supabase
+      .from("mensagens")
+      .select("metadata")
+      .eq("id", mensagemId)
+      .maybeSingle();
+    const newMeta = { ...(cur?.metadata as any || {}), wa_message_id: waId };
+    await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", mensagemId);
+  };
+
   // Send text message (with variable substitution)
   const handleSend = async (rawText: string) => {
     if (!selectedId || !tenantId) return;
@@ -310,14 +325,14 @@ export default function Conversas() {
     const metadata: Record<string, any> = {};
     if (senderName) metadata.senderName = senderName;
 
-    const { error } = await supabase.from("mensagens").insert({
+    const { data: inserted, error } = await supabase.from("mensagens").insert({
       conversa_id: selectedId,
       tenant_id: tenantId,
       conteudo: text,
       remetente: "atendente" as any,
       tipo: "texto" as any,
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-    });
+    }).select("id").maybeSingle();
     if (error) { toast.error("Erro ao enviar mensagem"); return; }
 
     await supabase.from("conversas").update({
@@ -340,6 +355,8 @@ export default function Conversas() {
         if (result?.error) {
           console.error("WhatsApp Cloud error:", result.error);
           toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+        } else if (inserted?.id) {
+          await persistWaMessageId(inserted.id, result);
         }
       } catch (e) {
         console.warn("WhatsApp Cloud send failed:", e);
@@ -364,13 +381,13 @@ export default function Conversas() {
     if (!selectedId || !tenantId) return;
     try {
       const url = await uploadToStorage(blob, "audio.ogg");
-      await supabase.from("mensagens").insert({
+      const { data: inserted } = await supabase.from("mensagens").insert({
         conversa_id: selectedId,
         tenant_id: tenantId,
         conteudo: url,
         remetente: "atendente" as any,
         tipo: "audio" as any,
-      });
+      }).select("id").maybeSingle();
       await supabase.from("conversas").update({
         ultimo_texto: "🎤 Áudio",
         ultima_msg_at: new Date().toISOString(),
@@ -386,6 +403,7 @@ export default function Conversas() {
             audio: { id: mediaId },
           });
           if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+          else if (inserted?.id) await persistWaMessageId(inserted.id, result);
         } catch (e) {
           console.warn("Cloud audio send failed:", e);
           toast.error("Erro ao enviar áudio via WhatsApp Oficial");
@@ -409,13 +427,13 @@ export default function Conversas() {
       const tipo = isImage ? "imagem" : "documento";
       const url = await uploadToStorage(file, file.name);
 
-      await supabase.from("mensagens").insert({
+      const { data: inserted } = await supabase.from("mensagens").insert({
         conversa_id: selectedId,
         tenant_id: tenantId,
         conteudo: url,
         remetente: "atendente" as any,
         tipo: tipo as any,
-      });
+      }).select("id").maybeSingle();
       await supabase.from("conversas").update({
         ultimo_texto: isImage ? "📷 Imagem" : "📎 Documento",
         ultima_msg_at: new Date().toISOString(),
@@ -435,6 +453,7 @@ export default function Conversas() {
             ...cloudPayload,
           });
           if (result?.error) toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+          else if (inserted?.id) await persistWaMessageId(inserted.id, result);
         } catch (e) {
           console.warn("Cloud media send failed:", e);
           toast.error("Erro ao enviar anexo via WhatsApp Oficial");
@@ -449,6 +468,61 @@ export default function Conversas() {
       }
     } catch (e) {
       toast.error("Erro ao enviar anexo");
+    }
+  };
+
+  // Send approved template (used to reopen the 24h window on Cloud channel)
+  const handleSendTemplate = async (payload: {
+    name: string;
+    language: string;
+    components: any[];
+    previewText: string;
+  }) => {
+    if (!selectedId || !tenantId || !selected?.contato_telefone) {
+      toast.error("Conversa inválida para envio de template");
+      return;
+    }
+    try {
+      // Insert local message first to get its id
+      const { data: inserted, error } = await supabase.from("mensagens").insert({
+        conversa_id: selectedId,
+        tenant_id: tenantId,
+        conteudo: payload.previewText,
+        remetente: "atendente" as any,
+        tipo: "texto" as any,
+        metadata: {
+          wa_template_name: payload.name,
+          wa_template_language: payload.language,
+        },
+      }).select("id").maybeSingle();
+      if (error) { toast.error("Erro ao registrar mensagem"); return; }
+
+      await supabase.from("conversas").update({
+        ultimo_texto: "Você: " + payload.previewText.slice(0, 90),
+        ultima_msg_at: new Date().toISOString(),
+      }).eq("id", selectedId);
+
+      // Send to Meta
+      const result = await callCloud("messages", "POST", {
+        messaging_product: "whatsapp",
+        to: formatPhone(selected.contato_telefone),
+        type: "template",
+        template: {
+          name: payload.name,
+          language: { code: payload.language },
+          ...(payload.components.length > 0 ? { components: payload.components } : {}),
+        },
+      });
+      if (result?.error) {
+        console.error("WhatsApp Cloud template error:", result.error);
+        toast.error(`Erro Cloud: ${result.error.message || "envio falhou"}`);
+      } else {
+        if (inserted?.id) await persistWaMessageId(inserted.id, result);
+        toast.success("Template enviado");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao enviar template");
     }
   };
 
@@ -633,6 +707,7 @@ export default function Conversas() {
             isAssignedToMe={selected.atendente_id === user?.id}
             canal={selected.canal || "zapi"}
             cloudWindowBlocked={cloudWindowBlocked}
+            onSendTemplate={() => setTemplateDialogOpen(true)}
             onPull={handlePull}
           />
         ) : (
@@ -659,6 +734,11 @@ export default function Conversas() {
         open={syncDialogOpen}
         onOpenChange={setSyncDialogOpen}
         onComplete={fetchConversas}
+      />
+      <EnviarTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSend={handleSendTemplate}
       />
     </div>
   );

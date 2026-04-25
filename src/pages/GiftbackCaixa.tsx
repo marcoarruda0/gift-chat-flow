@@ -234,7 +234,10 @@ export default function GiftbackCaixa() {
   };
 
   // Cálculo da transação atual (preview em tempo real)
-  const valorCompraNum = parseFloat(valorCompra) || 0;
+  const { valor: valorCompraNum, erro: erroValor } = parseValorCompra(valorCompra);
+  const configCarregando = configGlobal === undefined;
+  const configAusente = configGlobal === null;
+
   const previewTransacao =
     contato && regrasAtuais
       ? calcularTransacaoGiftback({
@@ -248,7 +251,25 @@ export default function GiftbackCaixa() {
 
   const erroResgate = previewTransacao?.erroValidacao ?? null;
   const podeConfirmar =
-    regrasOk && valorCompraNum > 0 && !erroResgate;
+    regrasOk &&
+    !configAusente &&
+    !configCarregando &&
+    valorCompraNum > 0 &&
+    !erroValor &&
+    !erroResgate;
+
+  // Lista consolidada de motivos de bloqueio (UI)
+  const motivosBloqueio: string[] = [];
+  if (configCarregando) motivosBloqueio.push("Carregando configuração de giftback…");
+  if (configAusente)
+    motivosBloqueio.push(
+      "Configuração de giftback ausente — crie em Giftback → Configuração.",
+    );
+  if (!regrasOk) motivosBloqueio.push("Regras de giftback inválidas.");
+  if (erroValor) motivosBloqueio.push(erroValor);
+  else if (valorCompraNum <= 0 && valorCompra.trim() !== "")
+    motivosBloqueio.push("Informe um valor de compra maior que zero.");
+  if (erroResgate) motivosBloqueio.push(erroResgate);
 
   const registrarMutation = useMutation({
     mutationFn: async () => {

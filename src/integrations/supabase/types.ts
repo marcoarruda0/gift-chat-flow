@@ -313,6 +313,7 @@ export type Database = {
           data_nascimento: string | null
           email: string | null
           endereco: string | null
+          genero: string | null
           id: string
           nome: string
           notas: string | null
@@ -335,6 +336,7 @@ export type Database = {
           data_nascimento?: string | null
           email?: string | null
           endereco?: string | null
+          genero?: string | null
           id?: string
           nome: string
           notas?: string | null
@@ -357,6 +359,7 @@ export type Database = {
           data_nascimento?: string | null
           email?: string | null
           endereco?: string | null
+          genero?: string | null
           id?: string
           nome?: string
           notas?: string | null
@@ -1730,6 +1733,10 @@ export type Database = {
         Returns: boolean
       }
       is_same_tenant: { Args: { _target_user_id: string }; Returns: boolean }
+      relatorio_giftback: {
+        Args: { p_atendente_id?: string; p_fim: string; p_inicio: string }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"

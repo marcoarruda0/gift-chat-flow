@@ -84,6 +84,39 @@ export default function GiftbackCaixa() {
     ? calcularCompraMinima(contato!.saldo_giftback, regrasAtuais.multiplicador_compra_minima)
     : 0;
 
+  // Validação das regras: bloqueia confirmação se a configuração estiver inválida.
+  const regrasInvalidas: string[] = [];
+  if (regrasAtuais) {
+    if (
+      regrasAtuais.multiplicador_compra_minima === null ||
+      regrasAtuais.multiplicador_compra_minima === undefined ||
+      Number.isNaN(regrasAtuais.multiplicador_compra_minima) ||
+      regrasAtuais.multiplicador_compra_minima < 0
+    ) {
+      regrasInvalidas.push("Multiplicador da compra mínima inválido (deve ser ≥ 0).");
+    }
+    if (
+      regrasAtuais.percentual === null ||
+      regrasAtuais.percentual === undefined ||
+      Number.isNaN(regrasAtuais.percentual) ||
+      regrasAtuais.percentual < 0
+    ) {
+      regrasInvalidas.push("Percentual de retorno inválido (deve ser ≥ 0).");
+    }
+    if (
+      regrasAtuais.validade_dias === null ||
+      regrasAtuais.validade_dias === undefined ||
+      Number.isNaN(regrasAtuais.validade_dias) ||
+      regrasAtuais.validade_dias <= 0
+    ) {
+      regrasInvalidas.push("Validade em dias inválida (deve ser > 0).");
+    }
+  }
+  if (contato && (Number.isNaN(Number(contato.saldo_giftback)) || Number(contato.saldo_giftback) < 0)) {
+    regrasInvalidas.push("Saldo de giftback do cliente inválido (negativo ou ausente).");
+  }
+  const regrasOk = regrasInvalidas.length === 0;
+
   const buscarContato = async () => {
     if (!busca.trim()) return;
     setBuscando(true);
@@ -103,7 +136,13 @@ export default function GiftbackCaixa() {
 
   const registrarMutation = useMutation({
     mutationFn: async () => {
+      if (!regrasOk) {
+        throw new Error(`Regras inválidas: ${regrasInvalidas.join(" ")}`);
+      }
       const valor = parseFloat(valorCompra);
+      if (!Number.isFinite(valor) || valor <= 0) {
+        throw new Error("Valor da compra inválido.");
+      }
       const regras = resolverRegrasGiftback({
         configGlobal: configGlobal ?? null,
         overrides: overrides ?? [],

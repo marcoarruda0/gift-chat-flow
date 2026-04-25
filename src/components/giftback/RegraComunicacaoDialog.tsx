@@ -71,6 +71,9 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
   const [diasOffset, setDiasOffset] = useState("0");
   const [templateId, setTemplateId] = useState<string>("");
   const [variaveis, setVariaveis] = useState<Record<string, string>>({});
+  const [filtroRfvModo, setFiltroRfvModo] = useState<"todos" | "incluir">("todos");
+  const [filtroRfvSegmentos, setFiltroRfvSegmentos] = useState<string[]>([]);
+  const [testarOpen, setTestarOpen] = useState(false);
 
   const { data: templates } = useQuery({
     queryKey: ["wa-templates-approved"],

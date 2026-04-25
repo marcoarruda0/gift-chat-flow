@@ -1020,23 +1020,64 @@ export default function Campanhas() {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Destinatários da Campanha</DialogTitle>
             <DialogDescription>Status individual de cada destinatário.</DialogDescription>
           </DialogHeader>
+
+          {/* Funil de entrega (apenas quando há status_entrega — canal Oficial) */}
+          {(() => {
+            const total = destinatariosDetail.length;
+            if (total === 0) return null;
+            const sent = destinatariosDetail.filter((d) => d.status === "enviado").length;
+            const delivered = destinatariosDetail.filter((d) => ["delivered", "read"].includes(d.status_entrega || "")).length;
+            const read = destinatariosDetail.filter((d) => d.status_entrega === "read").length;
+            const failed = destinatariosDetail.filter((d) => d.status === "falha" || d.status_entrega === "failed").length;
+            const hasOficialMetrics = destinatariosDetail.some((d) => d.status_entrega || d.wa_message_id);
+            if (!hasOficialMetrics) return null;
+            return (
+              <div className="grid grid-cols-4 gap-2 text-center mb-2">
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Enviados</div>
+                  <div className="text-lg font-semibold">{sent}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Entregues</div>
+                  <div className="text-lg font-semibold">{delivered}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Lidos</div>
+                  <div className="text-lg font-semibold">{read}</div>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <div className="text-xs text-muted-foreground">Falhas</div>
+                  <div className="text-lg font-semibold text-destructive">{failed}</div>
+                </div>
+              </div>
+            );
+          })()}
+
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Contato</TableHead>
                 <TableHead>Destino</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Entrega</TableHead>
                 <TableHead>Data/Hora</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {destinatariosDetail.map((d) => {
                 const ds = destStatusBadge[d.status] || { label: d.status, variant: "secondary" as const };
+                const entrega = d.status_entrega as string | null;
+                const entregaLabel: Record<string, string> = {
+                  sent: "Enviado",
+                  delivered: "Entregue",
+                  read: "Lido",
+                  failed: "Falha",
+                };
                 return (
                   <TableRow key={d.id}>
                     <TableCell>{(d.contatos as any)?.nome || "—"}</TableCell>
@@ -1044,6 +1085,15 @@ export default function Campanhas() {
                     <TableCell>
                       <Badge variant={ds.variant}>{ds.label}</Badge>
                       {d.erro && <p className="text-xs text-destructive mt-1">{d.erro}</p>}
+                    </TableCell>
+                    <TableCell>
+                      {entrega ? (
+                        <Badge variant={entrega === "failed" ? "destructive" : entrega === "read" ? "default" : "outline"}>
+                          {entregaLabel[entrega] || entrega}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {d.enviado_at ? new Date(d.enviado_at).toLocaleString("pt-BR") : "—"}
@@ -1053,7 +1103,7 @@ export default function Campanhas() {
               })}
               {destinatariosDetail.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">Nenhum destinatário</TableCell>
                 </TableRow>
               )}
             </TableBody>

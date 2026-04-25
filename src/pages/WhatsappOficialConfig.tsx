@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Wifi, WifiOff, Save, Loader2, Send, Copy, AlertCircle } from "lucide-react";
 import { DiagnosticoCard } from "@/components/whatsapp-oficial/DiagnosticoCard";
 import { AuditoriaCard } from "@/components/whatsapp-oficial/AuditoriaCard";
+import { TemplatesCard } from "@/components/whatsapp-oficial/TemplatesCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -364,6 +365,7 @@ export default function WhatsappOficialConfig() {
       <Tabs defaultValue="config" className="space-y-6">
         <TabsList>
           <TabsTrigger value="config">Configuração</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
         </TabsList>
 
@@ -532,6 +534,10 @@ export default function WhatsappOficialConfig() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="templates" className="mt-0">
+          <TemplatesCard tenantId={tenantId ?? null} wabaId={wabaId} />
         </TabsContent>
 
         <TabsContent value="auditoria" className="mt-0">

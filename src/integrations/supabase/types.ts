@@ -901,6 +901,8 @@ export type Database = {
           id: string
           metadata: Json | null
           remetente: Database["public"]["Enums"]["remetente_tipo"]
+          status_entrega: string | null
+          status_entrega_at: string | null
           tenant_id: string
           tipo: Database["public"]["Enums"]["mensagem_tipo"]
         }
@@ -911,6 +913,8 @@ export type Database = {
           id?: string
           metadata?: Json | null
           remetente?: Database["public"]["Enums"]["remetente_tipo"]
+          status_entrega?: string | null
+          status_entrega_at?: string | null
           tenant_id: string
           tipo?: Database["public"]["Enums"]["mensagem_tipo"]
         }
@@ -921,6 +925,8 @@ export type Database = {
           id?: string
           metadata?: Json | null
           remetente?: Database["public"]["Enums"]["remetente_tipo"]
+          status_entrega?: string | null
+          status_entrega_at?: string | null
           tenant_id?: string
           tipo?: Database["public"]["Enums"]["mensagem_tipo"]
         }
@@ -1312,6 +1318,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      whatsapp_cloud_templates: {
+        Row: {
+          category: string | null
+          components: Json
+          created_at: string
+          id: string
+          language: string
+          meta_template_id: string | null
+          name: string
+          rejection_reason: string | null
+          status: string
+          synced_at: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          components?: Json
+          created_at?: string
+          id?: string
+          language: string
+          meta_template_id?: string | null
+          name: string
+          rejection_reason?: string | null
+          status?: string
+          synced_at?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          components?: Json
+          created_at?: string
+          id?: string
+          language?: string
+          meta_template_id?: string | null
+          name?: string
+          rejection_reason?: string | null
+          status?: string
+          synced_at?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       whatsapp_webhook_eventos: {
         Row: {

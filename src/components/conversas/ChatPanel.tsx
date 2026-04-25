@@ -14,6 +14,8 @@ interface Mensagem {
   tipo: string;
   created_at: string;
   metadata?: Record<string, any> | null;
+  status_entrega?: string | null;
+  status_entrega_at?: string | null;
 }
 
 interface ChatPanelProps {
@@ -123,6 +125,8 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
               senderName={m.metadata?.senderName}
               senderAvatar={m.metadata?.senderAvatar}
               metadata={m.metadata}
+              statusEntrega={m.status_entrega}
+              canal={canal}
             />
           ))
         )}

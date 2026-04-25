@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { FileDown, Image, Mic, Video } from "lucide-react";
+import { FileDown, Image, Mic, Video, Check, CheckCheck, AlertCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageBubbleProps {
   conteudo: string;
@@ -11,6 +12,8 @@ interface MessageBubbleProps {
   senderName?: string | null;
   senderAvatar?: string | null;
   metadata?: Record<string, any> | null;
+  statusEntrega?: string | null;
+  canal?: string;
 }
 
 const NAME_COLORS = [
@@ -31,11 +34,44 @@ function isPlaceholderMedia(conteudo: string): boolean {
   return /^\[(Imagem|Áudio|Vídeo|Documento)\]$/.test(conteudo);
 }
 
-export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar, metadata }: MessageBubbleProps) {
+export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar, metadata, statusEntrega, canal }: MessageBubbleProps) {
   const isOutgoing = remetente === "atendente" || remetente === "bot";
   const showSenderIncoming = !isOutgoing && !!senderName;
   const showSenderOutgoing = isOutgoing && remetente === "atendente" && !!senderName;
   const isPending = metadata?.media_status === "pending";
+  const showDeliveryStatus = isOutgoing && canal === "whatsapp_cloud" && !!statusEntrega;
+  const deliveryError = metadata?.delivery_errors?.[0]?.message
+    || metadata?.delivery_errors?.[0]?.title
+    || metadata?.wa_errors?.[0]?.message;
+
+  const renderDeliveryIcon = () => {
+    if (!showDeliveryStatus) return null;
+    const baseClass = "h-3 w-3 inline-block ml-1 align-text-bottom";
+    if (statusEntrega === "failed") {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertCircle className={cn(baseClass, "text-destructive")} />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs max-w-xs">{deliveryError || "Falha no envio"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    if (statusEntrega === "read") {
+      return <CheckCheck className={cn(baseClass, "text-sky-300")} />;
+    }
+    if (statusEntrega === "delivered") {
+      return <CheckCheck className={baseClass} />;
+    }
+    if (statusEntrega === "sent") {
+      return <Check className={baseClass} />;
+    }
+    return null;
+  };
 
   const renderContent = () => {
     // Pending media placeholder
@@ -114,6 +150,7 @@ export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName
           isOutgoing ? "opacity-70" : "text-muted-foreground"
         )}>
           {format(new Date(createdAt), "HH:mm")}
+          {renderDeliveryIcon()}
         </span>
       </div>
     </div>

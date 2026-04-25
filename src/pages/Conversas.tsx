@@ -35,6 +35,8 @@ interface MensagemRow {
   tipo: string;
   created_at: string;
   metadata?: Record<string, any> | null;
+  status_entrega?: string | null;
+  status_entrega_at?: string | null;
 }
 
 export default function Conversas() {
@@ -114,7 +116,7 @@ export default function Conversas() {
     setLoadingMsgs(true);
     const { data, error } = await supabase
       .from("mensagens")
-      .select("id, conteudo, remetente, tipo, created_at, metadata")
+      .select("id, conteudo, remetente, tipo, created_at, metadata, status_entrega, status_entrega_at")
       .eq("conversa_id", conversaId)
       .order("created_at", { ascending: true });
 

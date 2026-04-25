@@ -299,8 +299,21 @@ Deno.serve(async (req) => {
 
           if (jaEnviado && jaEnviado.length > 0) continue;
 
-          const contato = contatosMap.get(mov.contato_id);
+          const contato = contatosMap.get(mov.contato_id) as any;
           if (!contato) continue;
+
+          // 8.1 Filtro RFM (se a regra restringir segmentos)
+          const seg = segmentoFromSoma(
+            contato.rfv_recencia,
+            contato.rfv_frequencia,
+            contato.rfv_valor,
+          );
+          if (!passaFiltroRfv(seg, filtroRfvModo, filtroRfvSegs)) {
+            console.log(
+              `[gb-com] regra=${regra.nome} mov=${mov.id} pulado por filtro RFM (segmento=${seg})`,
+            );
+            continue;
+          }
 
           if (!contato.telefone) {
             await supabase.from("giftback_comunicacao_log").insert({

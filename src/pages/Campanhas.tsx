@@ -441,7 +441,8 @@ export default function Campanhas() {
         });
         return;
       }
-      const { error } = await supabase.functions.invoke("enviar-campanha", {
+      const fnName = campanhaCanal === "whatsapp_cloud" ? "enviar-campanha-cloud" : "enviar-campanha";
+      const { error } = await supabase.functions.invoke(fnName, {
         body: { campanha_id: campanhaId },
       });
       if (error) throw error;
@@ -487,6 +488,12 @@ export default function Campanhas() {
     setRfvMinF("0");
     setRfvMinV("0");
     setRfvSegmento("custom");
+    setTemplateId("");
+    setTemplateName("");
+    setTemplateLanguage("");
+    setTemplateComponents([]);
+    setTemplateVariaveis({});
+    setOptInConfirmado(false);
   }
 
   function toggleTag(tag: string) {

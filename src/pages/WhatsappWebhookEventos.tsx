@@ -135,39 +135,68 @@ export default function WhatsappWebhookEventos() {
   const hmacBadge = (v: boolean | null) => {
     if (v === null)
       return (
-        <span title="HMAC não validado" className="inline-flex items-center">
-          <ShieldOff className="h-3.5 w-3.5 text-muted-foreground" />
-        </span>
+        <Badge variant="secondary" className="gap-1 text-[10px] py-0 h-5">
+          <ShieldOff className="h-3 w-3" />
+          HMAC: não validado
+        </Badge>
       );
     if (v)
       return (
-        <span title="HMAC válido" className="inline-flex items-center">
-          <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-        </span>
+        <Badge
+          variant="default"
+          className="gap-1 text-[10px] py-0 h-5 bg-primary/15 text-primary border-primary/30 hover:bg-primary/15"
+        >
+          <ShieldCheck className="h-3 w-3" />
+          HMAC: válido
+        </Badge>
       );
     return (
-      <span title="HMAC inválido" className="inline-flex items-center">
-        <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
-      </span>
+      <Badge variant="destructive" className="gap-1 text-[10px] py-0 h-5">
+        <ShieldAlert className="h-3 w-3" />
+        HMAC: inválido
+      </Badge>
     );
   };
 
-  const previewPayload = (payload: any): string => {
+  const copyPhone = (phone: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(phone);
+    toast.success("phone_number_id copiado");
+  };
+
+  const summarizePayload = (payload: any): string[] => {
     try {
       const change = payload?.entry?.[0]?.changes?.[0];
       const value = change?.value || {};
-      const parts: string[] = [];
-      if (value.metadata?.display_phone_number)
-        parts.push(`from: ${value.metadata.display_phone_number}`);
-      if (value.messages?.length) parts.push(`${value.messages.length} msg`);
-      if (value.statuses?.length) parts.push(`${value.statuses.length} status`);
-      if (value.contacts?.length) parts.push(`${value.contacts.length} contact`);
-      if (parts.length === 0) return JSON.stringify(payload).slice(0, 80) + "…";
-      return parts.join(" · ");
+      const lines: string[] = [];
+      if (value.metadata?.display_phone_number) {
+        lines.push(`📞 De: ${value.metadata.display_phone_number}`);
+      }
+      if (value.contacts?.length) {
+        const c = value.contacts[0];
+        lines.push(`👤 ${c.profile?.name || "—"} (${c.wa_id || "?"})`);
+      }
+      (value.messages || []).forEach((m: any, i: number) => {
+        const tipo = m.type || "?";
+        const preview =
+          m.text?.body ||
+          m.button?.text ||
+          m.interactive?.button_reply?.title ||
+          m.interactive?.list_reply?.title ||
+          (m[tipo]?.caption ?? "") ||
+          `[${tipo}]`;
+        lines.push(`💬 #${i + 1} ${tipo}: ${String(preview).slice(0, 140)}`);
+      });
+      (value.statuses || []).forEach((s: any, i: number) => {
+        lines.push(`✅ status #${i + 1}: ${s.status}`);
+      });
+      return lines.length ? lines : [JSON.stringify(payload).slice(0, 80) + "…"];
     } catch {
-      return "—";
+      return ["—"];
     }
   };
+
+  const previewPayload = (payload: any): string => summarizePayload(payload)[0] || "—";
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">

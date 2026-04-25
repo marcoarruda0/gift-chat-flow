@@ -18,6 +18,7 @@ import {
   ShieldOff,
   ChevronDown,
   ChevronRight,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 

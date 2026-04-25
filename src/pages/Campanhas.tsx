@@ -14,15 +14,16 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
-  MessageSquare, Mail,
+  MessageSquare, Mail, Sparkles, CheckCircle2, Eye as EyeIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
 import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
+import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
-type Canal = "whatsapp" | "email";
+type Canal = "whatsapp" | "whatsapp_cloud" | "email";
 
 const atrasoConfig: Record<AtrasoTipo, { label: string; desc: string }> = {
   muito_curto: { label: "Muito Curto", desc: "1s a 5s" },
@@ -51,6 +52,11 @@ type Campanha = {
   email_assunto: string | null;
   email_html: string | null;
   email_preview: string | null;
+  template_id: string | null;
+  template_name: string | null;
+  template_language: string | null;
+  template_components: any;
+  template_variaveis: any;
 };
 
 type Contato = {
@@ -144,6 +150,15 @@ export default function Campanhas() {
   const [rfvMinF, setRfvMinF] = useState("0");
   const [rfvMinV, setRfvMinV] = useState("0");
   const [rfvSegmento, setRfvSegmento] = useState<"custom" | SegmentoKey>("custom");
+
+  // WhatsApp Cloud (oficial) — template state
+  const [templateId, setTemplateId] = useState<string>("");
+  const [templateName, setTemplateName] = useState<string>("");
+  const [templateLanguage, setTemplateLanguage] = useState<string>("");
+  const [templateComponents, setTemplateComponents] = useState<any[]>([]);
+  const [templateVariaveis, setTemplateVariaveis] = useState<Record<string, string>>({});
+  const [optInConfirmado, setOptInConfirmado] = useState(false);
+  const [cloudConectado, setCloudConectado] = useState(false);
 
   // Tenant email config (for live preview in EmailEditor)
   const [tenantEmail, setTenantEmail] = useState<{

@@ -158,12 +158,33 @@ export function DiagnosticoCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={statusColor} className={`gap-1 ${statusClass}`}>
             {statusIcon}
             {statusLabel}
           </Badge>
+          <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+            <Link to="/configuracoes/whatsapp-oficial/eventos">
+              <ListChecks className="h-3 w-3 mr-1" />
+              Ver eventos
+            </Link>
+          </Button>
         </div>
+
+        {alertaAtivo && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 flex gap-2 items-start">
+            <Bell className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-sm">
+              <p className="font-medium text-destructive">
+                Taxa de erro acima do limite ({alertaTaxaErroPct}%)
+              </p>
+              <p className="text-destructive/90 text-xs mt-0.5">
+                {errosWebhook24h} de {totalEventos24h} eventos falharam nas últimas 24h (
+                {taxaErro.toFixed(1)}%). Verifique a página de eventos para investigar.
+              </p>
+            </div>
+          </div>
+        )}
 
         {instrucao && (
           <p className="text-sm text-muted-foreground border-l-2 border-primary/40 pl-3">

@@ -968,7 +968,7 @@ export default function Campanhas() {
               </div>
             )}
 
-            {canal === "whatsapp" && (
+            {(canal === "whatsapp" || canal === "whatsapp_cloud") && (
               <div>
                 <Label>Atraso Inteligente</Label>
                 <Select value={atrasoTipo} onValueChange={(v) => setAtrasoTipo(v as AtrasoTipo)}>

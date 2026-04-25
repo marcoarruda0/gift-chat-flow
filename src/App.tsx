@@ -18,6 +18,7 @@ import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
 import ZapiConfig from "@/pages/ZapiConfig";
 import WhatsappOficialConfig from "@/pages/WhatsappOficialConfig";
+import WhatsappWebhookEventos from "@/pages/WhatsappWebhookEventos";
 import Conhecimento from "@/pages/Conhecimento";
 import IAConfig from "@/pages/IAConfig";
 import Empresa from "@/pages/Empresa";
@@ -54,6 +55,7 @@ function AppRoutes() {
       <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
       <Route path="/configuracoes/zapi" element={<ProtectedRoute><ZapiConfig /></ProtectedRoute>} />
       <Route path="/configuracoes/whatsapp-oficial" element={<ProtectedRoute><WhatsappOficialConfig /></ProtectedRoute>} />
+      <Route path="/configuracoes/whatsapp-oficial/eventos" element={<ProtectedRoute><WhatsappWebhookEventos /></ProtectedRoute>} />
       <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />
       <Route path="/empresas" element={<ProtectedRoute><Empresa initialTab="empresas" /></ProtectedRoute>} />

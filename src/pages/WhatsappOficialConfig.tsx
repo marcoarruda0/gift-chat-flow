@@ -176,6 +176,32 @@ export default function WhatsappOficialConfig() {
     loadDiagnostico();
   }, [wabaId, callProxy, loadDiagnostico]);
 
+  const handleReprocessLast = useCallback(async () => {
+    setReprocessing(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const url = `https://${PROJECT_ID}.supabase.co/functions/v1/whatsapp-cloud-reprocessar`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.session?.access_token}`,
+        },
+        body: JSON.stringify({ ultimo: true }),
+      });
+      const j = await res.json();
+      if (j?.ok) {
+        toast.success("Último evento reprocessado.");
+      } else {
+        toast.error("Falhou: " + (j?.error || res.status));
+      }
+    } catch (e: any) {
+      toast.error("Erro: " + e.message);
+    }
+    setReprocessing(false);
+    loadDiagnostico();
+  }, [loadDiagnostico]);
+
   const handleSendTest = async () => {
     if (!testNumber.trim()) {
       toast.error("Informe o número de destino (formato E.164, ex: 5511999999999)");

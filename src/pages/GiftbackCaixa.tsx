@@ -303,7 +303,7 @@ export default function GiftbackCaixa() {
 
       const transacao = calcularTransacaoGiftback({
         saldoAtivo,
-        valorCompra: valorCompraNum,
+        valorCompra: valorValidado,
         aplicarGiftback,
         multiplicador: regras.multiplicador_compra_minima,
         percentual: regras.percentual,

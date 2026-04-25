@@ -3,6 +3,7 @@ import {
   resolverRegrasGiftback,
   calcularCompraMinima,
   calcularTransacaoGiftback,
+  parseValorCompra,
   type GiftbackConfigGlobal,
   type GiftbackConfigRfvOverride,
 } from "@/lib/giftback-rules";

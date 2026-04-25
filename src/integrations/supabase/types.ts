@@ -777,6 +777,114 @@ export type Database = {
           },
         ]
       }
+      giftback_comunicacao_config: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          horario_envio: string
+          id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          horario_envio?: string
+          id?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          horario_envio?: string
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      giftback_comunicacao_log: {
+        Row: {
+          contato_id: string
+          enviado_em: string
+          erro: string | null
+          id: string
+          movimento_id: string
+          regra_id: string
+          status: string
+          tenant_id: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          contato_id: string
+          enviado_em?: string
+          erro?: string | null
+          id?: string
+          movimento_id: string
+          regra_id: string
+          status: string
+          tenant_id: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          contato_id?: string
+          enviado_em?: string
+          erro?: string | null
+          id?: string
+          movimento_id?: string
+          regra_id?: string
+          status?: string
+          tenant_id?: string
+          wa_message_id?: string | null
+        }
+        Relationships: []
+      }
+      giftback_comunicacao_regras: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          dias_offset: number
+          id: string
+          nome: string
+          template_components: Json
+          template_language: string
+          template_name: string
+          template_variaveis: Json
+          tenant_id: string
+          tipo_gatilho: Database["public"]["Enums"]["gb_gatilho_tipo"]
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          dias_offset?: number
+          id?: string
+          nome: string
+          template_components?: Json
+          template_language?: string
+          template_name: string
+          template_variaveis?: Json
+          tenant_id: string
+          tipo_gatilho: Database["public"]["Enums"]["gb_gatilho_tipo"]
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          dias_offset?: number
+          id?: string
+          nome?: string
+          template_components?: Json
+          template_language?: string
+          template_name?: string
+          template_variaveis?: Json
+          tenant_id?: string
+          tipo_gatilho?: Database["public"]["Enums"]["gb_gatilho_tipo"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       giftback_config: {
         Row: {
           created_at: string
@@ -1609,6 +1717,7 @@ export type Database = {
         | "concluida"
         | "cancelada"
       destinatario_status: "pendente" | "enviado" | "falha"
+      gb_gatilho_tipo: "criado" | "vencendo" | "expirado"
       giftback_status: "ativo" | "usado" | "expirado" | "inativo"
       giftback_tipo: "credito" | "debito" | "expiracao"
       ia_emojis: "nao" | "pouco" | "sim"
@@ -1752,6 +1861,7 @@ export const Constants = {
         "cancelada",
       ],
       destinatario_status: ["pendente", "enviado", "falha"],
+      gb_gatilho_tipo: ["criado", "vencendo", "expirado"],
       giftback_status: ["ativo", "usado", "expirado", "inativo"],
       giftback_tipo: ["credito", "debito", "expiracao"],
       ia_emojis: ["nao", "pouco", "sim"],

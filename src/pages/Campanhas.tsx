@@ -532,7 +532,10 @@ export default function Campanhas() {
         <TabsList>
           <TabsTrigger value="todas">Todas</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-1">
-            <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+            <MessageSquare className="h-3.5 w-3.5" /> Z-API
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp_cloud" className="gap-1">
+            <Sparkles className="h-3.5 w-3.5" /> Oficial
           </TabsTrigger>
           <TabsTrigger value="email" className="gap-1">
             <Mail className="h-3.5 w-3.5" /> E-mail
@@ -580,15 +583,24 @@ export default function Campanhas() {
                           <Badge variant="outline" className="gap-1">
                             <Mail className="h-3 w-3" /> E-mail
                           </Badge>
+                        ) : cn === "whatsapp_cloud" ? (
+                          <Badge className="gap-1 bg-green-600 hover:bg-green-600">
+                            <Sparkles className="h-3 w-3" /> Oficial
+                          </Badge>
                         ) : (
                           <Badge variant="outline" className="gap-1">
-                            <MessageSquare className="h-3 w-3" /> WhatsApp
+                            <MessageSquare className="h-3 w-3" /> Z-API
                           </Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1 text-muted-foreground capitalize">
-                          {cn === "email" ? <FileText className="h-4 w-4" /> : midiaIcon[tm]} {cn === "email" ? "html" : tm}
+                          {cn === "email"
+                            ? <><FileText className="h-4 w-4" /> html</>
+                            : cn === "whatsapp_cloud"
+                              ? <><Sparkles className="h-4 w-4" /> {c.template_name || "template"}</>
+                              : <>{midiaIcon[tm]} {tm}</>
+                          }
                         </span>
                       </TableCell>
                       <TableCell>
@@ -642,7 +654,7 @@ export default function Campanhas() {
           <div className="space-y-4">
             <div>
               <Label className="mb-2 block">Canal de envio</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => setCanal("whatsapp")}
@@ -651,8 +663,22 @@ export default function Campanhas() {
                   }`}
                 >
                   <MessageSquare className={`h-6 w-6 mb-2 ${canal === "whatsapp" ? "text-primary" : "text-muted-foreground"}`} />
-                  <div className="font-medium">WhatsApp</div>
-                  <div className="text-xs text-muted-foreground">Texto, imagem, vídeo, áudio ou documento</div>
+                  <div className="font-medium">WhatsApp (Z-API)</div>
+                  <div className="text-xs text-muted-foreground">Texto livre + mídia</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCanal("whatsapp_cloud")}
+                  className={`border rounded-lg p-4 text-left transition ${
+                    canal === "whatsapp_cloud" ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-input hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <Sparkles className={`h-6 w-6 mb-2 ${canal === "whatsapp_cloud" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="font-medium flex items-center gap-1">
+                    Oficial
+                    <Badge className="bg-green-600 hover:bg-green-600 text-[10px] py-0 px-1">META</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Templates aprovados</div>
                 </button>
                 <button
                   type="button"
@@ -663,9 +689,14 @@ export default function Campanhas() {
                 >
                   <Mail className={`h-6 w-6 mb-2 ${canal === "email" ? "text-primary" : "text-muted-foreground"}`} />
                   <div className="font-medium">E-mail</div>
-                  <div className="text-xs text-muted-foreground">Editor rich-text com assunto, links e imagens</div>
+                  <div className="text-xs text-muted-foreground">Editor rich-text</div>
                 </button>
               </div>
+              {canal === "whatsapp_cloud" && !cloudConectado && (
+                <p className="text-xs text-destructive mt-2">
+                  WhatsApp Oficial não está conectado. Vá em Configurações › WhatsApp Oficial.
+                </p>
+              )}
             </div>
 
             <div>

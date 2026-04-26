@@ -263,6 +263,20 @@ export function TemplateCampanhaPicker({
               Pré-visualização (com dados de exemplo)
             </Label>
             <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2 text-sm">
+              {headerComponent && String(headerComponent.format || "").toUpperCase() === "IMAGE" && headerComponent.media_url && (
+                <img
+                  src={headerComponent.media_url}
+                  alt="Cabeçalho do template"
+                  className="max-h-40 rounded object-contain mx-auto"
+                />
+              )}
+              {headerComponent && String(headerComponent.format || "").toUpperCase() === "VIDEO" && headerComponent.media_url && (
+                <video
+                  src={headerComponent.media_url}
+                  controls
+                  className="max-h-40 rounded mx-auto"
+                />
+              )}
               {headerComponent && String(headerComponent.format || "TEXT").toUpperCase() === "TEXT" && (
                 <div className="font-semibold whitespace-pre-wrap">
                   {buildPreview(headerComponent.text || "", "header", headerPlaceholders)}

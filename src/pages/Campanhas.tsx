@@ -164,6 +164,19 @@ export default function Campanhas() {
   const [optInConfirmado, setOptInConfirmado] = useState(false);
   const [cloudConectado, setCloudConectado] = useState(false);
 
+  // Busca de contatos na seleção manual
+  const [manualSearch, setManualSearch] = useState("");
+
+  // Grupos de campanhas
+  const [grupos, setGrupos] = useState<CampanhaGrupo[]>([]);
+  const [grupoId, setGrupoId] = useState<string>("none");
+  const [filtroGrupo, setFiltroGrupo] = useState<string>("todos");
+  const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
+  const [editGrupoCampanhaId, setEditGrupoCampanhaId] = useState<string | null>(null);
+
+  // Teste de disparo Oficial
+  const [testarOpen, setTestarOpen] = useState(false);
+
   // Tenant email config (for live preview in EmailEditor)
   const [tenantEmail, setTenantEmail] = useState<{
     nome: string | null;

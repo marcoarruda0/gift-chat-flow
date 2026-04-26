@@ -310,6 +310,7 @@ export default function GiftbackCaixa() {
         aplicarGiftback,
         multiplicador: regras.multiplicador_compra_minima,
         percentual: regras.percentual,
+        criadoEm: giftbackAtivo?.created_at ?? null,
       });
 
       if (transacao.erroValidacao) {

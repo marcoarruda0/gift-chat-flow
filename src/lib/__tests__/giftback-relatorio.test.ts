@@ -5,6 +5,9 @@ import {
   calcularFrequenciaMedia,
   formatBRL,
   formatMesLabel,
+  calcularVariacaoPct,
+  formatVariacaoPct,
+  validarPeriodoCustom,
 } from "../giftback-relatorio";
 
 describe("giftback-relatorio helpers", () => {

@@ -15,12 +15,15 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
   MessageSquare, Mail, Sparkles, CheckCircle2, Eye as EyeIcon,
+  Search, Tags, FlaskConical,
 } from "lucide-react";
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
 import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
 import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
+import { TestarCampanhaCloudDialog } from "@/components/campanhas/TestarCampanhaCloudDialog";
+import { GerenciarGruposDialog, type CampanhaGrupo } from "@/components/campanhas/GerenciarGruposDialog";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "whatsapp_cloud" | "email";

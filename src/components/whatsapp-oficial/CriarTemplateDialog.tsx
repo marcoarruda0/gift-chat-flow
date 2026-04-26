@@ -466,26 +466,40 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
 
           <div className="space-y-2">
             <Label>Corpo *</Label>
+            <TemplateVariablesGuide
+              used={bodyPlaceholders}
+              context="corpo"
+              onInsert={(token) =>
+                insertAtCursor(bodyRef.current, body, token, setBody)
+              }
+            />
             <Textarea
+              ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder={"Use {{1}}, {{2}} para variáveis.\nEx: Seu pedido {{1}} foi confirmado."}
-              rows={4}
+              placeholder="Ex: Olá {{1}}, seu pedido {{2}} foi confirmado."
+              rows={5}
             />
             {bodyPlaceholders > 0 && (
               <div className="space-y-2 pt-2">
-                <p className="text-xs text-muted-foreground">Exemplos para os placeholders:</p>
+                <p className="text-xs text-muted-foreground">
+                  Exemplo de cada variável (visto pela Meta na aprovação):
+                </p>
                 {bodyExamples.map((ex, i) => (
-                  <Input
-                    key={i}
-                    value={ex}
-                    onChange={(e) => {
-                      const next = [...bodyExamples];
-                      next[i] = e.target.value;
-                      setBodyExamples(next);
-                    }}
-                    placeholder={`Exemplo para {{${i + 1}}}`}
-                  />
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">
+                      {`{{${i + 1}}}`}
+                    </span>
+                    <Input
+                      value={ex}
+                      onChange={(e) => {
+                        const next = [...bodyExamples];
+                        next[i] = e.target.value;
+                        setBodyExamples(next);
+                      }}
+                      placeholder={`Exemplo para {{${i + 1}}}`}
+                    />
+                  </div>
                 ))}
               </div>
             )}

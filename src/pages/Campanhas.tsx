@@ -675,6 +675,7 @@ export default function Campanhas() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Canal</TableHead>
+                  <TableHead>Grupo</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Atraso</TableHead>
                   <TableHead>Status</TableHead>

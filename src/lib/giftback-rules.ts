@@ -119,6 +119,12 @@ export interface ResultadoTransacao {
   novoSaldo: number; // sempre = gbGerado (já que vira o único ativo)
   compraMinimaParaGerar: number;
   /**
+   * Verdadeiro quando o giftback ativo foi criado HOJE (mesma data civil
+   * local). Nesse caso a regra D+1 proíbe o resgate; o ativo NÃO é
+   * invalidado por nova compra — segue válido para o dia seguinte.
+   */
+  bloqueadoMesmoDia: boolean;
+  /**
    * Se preenchido, a operação NÃO pode ser executada — a UI deve
    * bloquear a confirmação e exibir esta mensagem ao operador.
    * Ex.: tentativa de resgate parcial (compra < valor do giftback ativo).
@@ -132,6 +138,22 @@ export interface CalcularTransacaoInput {
   aplicarGiftback: boolean;
   multiplicador: number;
   percentual: number;
+  /**
+   * Data/hora de criação do giftback ativo. Quando informado e for o
+   * mesmo dia civil local que `agora`, a regra D+1 bloqueia o resgate.
+   */
+  criadoEm?: string | Date | null;
+  /** Injeção de "agora" para testes. Default: `new Date()`. */
+  agora?: Date;
+}
+
+/** Compara duas datas pela data civil local (YYYY-MM-DD). */
+function isMesmoDiaLocal(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 /**
@@ -150,9 +172,36 @@ export function calcularTransacaoGiftback(
   const percentual = Math.max(0, Number(input.percentual) || 0);
   const aplicar = !!input.aplicarGiftback && saldoAtivo > 0;
 
+  // Regra D+1: giftback criado HOJE não pode ser resgatado no mesmo dia.
+  const agora = input.agora ?? new Date();
+  let bloqueadoMesmoDia = false;
+  if (saldoAtivo > 0 && input.criadoEm) {
+    const criado =
+      input.criadoEm instanceof Date
+        ? input.criadoEm
+        : new Date(input.criadoEm);
+    if (!Number.isNaN(criado.getTime()) && isMesmoDiaLocal(criado, agora)) {
+      bloqueadoMesmoDia = true;
+    }
+  }
+
   const compraMinimaParaGerar = saldoAtivo * multiplicador;
   const gerouNovo = valorCompra > 0 && valorCompra >= compraMinimaParaGerar;
   const gbGerado = gerouNovo ? valorCompra * (percentual / 100) : 0;
+
+  // Bloqueio D+1: se operador tentou aplicar, devolve erro claro.
+  if (bloqueadoMesmoDia && input.aplicarGiftback) {
+    return {
+      gbUsado: 0,
+      gbGerado: 0,
+      acaoSobreAtivo: "nenhum",
+      novoSaldo: saldoAtivo,
+      compraMinimaParaGerar,
+      bloqueadoMesmoDia: true,
+      erroValidacao:
+        "Giftback criado hoje só pode ser utilizado a partir de amanhã (D+1).",
+    };
+  }
 
   // Resgate tudo-ou-nada: a compra precisa cobrir o valor INTEGRAL do ativo.
   if (aplicar && valorCompra < saldoAtivo) {
@@ -162,6 +211,7 @@ export function calcularTransacaoGiftback(
       acaoSobreAtivo: "nenhum",
       novoSaldo: saldoAtivo,
       compraMinimaParaGerar,
+      bloqueadoMesmoDia,
       erroValidacao: `Resgate é tudo-ou-nada: a compra precisa ser ≥ R$ ${saldoAtivo.toFixed(
         2,
       )} para utilizar o giftback ativo integralmente.`,
@@ -175,6 +225,11 @@ export function calcularTransacaoGiftback(
     if (aplicar) {
       gbUsado = saldoAtivo;
       acao = "usar";
+    } else if (bloqueadoMesmoDia) {
+      // Cliente fez nova compra mas o ativo é do mesmo dia → preserva
+      // o ativo (não invalida nem substitui). Nova compra não gera
+      // crédito adicional, pois só pode existir 1 giftback ativo.
+      acao = "nenhum";
     } else if (gerouNovo) {
       acao = "substituir";
     } else {
@@ -183,12 +238,18 @@ export function calcularTransacaoGiftback(
     }
   }
 
+  // Quando o ativo é preservado pela regra D+1, o novo saldo continua
+  // sendo o valor do ativo (e não há geração de novo crédito).
+  const novoSaldo =
+    saldoAtivo > 0 && bloqueadoMesmoDia && !aplicar ? saldoAtivo : gbGerado;
+
   return {
     gbUsado,
-    gbGerado,
+    gbGerado: saldoAtivo > 0 && bloqueadoMesmoDia && !aplicar ? 0 : gbGerado,
     acaoSobreAtivo: acao,
-    novoSaldo: gbGerado, // sempre o valor do novo único ativo (0 se não gerou)
+    novoSaldo,
     compraMinimaParaGerar,
+    bloqueadoMesmoDia,
     erroValidacao: null,
   };
 }

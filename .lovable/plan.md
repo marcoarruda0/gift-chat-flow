@@ -1,53 +1,55 @@
 ## Objetivo
+Implementar a regra de negócio: **um giftback recém-gerado não pode ser resgatado no mesmo dia em que foi criado — só a partir do dia seguinte (D+1)**.
 
-Hoje a lista lateral de **Conversas** mistura conversas vindas do **Z-API** (WhatsApp não-oficial) com as do **WhatsApp Cloud / WABA** (oficial). Vou adicionar **tabs superiores de canal** dentro da lista para separar visualmente os dois fluxos, mantendo todos os filtros existentes (Todas / Abertas / Minhas / Meu Depto / Fechadas / Sem Atendente) operando dentro do canal selecionado.
+Hoje, quando o caixa registra uma compra que gera giftback e, na mesma data, o cliente faz outra compra, o saldo ativo já aparece disponível para uso. Vamos travar isso.
 
-A coluna `canal` já existe em `conversas` (valores `zapi` e `whatsapp_cloud`) e já é carregada no `fetchConversas` em `src/pages/Conversas.tsx` — então não há mudança de banco/edge function.
+## Diagnóstico do fluxo atual
+- `src/pages/GiftbackCaixa.tsx` busca o único giftback ativo (`giftback_movimentos`, `tipo='credito'`, `status='ativo'`) e já carrega `created_at`, `valor` e `validade`.
+- `calcularTransacaoGiftback` (em `src/lib/giftback-rules.ts`) é a função pura que decide `gbUsado` / `gbGerado` / `acaoSobreAtivo` / `erroValidacao`. Ela NÃO conhece datas hoje.
+- O toggle "Aplicar giftback" no caixa habilita o resgate sempre que `saldoAtivo > 0`.
+- A validade é apenas data (`date`), sem hora — então a comparação de "criado hoje" precisa ser feita por **data local** (não UTC) para evitar bugs de fuso.
 
----
+## Mudanças propostas
 
-## Mudanças
+### 1) Regra pura — `src/lib/giftback-rules.ts`
+- Adicionar campo opcional `criadoEm?: string | Date | null` em `CalcularTransacaoInput`.
+- Adicionar nova flag em `ResultadoTransacao`: `bloqueadoMesmoDia: boolean`.
+- Lógica:
+  - Se `criadoEm` estiver no **mesmo dia local** que `agora` e o usuário marcou `aplicarGiftback`, retornar `erroValidacao` claro: _"Giftback criado hoje só pode ser utilizado a partir de amanhã (D+1)."_ e `bloqueadoMesmoDia: true`.
+  - Caso contrário, comportamento atual.
+- Adicionar utilitário interno `isMesmoDiaLocal(a, b)` (compara `YYYY-MM-DD` no fuso local) — sem dependência externa.
 
-### 1. `src/components/conversas/ConversasList.tsx`
+### 2) Caixa — `src/pages/GiftbackCaixa.tsx`
+- Passar `criadoEm: giftbackAtivo?.created_at` para `calcularTransacaoGiftback` no preview e na mutation de gravação (defesa em profundidade).
+- Quando `bloqueadoMesmoDia === true`:
+  - **Desabilitar** o `Switch` "Aplicar giftback" e marcar como `false` (forçado).
+  - Exibir aviso informativo (não destrutivo) abaixo do bloco do giftback ativo:  
+    _"Este giftback foi gerado hoje (DD/MM) e poderá ser utilizado a partir de DD/MM (amanhã)."_
+  - Adicionar entrada em `motivosBloqueio` somente se o usuário tentar aplicar.
+- Importante: a regra **não** deve invalidar o ativo se o cliente fizer nova compra hoje sem usar — o giftback continua válido para amanhã. Hoje, `acaoSobreAtivo` vira `"substituir"` ou `"invalidar_nao_uso"` quando há nova compra. Vou ajustar `calcularTransacaoGiftback` para que, **quando `bloqueadoMesmoDia` é verdade**, o ativo seja **preservado** (`acao = "nenhum"`) mesmo com nova compra geradora — caso contrário a regra D+1 viraria uma armadilha que destrói o saldo.
 
-**Adicionar tab de canal acima dos filtros existentes**, com 3 opções:
-- **Todos** (padrão) — comportamento atual
-- **Z-API** — apenas `canal === 'zapi'` (ou null/legado)
-- **WhatsApp Oficial** — apenas `canal === 'whatsapp_cloud'`
+### 3) Edge case — validade muito curta
+Se `validade_dias = 1` e o giftback é criado hoje, ele venceria amanhã, dando apenas 1 dia útil de uso. Isso é aceitável e respeita a configuração — **não** vou alterar `validade` automaticamente. Apenas vou registrar nota no aviso quando `validade === amanhã`:  
+_"Atenção: este giftback vence em DD/MM."_
 
-Detalhes de implementação:
-- Estender a interface `Conversa` com `canal?: string | null` (já vem populada do `Conversas.tsx`).
-- Novo state `canalTab: 'todos' | 'zapi' | 'whatsapp_cloud'` (padrão `'todos'`).
-- Aplicar o filtro de canal **antes** do filtro de status/atendimento atual no `filtered`:
-  ```ts
-  if (canalTab === 'zapi' && c.canal === 'whatsapp_cloud') return false;
-  if (canalTab === 'whatsapp_cloud' && c.canal !== 'whatsapp_cloud') return false;
-  ```
-  (assim conversas legadas sem `canal` definido caem em "Z-API", que é o comportamento atual.)
-- UI: usar `Tabs` do shadcn (`@/components/ui/tabs`) logo abaixo do header "Conversas / botões de ação" e acima do search, com labels curtos e um pequeno **contador por canal** (ex.: `Z-API (12)`, `Oficial (3)`) calculado a partir de `conversas`.
-- Ícones leves opcionais ao lado dos labels: `MessageSquare` para Z-API, `BadgeCheck` para Oficial (já disponível no lucide-react).
-
-### 2. `src/pages/Conversas.tsx`
-
-Nenhuma mudança funcional grande — o `canal` já é mapeado em `fetchConversas` (linha 99) e passado dentro de cada item de `conversas` para `ConversasList`. Apenas garantir que a prop `canal` continue chegando intacta (já chega).
-
-Opcionalmente: persistir a aba selecionada em `localStorage` (`conversas_canal_tab`) para que o atendente reabra a página no canal que estava trabalhando. Isso é pequeno e fica encapsulado em `ConversasList`.
-
----
-
-## Comportamento esperado
-
-- Ao abrir `/conversas`, a aba **"Todos"** vem selecionada por padrão (mantém compatibilidade).
-- Ao clicar em **Z-API**: apenas conversas Z-API aparecem; filtros (Abertas/Minhas/etc.) continuam funcionando dentro do recorte.
-- Ao clicar em **WhatsApp Oficial**: apenas conversas WABA aparecem; o `cloudWindowBlocked` (24h) continua funcionando normalmente no `ChatPanel` quando uma delas é selecionada.
-- Contadores nas tabs refletem o total bruto por canal (sem aplicar busca/filtro), para servir como "inbox" rápido.
-- Conversa selecionada permanece selecionada ao trocar de tab; se o `canal` dela não bater com a tab atual ela some da lista, mas o painel direito segue aberto (comportamento natural — basta voltar à tab "Todos").
-
----
+### 4) Testes — `src/lib/__tests__/giftback-rules.test.ts`
+Adicionar casos:
+- Tentar aplicar giftback criado hoje → `erroValidacao` setado, `bloqueadoMesmoDia: true`, `gbUsado = 0`.
+- Giftback criado ontem → uso permitido normalmente.
+- Nova compra hoje, sem aplicar, com ativo criado hoje → `acaoSobreAtivo === "nenhum"` (ativo preservado), `gbGerado` ainda calculado se compra ≥ mínima.
+- Comparação por data local (evitar regressão de fuso).
 
 ## Arquivos afetados
+- **Modificado**: `src/lib/giftback-rules.ts` (novo input, nova flag, lógica D+1, preservação do ativo).
+- **Modificado**: `src/pages/GiftbackCaixa.tsx` (passar `criadoEm`, desabilitar toggle, exibir aviso).
+- **Modificado**: `src/lib/__tests__/giftback-rules.test.ts` (cobertura D+1).
 
-- **Modificado**: `src/components/conversas/ConversasList.tsx` (adicionar tabs de canal, contadores e filtro por canal).
-- **Modificado (mínimo)**: `src/pages/Conversas.tsx` — apenas se for necessário ajustar tipos da prop (provavelmente não, pois `canal` já é repassado implicitamente). Confirmo na implementação.
+## Sem mudanças necessárias
+- **Banco / RLS**: nenhum — a regra é client-side + função pura. Não há edge function que aplique giftback no caixa hoje.
+- **Tabela `giftback_movimentos`**: já temos `created_at`, suficiente para a comparação.
+- **`expirar-giftbacks`** edge function: regra de expiração por `validade` continua igual.
 
-Sem migrações de banco, sem edge functions, sem alterações em `ChatPanel`.
+## Pergunta única (opcional)
+A regra "criado hoje = bloqueado" deve usar **data civil local do navegador** (mais intuitiva para o operador, ex.: criado às 23:55 → liberado em 5 min na virada do dia) ou **24 horas corridas a partir do `created_at`** (ex.: criado 23:55 → liberado só amanhã às 23:55)?
+
+Se você não responder, sigo com **data civil local** (opção mais simples e alinhada com como lojas operam por "dia de caixa").

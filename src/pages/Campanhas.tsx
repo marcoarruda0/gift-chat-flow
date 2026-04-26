@@ -727,6 +727,7 @@ export default function Campanhas() {
                         })()}
                       </TableCell>
                       <TableCell>
+                        <span className="flex items-center gap-1 text-muted-foreground capitalize">
                           {cn === "email"
                             ? <><FileText className="h-4 w-4" /> html</>
                             : cn === "whatsapp_cloud"

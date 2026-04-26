@@ -360,12 +360,26 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
             </div>
 
             {headerType === "TEXT" && (
-              <>
+              <div className="space-y-2">
                 <Input
+                  ref={headerInputRef}
                   value={headerText}
                   onChange={(e) => setHeaderText(e.target.value)}
                   placeholder="ex: Olá {{1}}"
                   maxLength={60}
+                />
+                <TemplateVariablesGuide
+                  used={headerPlaceholders}
+                  max={1}
+                  context="cabeçalho"
+                  onInsert={(token) =>
+                    insertAtCursor(
+                      headerInputRef.current,
+                      headerText,
+                      token,
+                      setHeaderText,
+                    )
+                  }
                 />
                 {headerPlaceholders === 1 && (
                   <Input
@@ -374,7 +388,7 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
                     placeholder="Exemplo para {{1}} (ex: Maria)"
                   />
                 )}
-              </>
+              </div>
             )}
 
             {isMediaHeader && (

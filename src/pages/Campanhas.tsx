@@ -710,7 +710,23 @@ export default function Campanhas() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="flex items-center gap-1 text-muted-foreground capitalize">
+                        {(() => {
+                          const g = c.grupo_id ? gruposMap.get(c.grupo_id) : null;
+                          if (!g) {
+                            return <span className="text-xs text-muted-foreground">—</span>;
+                          }
+                          return (
+                            <Badge
+                              className="border-transparent text-white"
+                              style={{ backgroundColor: g.cor || "#6B7280" }}
+                              title={g.descricao || g.nome}
+                            >
+                              {g.nome}
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
                           {cn === "email"
                             ? <><FileText className="h-4 w-4" /> html</>
                             : cn === "whatsapp_cloud"

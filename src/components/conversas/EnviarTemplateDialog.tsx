@@ -251,6 +251,29 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
                     </div>
                   )}
 
+                  {headerMedia && (
+                    <div className="space-y-1">
+                      <Label className="text-xs uppercase text-muted-foreground">
+                        Mídia do cabeçalho
+                      </Label>
+                      <div className="rounded-md border border-border bg-muted/30 p-2">
+                        {headerMedia.format === "IMAGE" ? (
+                          <img
+                            src={headerMedia.url}
+                            alt="Cabeçalho do template"
+                            className="max-h-40 rounded object-contain mx-auto"
+                          />
+                        ) : (
+                          <video
+                            src={headerMedia.url}
+                            controls
+                            className="max-h-40 rounded mx-auto"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {bodyComponent?.text && (
                     <div className="space-y-1">
                       <Label className="text-xs uppercase text-muted-foreground">Pré-visualização</Label>

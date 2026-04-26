@@ -172,9 +172,36 @@ export function calcularTransacaoGiftback(
   const percentual = Math.max(0, Number(input.percentual) || 0);
   const aplicar = !!input.aplicarGiftback && saldoAtivo > 0;
 
+  // Regra D+1: giftback criado HOJE não pode ser resgatado no mesmo dia.
+  const agora = input.agora ?? new Date();
+  let bloqueadoMesmoDia = false;
+  if (saldoAtivo > 0 && input.criadoEm) {
+    const criado =
+      input.criadoEm instanceof Date
+        ? input.criadoEm
+        : new Date(input.criadoEm);
+    if (!Number.isNaN(criado.getTime()) && isMesmoDiaLocal(criado, agora)) {
+      bloqueadoMesmoDia = true;
+    }
+  }
+
   const compraMinimaParaGerar = saldoAtivo * multiplicador;
   const gerouNovo = valorCompra > 0 && valorCompra >= compraMinimaParaGerar;
   const gbGerado = gerouNovo ? valorCompra * (percentual / 100) : 0;
+
+  // Bloqueio D+1: se operador tentou aplicar, devolve erro claro.
+  if (bloqueadoMesmoDia && input.aplicarGiftback) {
+    return {
+      gbUsado: 0,
+      gbGerado: 0,
+      acaoSobreAtivo: "nenhum",
+      novoSaldo: saldoAtivo,
+      compraMinimaParaGerar,
+      bloqueadoMesmoDia: true,
+      erroValidacao:
+        "Giftback criado hoje só pode ser utilizado a partir de amanhã (D+1).",
+    };
+  }
 
   // Resgate tudo-ou-nada: a compra precisa cobrir o valor INTEGRAL do ativo.
   if (aplicar && valorCompra < saldoAtivo) {
@@ -184,6 +211,7 @@ export function calcularTransacaoGiftback(
       acaoSobreAtivo: "nenhum",
       novoSaldo: saldoAtivo,
       compraMinimaParaGerar,
+      bloqueadoMesmoDia,
       erroValidacao: `Resgate é tudo-ou-nada: a compra precisa ser ≥ R$ ${saldoAtivo.toFixed(
         2,
       )} para utilizar o giftback ativo integralmente.`,
@@ -197,6 +225,11 @@ export function calcularTransacaoGiftback(
     if (aplicar) {
       gbUsado = saldoAtivo;
       acao = "usar";
+    } else if (bloqueadoMesmoDia) {
+      // Cliente fez nova compra mas o ativo é do mesmo dia → preserva
+      // o ativo (não invalida nem substitui). Nova compra não gera
+      // crédito adicional, pois só pode existir 1 giftback ativo.
+      acao = "nenhum";
     } else if (gerouNovo) {
       acao = "substituir";
     } else {
@@ -205,12 +238,18 @@ export function calcularTransacaoGiftback(
     }
   }
 
+  // Quando o ativo é preservado pela regra D+1, o novo saldo continua
+  // sendo o valor do ativo (e não há geração de novo crédito).
+  const novoSaldo =
+    saldoAtivo > 0 && bloqueadoMesmoDia && !aplicar ? saldoAtivo : gbGerado;
+
   return {
     gbUsado,
-    gbGerado,
+    gbGerado: saldoAtivo > 0 && bloqueadoMesmoDia && !aplicar ? 0 : gbGerado,
     acaoSobreAtivo: acao,
-    novoSaldo: gbGerado, // sempre o valor do novo único ativo (0 se não gerou)
+    novoSaldo,
     compraMinimaParaGerar,
+    bloqueadoMesmoDia,
     erroValidacao: null,
   };
 }

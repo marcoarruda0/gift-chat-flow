@@ -56,6 +56,30 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
   const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const headerInputRef = useRef<HTMLInputElement | null>(null);
+
+  /** Insere texto na posição atual do cursor (ou no final). */
+  const insertAtCursor = (
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    current: string,
+    insert: string,
+    setter: (v: string) => void,
+  ) => {
+    if (!el) {
+      setter(current + insert);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + insert + current.slice(end);
+    setter(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + insert.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
 
   const [body, setBody] = useState("");
   const [bodyExamples, setBodyExamples] = useState<string[]>([]);

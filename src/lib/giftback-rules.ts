@@ -119,6 +119,12 @@ export interface ResultadoTransacao {
   novoSaldo: number; // sempre = gbGerado (já que vira o único ativo)
   compraMinimaParaGerar: number;
   /**
+   * Verdadeiro quando o giftback ativo foi criado HOJE (mesma data civil
+   * local). Nesse caso a regra D+1 proíbe o resgate; o ativo NÃO é
+   * invalidado por nova compra — segue válido para o dia seguinte.
+   */
+  bloqueadoMesmoDia: boolean;
+  /**
    * Se preenchido, a operação NÃO pode ser executada — a UI deve
    * bloquear a confirmação e exibir esta mensagem ao operador.
    * Ex.: tentativa de resgate parcial (compra < valor do giftback ativo).
@@ -132,6 +138,22 @@ export interface CalcularTransacaoInput {
   aplicarGiftback: boolean;
   multiplicador: number;
   percentual: number;
+  /**
+   * Data/hora de criação do giftback ativo. Quando informado e for o
+   * mesmo dia civil local que `agora`, a regra D+1 bloqueia o resgate.
+   */
+  criadoEm?: string | Date | null;
+  /** Injeção de "agora" para testes. Default: `new Date()`. */
+  agora?: Date;
+}
+
+/** Compara duas datas pela data civil local (YYYY-MM-DD). */
+function isMesmoDiaLocal(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 /**

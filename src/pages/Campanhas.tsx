@@ -548,6 +548,8 @@ export default function Campanhas() {
     setTemplateComponents([]);
     setTemplateVariaveis({});
     setOptInConfirmado(false);
+    setGrupoId("none");
+    setManualSearch("");
   }
 
   function toggleTag(tag: string) {

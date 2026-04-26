@@ -610,20 +610,53 @@ export default function Campanhas() {
         </div>
       </div>
 
-      <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
-        <TabsList>
-          <TabsTrigger value="todas">Todas</TabsTrigger>
-          <TabsTrigger value="whatsapp" className="gap-1">
-            <MessageSquare className="h-3.5 w-3.5" /> Z-API
-          </TabsTrigger>
-          <TabsTrigger value="whatsapp_cloud" className="gap-1">
-            <Sparkles className="h-3.5 w-3.5" /> Oficial
-          </TabsTrigger>
-          <TabsTrigger value="email" className="gap-1">
-            <Mail className="h-3.5 w-3.5" /> E-mail
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
+          <TabsList>
+            <TabsTrigger value="todas">Todas</TabsTrigger>
+            <TabsTrigger value="whatsapp" className="gap-1">
+              <MessageSquare className="h-3.5 w-3.5" /> Z-API
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp_cloud" className="gap-1">
+              <Sparkles className="h-3.5 w-3.5" /> Oficial
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-1">
+              <Mail className="h-3.5 w-3.5" /> E-mail
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="flex items-center gap-2">
+          <Tags className="h-4 w-4 text-muted-foreground" />
+          <Select value={filtroGrupo} onValueChange={setFiltroGrupo}>
+            <SelectTrigger className="w-[200px] h-9">
+              <SelectValue placeholder="Filtrar por grupo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os grupos</SelectItem>
+              <SelectItem value="sem_grupo">Sem grupo</SelectItem>
+              {grupos.map((g) => (
+                <SelectItem key={g.id} value={g.id}>
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: g.cor || "#6B7280" }}
+                    />
+                    {g.nome}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <AnaliticaGrupos
+        tenantId={tenantId}
+        campanhas={campanhas as any}
+        grupos={grupos}
+        onSelecionarGrupo={(id) => setFiltroGrupo(id)}
+      />
 
       {loading ? (
         <p className="text-muted-foreground">Carregando...</p>

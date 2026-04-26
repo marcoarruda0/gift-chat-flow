@@ -515,7 +515,7 @@ export default function Campanhas() {
       toast({ title: "Erro ao atualizar grupo", description: error.message, variant: "destructive" });
       return;
     }
-    setEditGrupoCampanhaId(null);
+    toast({ title: novoGrupoId ? "Grupo atualizado" : "Grupo removido" });
     fetchCampanhas();
   }
 

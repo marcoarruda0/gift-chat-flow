@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConversaItem } from "./ConversaItem";
-import { Search, MessageSquarePlus, RefreshCw, Upload } from "lucide-react";
+import { Search, MessageSquarePlus, RefreshCw, Upload, MessageSquare, BadgeCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Conversa {
@@ -18,7 +18,11 @@ interface Conversa {
   atendente_id?: string | null;
   departamento_id?: string | null;
   created_at?: string | null;
+  canal?: string | null;
 }
+
+type CanalTab = "todos" | "zapi" | "whatsapp_cloud";
+const CANAL_STORAGE_KEY = "conversas_canal_tab";
 
 interface ConversasListProps {
   conversas: Conversa[];
@@ -42,10 +46,30 @@ type Filtro = (typeof ADMIN_FILTROS)[number];
 export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId, isAdmin }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("Todas");
+  const [canalTab, setCanalTab] = useState<CanalTab>(() => {
+    if (typeof window === "undefined") return "todos";
+    const saved = window.localStorage.getItem(CANAL_STORAGE_KEY) as CanalTab | null;
+    return saved === "zapi" || saved === "whatsapp_cloud" || saved === "todos" ? saved : "todos";
+  });
+
+  useEffect(() => {
+    try { window.localStorage.setItem(CANAL_STORAGE_KEY, canalTab); } catch {}
+  }, [canalTab]);
 
   const filtros = isAdmin ? ADMIN_FILTROS : BASE_FILTROS;
 
+  const isCloud = (c: Conversa) => c.canal === "whatsapp_cloud";
+  const isZapi = (c: Conversa) => !isCloud(c); // null/legado conta como Z-API
+
+  const counts = useMemo(() => ({
+    todos: conversas.length,
+    zapi: conversas.filter(isZapi).length,
+    whatsapp_cloud: conversas.filter(isCloud).length,
+  }), [conversas]);
+
   const filtered = conversas.filter(c => {
+    if (canalTab === "zapi" && isCloud(c)) return false;
+    if (canalTab === "whatsapp_cloud" && !isCloud(c)) return false;
     if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
     if (filtro === "Abertas") return c.status === "aberta";
     if (filtro === "Minhas") return c.atendente_id === currentUserId;
@@ -54,6 +78,12 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     if (filtro === "Sem Atendente") return c.status === "aberta" && !c.atendente_id;
     return true;
   });
+
+  const canalTabs: { id: CanalTab; label: string; icon: typeof MessageSquare; count: number }[] = [
+    { id: "todos", label: "Todos", icon: MessageSquare, count: counts.todos },
+    { id: "zapi", label: "Z-API", icon: MessageSquare, count: counts.zapi },
+    { id: "whatsapp_cloud", label: "Oficial", icon: BadgeCheck, count: counts.whatsapp_cloud },
+  ];
 
   return (
     <div className="flex flex-col h-full border-r border-border bg-card">
@@ -71,6 +101,31 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               <MessageSquarePlus className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+        {/* Tabs de canal: separa Z-API e WhatsApp Oficial */}
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-md bg-muted">
+          {canalTabs.map(t => {
+            const Icon = t.icon;
+            const active = canalTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setCanalTab(t.id)}
+                className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={t.label}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] px-1 rounded ${active ? "bg-muted text-muted-foreground" : "bg-background/60"}`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

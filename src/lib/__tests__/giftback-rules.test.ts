@@ -346,3 +346,83 @@ describe("parseValorCompra", () => {
     expect(parseValorCompra(undefined)).toEqual({ valor: 0, erro: null });
   });
 });
+
+describe("calcularTransacaoGiftback - regra D+1 (criado hoje)", () => {
+  const HOJE = new Date(2026, 4, 26, 14, 30); // 26/04/2026 14:30 local
+  const ONTEM = new Date(2026, 4, 25, 23, 50);
+
+  it("bloqueia resgate quando giftback foi criado hoje", () => {
+    const r = calcularTransacaoGiftback({
+      saldoAtivo: 50,
+      valorCompra: 200,
+      aplicarGiftback: true,
+      multiplicador: 4,
+      percentual: 10,
+      criadoEm: new Date(2026, 4, 26, 9, 0),
+      agora: HOJE,
+    });
+    expect(r.bloqueadoMesmoDia).toBe(true);
+    expect(r.erroValidacao).toMatch(/D\+1/);
+    expect(r.gbUsado).toBe(0);
+    expect(r.novoSaldo).toBe(50);
+  });
+
+  it("permite resgate quando giftback foi criado ontem", () => {
+    const r = calcularTransacaoGiftback({
+      saldoAtivo: 50,
+      valorCompra: 200,
+      aplicarGiftback: true,
+      multiplicador: 4,
+      percentual: 10,
+      criadoEm: ONTEM,
+      agora: HOJE,
+    });
+    expect(r.bloqueadoMesmoDia).toBe(false);
+    expect(r.erroValidacao).toBeNull();
+    expect(r.gbUsado).toBe(50);
+    expect(r.acaoSobreAtivo).toBe("usar");
+  });
+
+  it("preserva ativo quando há nova compra hoje sem usar (criado hoje)", () => {
+    const r = calcularTransacaoGiftback({
+      saldoAtivo: 50,
+      valorCompra: 300, // ≥ compra mínima 200
+      aplicarGiftback: false,
+      multiplicador: 4,
+      percentual: 10,
+      criadoEm: new Date(2026, 4, 26, 8, 0),
+      agora: HOJE,
+    });
+    expect(r.bloqueadoMesmoDia).toBe(true);
+    expect(r.acaoSobreAtivo).toBe("nenhum"); // NÃO substitui nem invalida
+    expect(r.novoSaldo).toBe(50); // ativo preservado
+    expect(r.gbGerado).toBe(0); // não gera novo (já existe ativo)
+    expect(r.erroValidacao).toBeNull();
+  });
+
+  it("aceita string ISO em criadoEm", () => {
+    const r = calcularTransacaoGiftback({
+      saldoAtivo: 30,
+      valorCompra: 30,
+      aplicarGiftback: true,
+      multiplicador: 4,
+      percentual: 10,
+      criadoEm: HOJE.toISOString(),
+      agora: HOJE,
+    });
+    expect(r.bloqueadoMesmoDia).toBe(true);
+  });
+
+  it("sem criadoEm, comportamento legado (resgata normalmente)", () => {
+    const r = calcularTransacaoGiftback({
+      saldoAtivo: 50,
+      valorCompra: 100,
+      aplicarGiftback: true,
+      multiplicador: 4,
+      percentual: 10,
+      agora: HOJE,
+    });
+    expect(r.bloqueadoMesmoDia).toBe(false);
+    expect(r.gbUsado).toBe(50);
+  });
+});

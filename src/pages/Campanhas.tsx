@@ -442,6 +442,7 @@ export default function Campanhas() {
           template_language: canal === "whatsapp_cloud" ? templateLanguage : null,
           template_components: canal === "whatsapp_cloud" ? templateComponents : [],
           template_variaveis: canal === "whatsapp_cloud" ? templateVariaveis : {},
+          grupo_id: grupoId === "none" ? null : grupoId,
         } as any)
         .select()
         .single();

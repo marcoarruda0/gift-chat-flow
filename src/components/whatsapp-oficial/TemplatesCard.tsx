@@ -101,6 +101,40 @@ export function TemplatesCard({ tenantId, wabaId }: TemplatesCardProps) {
       if (list.length === 0) {
         toast.info("Nenhum template encontrado na Meta.");
       } else {
+        // Carrega templates locais para preservar media_url (Meta não devolve)
+        const { data: locais } = await supabase
+          .from("whatsapp_cloud_templates" as any)
+          .select("name, language, components")
+          .eq("tenant_id", tenantId);
+        const localMap = new Map<string, any[]>(
+          ((locais as any[]) || []).map((l) => [
+            `${l.name}::${l.language}`,
+            (l.components as any[]) || [],
+          ]),
+        );
+
+        const mergeMediaUrl = (
+          incoming: any[],
+          existing: any[] | undefined,
+        ): any[] => {
+          if (!Array.isArray(incoming)) return incoming;
+          return incoming.map((comp) => {
+            const type = String(comp?.type || "").toUpperCase();
+            const fmt = String(comp?.format || "").toUpperCase();
+            if (type === "HEADER" && (fmt === "IMAGE" || fmt === "VIDEO")) {
+              const localHeader = (existing || []).find(
+                (c: any) =>
+                  String(c?.type || "").toUpperCase() === "HEADER" &&
+                  String(c?.format || "").toUpperCase() === fmt,
+              );
+              if (localHeader?.media_url) {
+                return { ...comp, media_url: localHeader.media_url };
+              }
+            }
+            return comp;
+          });
+        };
+
         const now = new Date().toISOString();
         const rows = list.map((t: any) => ({
           tenant_id: tenantId,
@@ -109,7 +143,10 @@ export function TemplatesCard({ tenantId, wabaId }: TemplatesCardProps) {
           language: t.language,
           category: t.category || null,
           status: t.status || "PENDING",
-          components: t.components || [],
+          components: mergeMediaUrl(
+            t.components || [],
+            localMap.get(`${t.name}::${t.language}`),
+          ),
           rejection_reason: t.rejected_reason || null,
           synced_at: now,
         }));

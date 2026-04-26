@@ -266,8 +266,19 @@ export default function Campanhas() {
     if (tenantId) {
       fetchCampanhas();
       fetchContatos();
+      fetchGrupos();
     }
   }, [tenantId]);
+
+  async function fetchGrupos() {
+    if (!tenantId) return;
+    const { data } = await (supabase as any)
+      .from("campanha_grupos")
+      .select("id, nome, descricao, cor")
+      .eq("tenant_id", tenantId)
+      .order("nome");
+    setGrupos((data as CampanhaGrupo[]) || []);
+  }
 
   async function fetchCampanhas() {
     setLoading(true);

@@ -102,6 +102,31 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
             </Button>
           </div>
         </div>
+        {/* Tabs de canal: separa Z-API e WhatsApp Oficial */}
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-md bg-muted">
+          {canalTabs.map(t => {
+            const Icon = t.icon;
+            const active = canalTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setCanalTab(t.id)}
+                className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={t.label}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] px-1 rounded ${active ? "bg-muted text-muted-foreground" : "bg-background/60"}`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input

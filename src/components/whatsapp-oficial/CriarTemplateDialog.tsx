@@ -9,6 +9,8 @@ import { Loader2, Plus, Trash2, AlertCircle, Upload, Image as ImageIcon, Video a
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { TemplateVariablesGuide } from "./TemplateVariablesGuide";
+import { TemplatePreview } from "./TemplatePreview";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 

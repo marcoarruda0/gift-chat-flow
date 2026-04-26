@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Plus, Trash2, Pencil, Check, X, FolderTag } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Tags } from "lucide-react";
 
 export interface CampanhaGrupo {
   id: string;
@@ -153,7 +153,7 @@ export function GerenciarGruposDialog({ open, onOpenChange, onChanged }: Props) 
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderTag className="h-5 w-5" /> Grupos de campanhas
+            <Tags className="h-5 w-5" /> Grupos de campanhas
           </DialogTitle>
           <DialogDescription>
             Agrupe campanhas relacionadas (ex.: "Black Friday", "Lançamento Verão")

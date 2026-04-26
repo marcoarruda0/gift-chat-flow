@@ -60,6 +60,7 @@ type Campanha = {
   template_language: string | null;
   template_components: any;
   template_variaveis: any;
+  grupo_id: string | null;
 };
 
 type Contato = {

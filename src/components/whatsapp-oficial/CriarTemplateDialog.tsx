@@ -579,6 +579,23 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
               serem rejeitados se a qualidade for baixa.
             </span>
           </div>
+          </div>
+
+          {/* Coluna de pré-visualização (sticky em md+) */}
+          <div className="md:col-span-2">
+            <div className="md:sticky md:top-2">
+              <TemplatePreview
+                headerType={headerType}
+                headerText={headerText}
+                headerExample={headerExample}
+                headerMediaUrl={headerMediaUrl}
+                body={body}
+                bodyExamples={bodyExamples}
+                footer={footer}
+                buttons={buttons}
+              />
+            </div>
+          </div>
         </div>
 
         <DialogFooter>

@@ -246,8 +246,11 @@ export default function GiftbackCaixa() {
           aplicarGiftback,
           multiplicador: regrasAtuais.multiplicador_compra_minima,
           percentual: regrasAtuais.percentual,
+          criadoEm: giftbackAtivo?.created_at ?? null,
         })
       : null;
+
+  const bloqueadoMesmoDia = previewTransacao?.bloqueadoMesmoDia ?? false;
 
   const erroResgate = previewTransacao?.erroValidacao ?? null;
   const podeConfirmar =

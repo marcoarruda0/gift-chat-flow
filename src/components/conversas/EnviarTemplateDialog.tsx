@@ -92,6 +92,15 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
     [headerComponent]
   );
 
+  const headerMedia = useMemo(() => {
+    if (!headerComponent) return null;
+    const fmt = String(headerComponent.format || "").toUpperCase();
+    if ((fmt === "IMAGE" || fmt === "VIDEO") && headerComponent.media_url) {
+      return { format: fmt as "IMAGE" | "VIDEO", url: headerComponent.media_url as string };
+    }
+    return null;
+  }, [headerComponent]);
+
   // Reset on template change
   useEffect(() => {
     setVars({});
@@ -117,7 +126,16 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
     try {
       // Build components array following Meta spec
       const components: any[] = [];
-      if (headerPlaceholders.length > 0) {
+      if (headerMedia) {
+        components.push({
+          type: "header",
+          parameters: [
+            headerMedia.format === "IMAGE"
+              ? { type: "image", image: { link: headerMedia.url } }
+              : { type: "video", video: { link: headerMedia.url } },
+          ],
+        });
+      } else if (headerPlaceholders.length > 0) {
         components.push({
           type: "header",
           parameters: headerPlaceholders.map(n => ({

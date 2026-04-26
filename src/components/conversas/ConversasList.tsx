@@ -46,10 +46,30 @@ type Filtro = (typeof ADMIN_FILTROS)[number];
 export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId, isAdmin }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("Todas");
+  const [canalTab, setCanalTab] = useState<CanalTab>(() => {
+    if (typeof window === "undefined") return "todos";
+    const saved = window.localStorage.getItem(CANAL_STORAGE_KEY) as CanalTab | null;
+    return saved === "zapi" || saved === "whatsapp_cloud" || saved === "todos" ? saved : "todos";
+  });
+
+  useEffect(() => {
+    try { window.localStorage.setItem(CANAL_STORAGE_KEY, canalTab); } catch {}
+  }, [canalTab]);
 
   const filtros = isAdmin ? ADMIN_FILTROS : BASE_FILTROS;
 
+  const isCloud = (c: Conversa) => c.canal === "whatsapp_cloud";
+  const isZapi = (c: Conversa) => !isCloud(c); // null/legado conta como Z-API
+
+  const counts = useMemo(() => ({
+    todos: conversas.length,
+    zapi: conversas.filter(isZapi).length,
+    whatsapp_cloud: conversas.filter(isCloud).length,
+  }), [conversas]);
+
   const filtered = conversas.filter(c => {
+    if (canalTab === "zapi" && isCloud(c)) return false;
+    if (canalTab === "whatsapp_cloud" && !isCloud(c)) return false;
     if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
     if (filtro === "Abertas") return c.status === "aberta";
     if (filtro === "Minhas") return c.atendente_id === currentUserId;
@@ -58,6 +78,12 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     if (filtro === "Sem Atendente") return c.status === "aberta" && !c.atendente_id;
     return true;
   });
+
+  const canalTabs: { id: CanalTab; label: string; icon: typeof MessageSquare; count: number }[] = [
+    { id: "todos", label: "Todos", icon: MessageSquare, count: counts.todos },
+    { id: "zapi", label: "Z-API", icon: MessageSquare, count: counts.zapi },
+    { id: "whatsapp_cloud", label: "Oficial", icon: BadgeCheck, count: counts.whatsapp_cloud },
+  ];
 
   return (
     <div className="flex flex-col h-full border-r border-border bg-card">

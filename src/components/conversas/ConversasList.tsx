@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConversaItem } from "./ConversaItem";
-import { Search, MessageSquarePlus, RefreshCw, Upload } from "lucide-react";
+import { Search, MessageSquarePlus, RefreshCw, Upload, MessageSquare, BadgeCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Conversa {
@@ -18,7 +18,11 @@ interface Conversa {
   atendente_id?: string | null;
   departamento_id?: string | null;
   created_at?: string | null;
+  canal?: string | null;
 }
+
+type CanalTab = "todos" | "zapi" | "whatsapp_cloud";
+const CANAL_STORAGE_KEY = "conversas_canal_tab";
 
 interface ConversasListProps {
   conversas: Conversa[];

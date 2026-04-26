@@ -1,65 +1,53 @@
-## 🎯 Objetivo
-Aprimorar o módulo **Campanhas** para tornar o agrupamento de campanhas (`campanha_grupos`) totalmente operacional na interface — exibindo, filtrando, editando rapidamente e consolidando resultados por grupo.
+## Objetivo
+
+Hoje a lista lateral de **Conversas** mistura conversas vindas do **Z-API** (WhatsApp não-oficial) com as do **WhatsApp Cloud / WABA** (oficial). Vou adicionar **tabs superiores de canal** dentro da lista para separar visualmente os dois fluxos, mantendo todos os filtros existentes (Todas / Abertas / Minhas / Meu Depto / Fechadas / Sem Atendente) operando dentro do canal selecionado.
+
+A coluna `canal` já existe em `conversas` (valores `zapi` e `whatsapp_cloud`) e já é carregada no `fetchConversas` em `src/pages/Conversas.tsx` — então não há mudança de banco/edge function.
 
 ---
 
-## 📋 Mudanças propostas
+## Mudanças
 
-### 1) Nova coluna **Grupo** na tabela
-- Adicionar `<TableHead>Grupo</TableHead>` entre **Canal** e **Tipo**.
-- Renderizar um **badge colorido** usando `g.cor` como `backgroundColor` e o `g.nome`. Se a campanha não tiver grupo, mostrar um traço (`—`) discreto.
-- Lookup em memória via `Map<id, grupo>` derivado de `grupos` para evitar re-busca.
+### 1. `src/components/conversas/ConversasList.tsx`
 
-### 2) Filtro por grupo ao lado das tabs de canal
-- Em `src/pages/Campanhas.tsx`, junto à barra de tabs (`<Tabs>`), adicionar um `<Select>` "Grupo" com:
-  - `Todos os grupos` (default)
-  - `Sem grupo`
-  - Lista de grupos existentes (com bolinha colorida)
-- O state `filtroGrupo` já existe e já é aplicado em `campanhasFiltradas` — basta expor o controle visual.
-- Layout: `<div className="flex items-center justify-between gap-3 flex-wrap">` envolvendo `<Tabs>` + `<Select>` para alinhar à direita.
+**Adicionar tab de canal acima dos filtros existentes**, com 3 opções:
+- **Todos** (padrão) — comportamento atual
+- **Z-API** — apenas `canal === 'zapi'` (ou null/legado)
+- **WhatsApp Oficial** — apenas `canal === 'whatsapp_cloud'`
 
-### 3) Edição rápida do grupo na coluna **Ações**
-- Novo componente local `EditarGrupoPopover` usando `Popover` (`src/components/ui/popover.tsx` já existe).
-- Trigger: ícone `Tags` (botão `ghost` size `sm`) ao lado dos ícones existentes (`Eye`, `Send`, `Ban`).
-- Conteúdo: lista de radio-options com **Sem grupo** + cada grupo (bolinha + nome). Ao clicar: chama `atualizarGrupoCampanha(c.id, novoId)` (já implementado na página) e fecha o popover.
-- Toast de confirmação após sucesso.
+Detalhes de implementação:
+- Estender a interface `Conversa` com `canal?: string | null` (já vem populada do `Conversas.tsx`).
+- Novo state `canalTab: 'todos' | 'zapi' | 'whatsapp_cloud'` (padrão `'todos'`).
+- Aplicar o filtro de canal **antes** do filtro de status/atendimento atual no `filtered`:
+  ```ts
+  if (canalTab === 'zapi' && c.canal === 'whatsapp_cloud') return false;
+  if (canalTab === 'whatsapp_cloud' && c.canal !== 'whatsapp_cloud') return false;
+  ```
+  (assim conversas legadas sem `canal` definido caem em "Z-API", que é o comportamento atual.)
+- UI: usar `Tabs` do shadcn (`@/components/ui/tabs`) logo abaixo do header "Conversas / botões de ação" e acima do search, com labels curtos e um pequeno **contador por canal** (ex.: `Z-API (12)`, `Oficial (3)`) calculado a partir de `conversas`.
+- Ícones leves opcionais ao lado dos labels: `MessageSquare` para Z-API, `BadgeCheck` para Oficial (já disponível no lucide-react).
 
-### 4) Ícone correto e segurança de imports
-- O dialog `GerenciarGruposDialog` **já usa** `Tags` de `lucide-react` (verificado no arquivo). O ícone `Tags` existe no Lucide e é exportado normalmente — confirmar com um build limpo.
-- **Bug detectado nos console logs**: `Warning: Function components cannot be given refs` no `Badge` dentro de elementos Radix (Tooltip/Popover/Dialog). Vou converter `src/components/ui/badge.tsx` para `React.forwardRef<HTMLDivElement, BadgeProps>` para eliminar o warning agora que o Badge será usado dentro de `PopoverTrigger asChild` e tooltips.
+### 2. `src/pages/Conversas.tsx`
 
-### 5) Analítica consolidada por grupo
-Criar nova seção colapsada acima da tabela (ou abaixo das tabs), visível somente quando há ≥1 grupo, intitulada **"Análise por grupo"**:
+Nenhuma mudança funcional grande — o `canal` já é mapeado em `fetchConversas` (linha 99) e passado dentro de cada item de `conversas` para `ConversasList`. Apenas garantir que a prop `canal` continue chegando intacta (já chega).
 
-- **Cards/linhas por grupo** mostrando, para o conjunto de campanhas daquele grupo:
-  - **Campanhas** (total no grupo)
-  - **Destinatários** (Σ `total_destinatarios`)
-  - **Enviados** (Σ `total_enviados`)
-  - **Falhas** (Σ `total_falhas`)
-  - **Taxa de entrega** (`enviados / destinatarios * 100`)
-  - **Entregues / Lidos / Respostas** — métricas extras buscadas de `campanha_destinatarios` (campos `status_entrega`, `wa_message_id`) **somente para campanhas Oficial**.
-- Implementação:
-  - Cálculo simples (Σ por grupo) feito client-side com `useMemo` sobre `campanhas` + `grupos`.
-  - Para entregue/lido/respostas: nova query agregada em `campanha_destinatarios` filtrando por `tenant_id` e `campanha_id IN (...)` agrupando por `status_entrega` — feita uma única vez ao carregar a página (`fetchAnaliticasGrupo`).
-  - Render: grid responsivo de cards (1 col mobile / 2 col md / 3 col lg) com a cor do grupo na borda esquerda.
-- Botão **"Ver campanhas"** em cada card que aplica `setFiltroGrupo(grupoId)` para focar a tabela naquele grupo.
-
-> **Nota sobre "Respostas"**: hoje o schema não tem coluna explícita de "resposta recebida" por destinatário. A 1ª versão da analítica vai considerar como **resposta** a existência de uma mensagem `inbound` na tabela `mensagens` para a `conversa` daquele contato dentro de **24h** após o envio (consulta agregada). Se preferir manter simples nessa entrega, posso exibir apenas Enviados/Entregues/Lidos/Falhas e adicionar Respostas em iteração seguinte.
+Opcionalmente: persistir a aba selecionada em `localStorage` (`conversas_canal_tab`) para que o atendente reabra a página no canal que estava trabalhando. Isso é pequeno e fica encapsulado em `ConversasList`.
 
 ---
 
-## 📁 Arquivos afetados
+## Comportamento esperado
 
-| Arquivo | Tipo | Mudança |
-|---|---|---|
-| `src/pages/Campanhas.tsx` | Editar | Coluna Grupo, filtro Select de grupo, popover de edição rápida nas ações, seção de analítica |
-| `src/components/ui/badge.tsx` | Editar | Converter para `forwardRef` (corrige warning ao usar Badge como trigger) |
-| `src/components/campanhas/EditarGrupoPopover.tsx` | Novo | Popover reutilizável com lista de grupos para troca rápida |
-| `src/components/campanhas/AnaliticaGrupos.tsx` | Novo | Cards consolidados por grupo (métricas agregadas) |
-
-Nenhuma migration de banco necessária — toda a estrutura (`campanha_grupos`, `campanhas.grupo_id`) já existe.
+- Ao abrir `/conversas`, a aba **"Todos"** vem selecionada por padrão (mantém compatibilidade).
+- Ao clicar em **Z-API**: apenas conversas Z-API aparecem; filtros (Abertas/Minhas/etc.) continuam funcionando dentro do recorte.
+- Ao clicar em **WhatsApp Oficial**: apenas conversas WABA aparecem; o `cloudWindowBlocked` (24h) continua funcionando normalmente no `ChatPanel` quando uma delas é selecionada.
+- Contadores nas tabs refletem o total bruto por canal (sem aplicar busca/filtro), para servir como "inbox" rápido.
+- Conversa selecionada permanece selecionada ao trocar de tab; se o `canal` dela não bater com a tab atual ela some da lista, mas o painel direito segue aberto (comportamento natural — basta voltar à tab "Todos").
 
 ---
 
-## ❓ Pergunta antes de implementar
-Sobre **Respostas** na analítica: posso (a) entregar agora apenas **Enviados / Entregues / Lidos / Falhas** e deixar Respostas para uma próxima iteração, ou (b) já incluir Respostas via consulta a `mensagens` (`remetente='contato'` em até 24h após envio)? Se não responder, sigo com a opção **(a)** por ser mais rápida e segura.
+## Arquivos afetados
+
+- **Modificado**: `src/components/conversas/ConversasList.tsx` (adicionar tabs de canal, contadores e filtro por canal).
+- **Modificado (mínimo)**: `src/pages/Conversas.tsx` — apenas se for necessário ajustar tipos da prop (provavelmente não, pois `canal` já é repassado implicitamente). Confirmo na implementação.
+
+Sem migrações de banco, sem edge functions, sem alterações em `ChatPanel`.

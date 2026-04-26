@@ -81,6 +81,36 @@ export type Database = {
           },
         ]
       }
+      campanha_grupos: {
+        Row: {
+          cor: string | null
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          cor?: string | null
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          cor?: string | null
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       campanhas: {
         Row: {
           agendada_para: string | null
@@ -92,6 +122,7 @@ export type Database = {
           email_html: string | null
           email_preview: string | null
           filtro_valor: string[] | null
+          grupo_id: string | null
           id: string
           mensagem: string
           midia_url: string | null
@@ -120,6 +151,7 @@ export type Database = {
           email_html?: string | null
           email_preview?: string | null
           filtro_valor?: string[] | null
+          grupo_id?: string | null
           id?: string
           mensagem: string
           midia_url?: string | null
@@ -148,6 +180,7 @@ export type Database = {
           email_html?: string | null
           email_preview?: string | null
           filtro_valor?: string[] | null
+          grupo_id?: string | null
           id?: string
           mensagem?: string
           midia_url?: string | null

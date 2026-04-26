@@ -15,12 +15,15 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Send, Clock, Eye, Ban, Megaphone, Image, Mic, Video, FileText, Upload, X,
   MessageSquare, Mail, Sparkles, CheckCircle2, Eye as EyeIcon,
+  Search, Tags, FlaskConical,
 } from "lucide-react";
 import { format } from "date-fns";
 import { SEGMENTOS_ORDENADOS, getSegmentoBySoma, type SegmentoKey } from "@/lib/rfv-segments";
 import { EmailEditor } from "@/components/campanhas/EmailEditor";
 import { InsertVariableButton } from "@/components/campanhas/InsertVariableButton";
 import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
+import { TestarCampanhaCloudDialog } from "@/components/campanhas/TestarCampanhaCloudDialog";
+import { GerenciarGruposDialog, type CampanhaGrupo } from "@/components/campanhas/GerenciarGruposDialog";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "whatsapp_cloud" | "email";
@@ -57,6 +60,7 @@ type Campanha = {
   template_language: string | null;
   template_components: any;
   template_variaveis: any;
+  grupo_id: string | null;
 };
 
 type Contato = {
@@ -160,6 +164,19 @@ export default function Campanhas() {
   const [optInConfirmado, setOptInConfirmado] = useState(false);
   const [cloudConectado, setCloudConectado] = useState(false);
 
+  // Busca de contatos na seleção manual
+  const [manualSearch, setManualSearch] = useState("");
+
+  // Grupos de campanhas
+  const [grupos, setGrupos] = useState<CampanhaGrupo[]>([]);
+  const [grupoId, setGrupoId] = useState<string>("none");
+  const [filtroGrupo, setFiltroGrupo] = useState<string>("todos");
+  const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
+  const [editGrupoCampanhaId, setEditGrupoCampanhaId] = useState<string | null>(null);
+
+  // Teste de disparo Oficial
+  const [testarOpen, setTestarOpen] = useState(false);
+
   // Tenant email config (for live preview in EmailEditor)
   const [tenantEmail, setTenantEmail] = useState<{
     nome: string | null;
@@ -241,16 +258,37 @@ export default function Campanhas() {
   );
 
   const campanhasFiltradas = useMemo(() => {
-    if (filtroCanal === "todas") return campanhas;
-    return campanhas.filter((c) => (c.canal || "whatsapp") === filtroCanal);
-  }, [campanhas, filtroCanal]);
+    let list = campanhas;
+    if (filtroCanal !== "todas") {
+      list = list.filter((c) => (c.canal || "whatsapp") === filtroCanal);
+    }
+    if (filtroGrupo !== "todos") {
+      if (filtroGrupo === "sem_grupo") {
+        list = list.filter((c) => !c.grupo_id);
+      } else {
+        list = list.filter((c) => c.grupo_id === filtroGrupo);
+      }
+    }
+    return list;
+  }, [campanhas, filtroCanal, filtroGrupo]);
 
   useEffect(() => {
     if (tenantId) {
       fetchCampanhas();
       fetchContatos();
+      fetchGrupos();
     }
   }, [tenantId]);
+
+  async function fetchGrupos() {
+    if (!tenantId) return;
+    const { data } = await (supabase as any)
+      .from("campanha_grupos")
+      .select("id, nome, descricao, cor")
+      .eq("tenant_id", tenantId)
+      .order("nome");
+    setGrupos((data as CampanhaGrupo[]) || []);
+  }
 
   async function fetchCampanhas() {
     setLoading(true);
@@ -404,6 +442,7 @@ export default function Campanhas() {
           template_language: canal === "whatsapp_cloud" ? templateLanguage : null,
           template_components: canal === "whatsapp_cloud" ? templateComponents : [],
           template_variaveis: canal === "whatsapp_cloud" ? templateVariaveis : {},
+          grupo_id: grupoId === "none" ? null : grupoId,
         } as any)
         .select()
         .single();
@@ -459,6 +498,19 @@ export default function Campanhas() {
     fetchCampanhas();
   }
 
+  async function atualizarGrupoCampanha(campanhaId: string, novoGrupoId: string | null) {
+    const { error } = await (supabase as any)
+      .from("campanhas")
+      .update({ grupo_id: novoGrupoId })
+      .eq("id", campanhaId);
+    if (error) {
+      toast({ title: "Erro ao atualizar grupo", description: error.message, variant: "destructive" });
+      return;
+    }
+    setEditGrupoCampanhaId(null);
+    fetchCampanhas();
+  }
+
   async function openDetail(campanhaId: string) {
     setDetailDialog(campanhaId);
     const { data } = await supabase
@@ -509,6 +561,8 @@ export default function Campanhas() {
     setTemplateComponents([]);
     setTemplateVariaveis({});
     setOptInConfirmado(false);
+    setGrupoId("none");
+    setManualSearch("");
   }
 
   function toggleTag(tag: string) {
@@ -538,9 +592,14 @@ export default function Campanhas() {
           </h1>
           <p className="text-muted-foreground text-sm">Envios em massa por WhatsApp ou E-mail</p>
         </div>
-        <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
-          <Plus className="h-4 w-4 mr-1" /> Nova Campanha
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setGruposDialogOpen(true)}>
+            <Tags className="h-4 w-4 mr-1" /> Grupos
+          </Button>
+          <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+            <Plus className="h-4 w-4 mr-1" /> Nova Campanha
+          </Button>
+        </div>
       </div>
 
       <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
@@ -717,6 +776,27 @@ export default function Campanhas() {
             <div>
               <Label>Nome da campanha</Label>
               <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Promoção de Inverno" />
+            </div>
+
+            <div>
+              <Label>Grupo (opcional)</Label>
+              <Select value={grupoId} onValueChange={setGrupoId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {grupos.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: g.cor || "#6B7280" }} />
+                        {g.nome}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Use grupos para consolidar campanhas de uma mesma ação (ex.: Black Friday).
+              </p>
             </div>
 
             {canal === "whatsapp" && (
@@ -968,20 +1048,63 @@ export default function Campanhas() {
               </div>
             )}
 
-            {tipoFiltro === "manual" && (
-              <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
-                {contatos.filter(hasContact).map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
-                    <input
-                      type="checkbox"
-                      checked={contatosSelecionados.includes(c.id)}
-                      onChange={() => toggleContato(c.id)}
+            {tipoFiltro === "manual" && (() => {
+              const elegiveis = contatos.filter(hasContact);
+              const q = manualSearch.trim().toLowerCase();
+              const visiveis = q
+                ? elegiveis.filter((c) =>
+                    (c.nome || "").toLowerCase().includes(q) ||
+                    (c.telefone || "").toLowerCase().includes(q) ||
+                    (c.email || "").toLowerCase().includes(q),
+                  )
+                : elegiveis;
+              return (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={manualSearch}
+                      onChange={(e) => setManualSearch(e.target.value)}
+                      placeholder="Buscar por nome, telefone ou e-mail…"
+                      className="pl-8"
                     />
-                    {c.nome} — {canal === "email" ? c.email : c.telefone}
-                  </label>
-                ))}
-              </div>
-            )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {visiveis.length} de {elegiveis.length} exibido(s) · {contatosSelecionados.length} selecionado(s)
+                    </span>
+                    {contatosSelecionados.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs"
+                        onClick={() => setContatosSelecionados([])}
+                      >
+                        Limpar seleção
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-64 overflow-y-auto border rounded p-2 space-y-1">
+                    {visiveis.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-3">
+                        Nenhum contato encontrado.
+                      </p>
+                    ) : (
+                      visiveis.map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={contatosSelecionados.includes(c.id)}
+                            onChange={() => toggleContato(c.id)}
+                          />
+                          {c.nome} — {canal === "email" ? c.email : c.telefone}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {(canal === "whatsapp" || canal === "whatsapp_cloud") && (
               <div>
@@ -1024,7 +1147,17 @@ export default function Campanhas() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2">
+            {canal === "whatsapp_cloud" && templateId && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setTestarOpen(true)}
+                className="sm:mr-auto"
+              >
+                <FlaskConical className="h-4 w-4 mr-1" /> Testar disparo
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={criarCampanha} disabled={submitting}>
               {agendar ? <><Clock className="h-4 w-4 mr-1" /> Agendar</> : <><Send className="h-4 w-4 mr-1" /> Criar Campanha</>}
@@ -1032,6 +1165,21 @@ export default function Campanhas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GerenciarGruposDialog
+        open={gruposDialogOpen}
+        onOpenChange={setGruposDialogOpen}
+        onChanged={() => { fetchGrupos(); fetchCampanhas(); }}
+      />
+
+      <TestarCampanhaCloudDialog
+        open={testarOpen}
+        onOpenChange={setTestarOpen}
+        templateName={templateName}
+        templateLanguage={templateLanguage}
+        templateComponents={templateComponents}
+        templateVariaveis={templateVariaveis}
+      />
 
       {/* Detail Dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>

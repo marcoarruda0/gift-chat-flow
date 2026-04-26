@@ -67,8 +67,18 @@ function buildTemplateComponents(
             text: resolveVariable(variaveis[`header.${n}`] || "", contato),
           })),
         });
+      } else if (format === "IMAGE" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "image", image: { link: comp.media_url } }],
+        });
+      } else if (format === "VIDEO" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "video", video: { link: comp.media_url } }],
+        });
       }
-      // future: IMAGE/VIDEO/DOCUMENT headers via media id/link
+      // Outros formatos sem suporte: pulamos.
     } else if (type === "BODY") {
       const placeholders = extractPlaceholders(comp.text || "");
       if (placeholders.length === 0) continue;

@@ -98,7 +98,38 @@ describe("montarComponentsTemplate", () => {
     ];
     expect(montarComponentsTemplate(components, {}, {})).toEqual([]);
   });
-});
+
+  it("monta HEADER de imagem com media_url", () => {
+    const components = [
+      { type: "HEADER", format: "IMAGE", media_url: "https://x.com/a.jpg" },
+      { type: "BODY", text: "Olá!" },
+    ];
+    const result = montarComponentsTemplate(components, {}, {});
+    expect(result).toEqual([
+      {
+        type: "header",
+        parameters: [{ type: "image", image: { link: "https://x.com/a.jpg" } }],
+      },
+    ]);
+  });
+
+  it("monta HEADER de vídeo com media_url", () => {
+    const components = [
+      { type: "HEADER", format: "VIDEO", media_url: "https://x.com/v.mp4" },
+    ];
+    const result = montarComponentsTemplate(components, {}, {});
+    expect(result).toEqual([
+      {
+        type: "header",
+        parameters: [{ type: "video", video: { link: "https://x.com/v.mp4" } }],
+      },
+    ]);
+  });
+
+  it("ignora HEADER de mídia sem media_url", () => {
+    const components = [{ type: "HEADER", format: "IMAGE" }];
+    expect(montarComponentsTemplate(components, {}, {})).toEqual([]);
+  });
 
 describe("buildPreviewText", () => {
   it("renderiza body com variáveis", () => {

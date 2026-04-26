@@ -78,16 +78,29 @@ export function montarComponentsTemplate(
 
     if (type === "HEADER") {
       const format = String(comp.format || "TEXT").toUpperCase();
-      if (format !== "TEXT") continue;
-      const placeholders = extractMetaPlaceholders(comp.text || "");
-      if (placeholders.length === 0) continue;
-      out.push({
-        type: "header",
-        parameters: placeholders.map((n) => ({
-          type: "text",
-          text: resolverVariaveis(mappingVariaveis[`header.${n}`] || "", vars),
-        })),
-      });
+
+      if (format === "TEXT") {
+        const placeholders = extractMetaPlaceholders(comp.text || "");
+        if (placeholders.length === 0) continue;
+        out.push({
+          type: "header",
+          parameters: placeholders.map((n) => ({
+            type: "text",
+            text: resolverVariaveis(mappingVariaveis[`header.${n}`] || "", vars),
+          })),
+        });
+      } else if (format === "IMAGE" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "image", image: { link: comp.media_url } }],
+        });
+      } else if (format === "VIDEO" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "video", video: { link: comp.media_url } }],
+        });
+      }
+      // Outros formatos (DOCUMENT, LOCATION) ou IMAGE/VIDEO sem media_url: pulamos.
     } else if (type === "BODY") {
       const placeholders = extractMetaPlaceholders(comp.text || "");
       if (placeholders.length === 0) continue;

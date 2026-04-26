@@ -592,9 +592,14 @@ export default function Campanhas() {
           </h1>
           <p className="text-muted-foreground text-sm">Envios em massa por WhatsApp ou E-mail</p>
         </div>
-        <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
-          <Plus className="h-4 w-4 mr-1" /> Nova Campanha
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setGruposDialogOpen(true)}>
+            <Tags className="h-4 w-4 mr-1" /> Grupos
+          </Button>
+          <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+            <Plus className="h-4 w-4 mr-1" /> Nova Campanha
+          </Button>
+        </div>
       </div>
 
       <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
@@ -771,6 +776,27 @@ export default function Campanhas() {
             <div>
               <Label>Nome da campanha</Label>
               <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Promoção de Inverno" />
+            </div>
+
+            <div>
+              <Label>Grupo (opcional)</Label>
+              <Select value={grupoId} onValueChange={setGrupoId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {grupos.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: g.cor || "#6B7280" }} />
+                        {g.nome}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Use grupos para consolidar campanhas de uma mesma ação (ex.: Black Friday).
+              </p>
             </div>
 
             {canal === "whatsapp" && (
@@ -1022,20 +1048,63 @@ export default function Campanhas() {
               </div>
             )}
 
-            {tipoFiltro === "manual" && (
-              <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
-                {contatos.filter(hasContact).map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
-                    <input
-                      type="checkbox"
-                      checked={contatosSelecionados.includes(c.id)}
-                      onChange={() => toggleContato(c.id)}
+            {tipoFiltro === "manual" && (() => {
+              const elegiveis = contatos.filter(hasContact);
+              const q = manualSearch.trim().toLowerCase();
+              const visiveis = q
+                ? elegiveis.filter((c) =>
+                    (c.nome || "").toLowerCase().includes(q) ||
+                    (c.telefone || "").toLowerCase().includes(q) ||
+                    (c.email || "").toLowerCase().includes(q),
+                  )
+                : elegiveis;
+              return (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={manualSearch}
+                      onChange={(e) => setManualSearch(e.target.value)}
+                      placeholder="Buscar por nome, telefone ou e-mail…"
+                      className="pl-8"
                     />
-                    {c.nome} — {canal === "email" ? c.email : c.telefone}
-                  </label>
-                ))}
-              </div>
-            )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {visiveis.length} de {elegiveis.length} exibido(s) · {contatosSelecionados.length} selecionado(s)
+                    </span>
+                    {contatosSelecionados.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs"
+                        onClick={() => setContatosSelecionados([])}
+                      >
+                        Limpar seleção
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-64 overflow-y-auto border rounded p-2 space-y-1">
+                    {visiveis.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-3">
+                        Nenhum contato encontrado.
+                      </p>
+                    ) : (
+                      visiveis.map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={contatosSelecionados.includes(c.id)}
+                            onChange={() => toggleContato(c.id)}
+                          />
+                          {c.nome} — {canal === "email" ? c.email : c.telefone}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {(canal === "whatsapp" || canal === "whatsapp_cloud") && (
               <div>
@@ -1078,7 +1147,17 @@ export default function Campanhas() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2">
+            {canal === "whatsapp_cloud" && templateId && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setTestarOpen(true)}
+                className="sm:mr-auto"
+              >
+                <FlaskConical className="h-4 w-4 mr-1" /> Testar disparo
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={criarCampanha} disabled={submitting}>
               {agendar ? <><Clock className="h-4 w-4 mr-1" /> Agendar</> : <><Send className="h-4 w-4 mr-1" /> Criar Campanha</>}
@@ -1086,6 +1165,21 @@ export default function Campanhas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GerenciarGruposDialog
+        open={gruposDialogOpen}
+        onOpenChange={setGruposDialogOpen}
+        onChanged={() => { fetchGrupos(); fetchCampanhas(); }}
+      />
+
+      <TestarCampanhaCloudDialog
+        open={testarOpen}
+        onOpenChange={setTestarOpen}
+        templateName={templateName}
+        templateLanguage={templateLanguage}
+        templateComponents={templateComponents}
+        templateVariaveis={templateVariaveis}
+      />
 
       {/* Detail Dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>

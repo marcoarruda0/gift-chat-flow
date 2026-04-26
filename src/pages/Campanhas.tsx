@@ -174,7 +174,6 @@ export default function Campanhas() {
   const [grupoId, setGrupoId] = useState<string>("none");
   const [filtroGrupo, setFiltroGrupo] = useState<string>("todos");
   const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
-  const [editGrupoCampanhaId, setEditGrupoCampanhaId] = useState<string | null>(null);
 
   // Teste de disparo Oficial
   const [testarOpen, setTestarOpen] = useState(false);

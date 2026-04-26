@@ -294,7 +294,7 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo template WhatsApp</DialogTitle>
           <DialogDescription>
@@ -302,7 +302,8 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 py-2">
+          <div className="md:col-span-3 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Nome</Label>

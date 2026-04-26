@@ -1,94 +1,78 @@
 ## Objetivo
 
-Permitir que templates WhatsApp Cloud tenham **cabeçalho de mídia (Imagem JPG/PNG ou Vídeo MP4)** além do já suportado TEXTO. A mídia será **fixa** — definida uma vez na criação do template e enviada igual para todos os destinatários, simplificando campanhas, conversas e regras de giftback.
+Melhorar o `CriarTemplateDialog` (módulo Templates / WhatsApp Oficial) para que o usuário:
+1. **Veja e copie** facilmente as variáveis disponíveis para uso no corpo (e cabeçalho de texto) do template.
+2. **Visualize um preview** em tempo real do template (estilo balão WhatsApp) antes de enviar para aprovação da Meta.
 
-## Como a Meta lida com isso
+## Contexto técnico
 
-1. **Na criação** do template (`POST /message_templates`), o `HEADER` deve ter `format: "IMAGE" | "VIDEO"` + `example.header_handle: ["<URL pública de exemplo>"]`. Vamos passar a URL pública direta da mídia armazenada no nosso bucket `chat-media` (já existente e público).
-2. **No envio** (`POST /messages`), o `header` parameter recebe `{ type: "image", image: { link: "<URL>" } }` ou `{ type: "video", video: { link: "<URL>" } }`.
-3. Como a mídia é **fixa**, salvamos a URL dentro do próprio `components` do template no banco — sem necessidade de coluna extra ou input por destinatário.
+Templates da Meta usam **placeholders posicionais** `{{1}}`, `{{2}}`, `{{3}}`... no `HEADER` (texto) e `BODY`. O usuário define exemplos para cada placeholder na hora da criação, e na hora do envio (campanhas, conversas, giftback) esses exemplos são substituídos pelas variáveis do contato (`{nome}`, `{telefone}`, etc.).
 
----
+Hoje, no `CriarTemplateDialog.tsx`:
+- O usuário tem que decorar a sintaxe `{{1}}`, `{{2}}` (apenas dica no placeholder do textarea).
+- Não existe nenhum preview — só os campos isolados.
 
-## Mudanças
+## Mudanças propostas
 
-### 1. `CriarTemplateDialog.tsx` — formulário
-- Adicionar `IMAGE` e `VIDEO` ao Select de tipo de cabeçalho (junto com `NONE` e `TEXT`).
-- Quando `IMAGE`/`VIDEO` selecionado:
-  - Mostrar componente de **upload** (input file) com validação:
-    - **Imagem**: `image/jpeg`, `image/png`, máx **5MB** (limite Meta).
-    - **Vídeo**: `video/mp4`, máx **16MB** (limite Meta).
-  - Upload para `chat-media/template-headers/<tenant_id>/<uuid>.<ext>`, gravando a `publicUrl` em `headerMediaUrl`.
-  - Preview inline da mídia carregada com botão "Remover/Trocar".
-- Texto/exemplo de cabeçalho ficam ocultos quando o tipo é mídia (não há placeholders em mídia fixa).
-- No `handleSubmit`, montar o componente HEADER apropriado:
-  ```ts
-  if (headerType === "IMAGE" || headerType === "VIDEO") {
-    components.push({
-      type: "HEADER",
-      format: headerType, // "IMAGE" ou "VIDEO"
-      example: { header_handle: [headerMediaUrl] },
-      // campo customizado nosso (não vai pra Meta, mas fica no snapshot local)
-      media_url: headerMediaUrl,
-    });
-  }
-  ```
-- Validação: bloquear submit se tipo for mídia mas nenhum arquivo carregado.
+### 1. Painel de variáveis disponíveis (referência rápida)
 
-### 2. `enviar-campanha-cloud/index.ts` — envio em campanhas
-Atualizar `buildTemplateComponents`:
-```ts
-if (type === "HEADER") {
-  const format = String(comp.format || "TEXT").toUpperCase();
-  if (format === "TEXT") { /* ... lógica atual ... */ }
-  else if (format === "IMAGE" && comp.media_url) {
-    out.push({ type: "header", parameters: [{ type: "image", image: { link: comp.media_url } }] });
-  }
-  else if (format === "VIDEO" && comp.media_url) {
-    out.push({ type: "header", parameters: [{ type: "video", video: { link: comp.media_url } }] });
-  }
-}
+Acima do campo **Corpo**, adicionar um bloco discreto explicando como funcionam as variáveis posicionais e listando atalhos clicáveis para inserir `{{1}}`, `{{2}}`, etc.
+
+- Componente novo: `src/components/whatsapp-oficial/TemplateVariablesGuide.tsx`
+  - Lista os placeholders **já usados** no corpo (ex: `{{1}}`, `{{2}}`) com badge "em uso".
+  - Botão **"Inserir próxima variável"** que adiciona o próximo `{{N}}` no final do textarea.
+  - Botão de **copiar** ao lado de cada `{{N}}` (usa `navigator.clipboard.writeText`).
+  - Texto curto explicando: *"Use `{{1}}`, `{{2}}` no corpo. Você definirá um exemplo para cada um abaixo. No envio, eles serão substituídos por dados reais do contato."*
+- Mesma lógica replicada (versão compacta) ao lado do campo **Cabeçalho** quando o tipo for `TEXT` (limitado a `{{1}}`, regra atual da Meta).
+- Para inserir no textarea via botão, o componente recebe uma `ref` ao `<Textarea>` para inserir na posição do cursor (ou no final como fallback).
+
+### 2. Painel de preview ao vivo (estilo WhatsApp)
+
+Componente novo: `src/components/whatsapp-oficial/TemplatePreview.tsx`
+
+Recebe via props o estado atual do formulário:
+```
+{ headerType, headerText, headerExample, headerMediaUrl,
+  body, bodyExamples, footer, buttons }
 ```
 
-### 3. `EnviarTemplateDialog.tsx` (conversas) — reaproveita media_url
-- Detectar header de mídia e empilhar parameter automaticamente (sem input adicional pro usuário, pois a mídia é fixa).
-- Mostrar preview da mídia acima do texto do template para o atendente saber o que vai enviar.
-- O backend que envia mensagens template em conversas precisa ser ajustado da mesma forma → vou verificar e ajustar `whatsapp-cloud-proxy` ou onde o `EnviarTemplateDialog` posta os components.
+Renderiza um **balão de mensagem** parecido com o WhatsApp (fundo verde-claro `#DCF8C6` em modo claro, com canto arredondado e sombra leve), contendo:
 
-### 4. `TemplateCampanhaPicker.tsx` (campanhas) — preview
-- Renderizar miniatura da mídia (imagem com `<img>`, vídeo com `<video controls>`) acima do preview do corpo, quando o template tem header IMAGE/VIDEO.
+- **Cabeçalho**:
+  - `TEXT` → texto em negrito, com `{{1}}` substituído por `headerExample` (ou `{{1}}` literal se vazio).
+  - `IMAGE` → `<img src={headerMediaUrl}>` com `max-h-40 object-contain rounded-md`. Placeholder cinza com ícone se não houver upload.
+  - `VIDEO` → `<video controls>` análogo.
+  - `NONE` → omitido.
+- **Corpo**: texto com `{{N}}` substituído por `bodyExamples[N-1]` (ou `{{N}}` literal se vazio). Preserva quebras de linha (`whitespace-pre-wrap`).
+- **Rodapé**: texto cinza menor, abaixo do corpo.
+- **Botões**: lista vertical separada com borda superior, cada botão renderizado como um link/botão estilizado WhatsApp (texto azul para `URL`, texto cinza para `QUICK_REPLY`); até 3, na ordem definida.
+- **Hora**: pequeno timestamp falso `12:34 ✓✓` no canto inferior direito do balão (puramente visual).
 
-### 5. `processar-comunicacoes-giftback/index.ts` — regras de giftback
-- Mesma lógica de `buildTemplateComponents` precisa aceitar header IMAGE/VIDEO. Verificar se ele importa/duplica a função de `giftback-comunicacao.ts` e atualizar `montarComponentsTemplate` lá também (mantém paridade frontend/backend dos testes).
+O preview atualiza automaticamente sempre que o formulário muda (já que tudo é controlado por `useState`).
 
-### 6. `src/lib/giftback-comunicacao.ts` — paridade
-Atualizar `montarComponentsTemplate` para emitir header IMAGE/VIDEO quando `comp.media_url` estiver presente. Adicionar testes unitários cobrindo os dois novos formatos.
+### 3. Layout do diálogo
 
-### 7. Sincronização (`TemplatesCard.handleSync`)
-Quando puxamos templates já existentes da Meta, o `components` retornado tem `format: "IMAGE"` mas **sem** `media_url` (a Meta só guarda o handle interno). Solução:
-- Preservar `media_url` se já existirmos localmente (merge no upsert) — caso contrário, marcar template como "mídia ausente" e exigir reupload antes de usar.
-- Implementar via `select` prévio + merge antes do upsert, ou via SQL `coalesce` no upsert.
+- Aumentar `max-w-2xl` → `max-w-4xl` para acomodar layout de 2 colunas em telas médias+.
+- Em `md:` ou maior: formulário à esquerda (col-span-2 ou ~60%), preview à direita (sticky, ~40%).
+- Em telas pequenas: preview empilha abaixo do formulário (sem `sticky`).
 
-### 8. RLS / Storage
-O bucket `chat-media` já é público — nada a mudar. Apenas confirmar que usuários autenticados conseguem fazer `upload` na pasta `template-headers/`. Se a policy atual restringir, adicionar policy permissiva para `INSERT` em `template-headers/<tenant_id>/*` (verifico durante implementação).
+### 4. Ajustes pequenos no formulário existente
 
----
+- Substituir o placeholder atual do textarea Corpo por algo mais curto, já que a explicação agora vem do painel de variáveis.
+- Manter toda a lógica atual de `countPlaceholders`, `bodyExamples`, validação e submit — **nada muda na lógica de envio à Meta**.
 
 ## Arquivos afetados
 
-- **Editados**:
-  - `src/components/whatsapp-oficial/CriarTemplateDialog.tsx` — UI de upload + montagem do componente.
-  - `src/components/whatsapp-oficial/TemplatesCard.tsx` — preservar `media_url` no sync.
-  - `src/components/conversas/EnviarTemplateDialog.tsx` — preview e auto-anexar header de mídia.
-  - `src/components/campanhas/TemplateCampanhaPicker.tsx` — preview de mídia.
-  - `supabase/functions/enviar-campanha-cloud/index.ts` — envio com header de mídia.
-  - `supabase/functions/processar-comunicacoes-giftback/index.ts` — idem para giftback.
-  - `src/lib/giftback-comunicacao.ts` — `montarComponentsTemplate` com IMAGE/VIDEO.
-  - `src/lib/__tests__/giftback-comunicacao.test.ts` — novos testes.
-- **Possível migração** (apenas se policy de storage bloquear): policy adicional em `storage.objects` para `chat-media/template-headers/`.
+- **Novo**: `src/components/whatsapp-oficial/TemplateVariablesGuide.tsx`
+- **Novo**: `src/components/whatsapp-oficial/TemplatePreview.tsx`
+- **Modificado**: `src/components/whatsapp-oficial/CriarTemplateDialog.tsx`
+  - Importar e renderizar os dois novos componentes.
+  - Reorganizar layout em grid 2-colunas (md+).
+  - Conectar `ref` do textarea para inserção de variável na posição do cursor.
 
-## Pontos de atenção
+## Fora de escopo (não muda agora)
 
-- Meta pode levar mais tempo para aprovar templates com mídia e às vezes rejeita por mídia de baixa qualidade — manter mensagem de aviso no dialog.
-- URL precisa ser **HTTPS pública** (ok, bucket é público).
-- Templates já existentes continuam funcionando (header TEXT/NONE) — a mudança é puramente aditiva.
+- Lógica de envio à Meta (payload já está correto).
+- Sincronização de templates aprovados (`TemplatesCard.tsx`) — preview já existe nos diálogos de uso.
+- Suporte a botões `PHONE_NUMBER` ou `COPY_CODE` (mantém o que já há: `QUICK_REPLY` e `URL`).
+- Variáveis dinâmicas do contato (`{nome}`, etc.) no preview da criação — aqui mostramos os **exemplos** que o usuário fornece, que é exatamente o que a Meta vê na aprovação.

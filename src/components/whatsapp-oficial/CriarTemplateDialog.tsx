@@ -9,6 +9,8 @@ import { Loader2, Plus, Trash2, AlertCircle, Upload, Image as ImageIcon, Video a
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { TemplateVariablesGuide } from "./TemplateVariablesGuide";
+import { TemplatePreview } from "./TemplatePreview";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
@@ -54,6 +56,30 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
   const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const headerInputRef = useRef<HTMLInputElement | null>(null);
+
+  /** Insere texto na posição atual do cursor (ou no final). */
+  const insertAtCursor = (
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    current: string,
+    insert: string,
+    setter: (v: string) => void,
+  ) => {
+    if (!el) {
+      setter(current + insert);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + insert + current.slice(end);
+    setter(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + insert.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
 
   const [body, setBody] = useState("");
   const [bodyExamples, setBodyExamples] = useState<string[]>([]);
@@ -268,7 +294,7 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo template WhatsApp</DialogTitle>
           <DialogDescription>
@@ -276,7 +302,8 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 py-2">
+          <div className="md:col-span-3 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Nome</Label>
@@ -333,12 +360,26 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
             </div>
 
             {headerType === "TEXT" && (
-              <>
+              <div className="space-y-2">
                 <Input
+                  ref={headerInputRef}
                   value={headerText}
                   onChange={(e) => setHeaderText(e.target.value)}
                   placeholder="ex: Olá {{1}}"
                   maxLength={60}
+                />
+                <TemplateVariablesGuide
+                  used={headerPlaceholders}
+                  max={1}
+                  context="cabeçalho"
+                  onInsert={(token) =>
+                    insertAtCursor(
+                      headerInputRef.current,
+                      headerText,
+                      token,
+                      setHeaderText,
+                    )
+                  }
                 />
                 {headerPlaceholders === 1 && (
                   <Input
@@ -347,7 +388,7 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
                     placeholder="Exemplo para {{1}} (ex: Maria)"
                   />
                 )}
-              </>
+              </div>
             )}
 
             {isMediaHeader && (
@@ -425,26 +466,40 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
 
           <div className="space-y-2">
             <Label>Corpo *</Label>
+            <TemplateVariablesGuide
+              used={bodyPlaceholders}
+              context="corpo"
+              onInsert={(token) =>
+                insertAtCursor(bodyRef.current, body, token, setBody)
+              }
+            />
             <Textarea
+              ref={bodyRef}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder={"Use {{1}}, {{2}} para variáveis.\nEx: Seu pedido {{1}} foi confirmado."}
-              rows={4}
+              placeholder="Ex: Olá {{1}}, seu pedido {{2}} foi confirmado."
+              rows={5}
             />
             {bodyPlaceholders > 0 && (
               <div className="space-y-2 pt-2">
-                <p className="text-xs text-muted-foreground">Exemplos para os placeholders:</p>
+                <p className="text-xs text-muted-foreground">
+                  Exemplo de cada variável (visto pela Meta na aprovação):
+                </p>
                 {bodyExamples.map((ex, i) => (
-                  <Input
-                    key={i}
-                    value={ex}
-                    onChange={(e) => {
-                      const next = [...bodyExamples];
-                      next[i] = e.target.value;
-                      setBodyExamples(next);
-                    }}
-                    placeholder={`Exemplo para {{${i + 1}}}`}
-                  />
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">
+                      {`{{${i + 1}}}`}
+                    </span>
+                    <Input
+                      value={ex}
+                      onChange={(e) => {
+                        const next = [...bodyExamples];
+                        next[i] = e.target.value;
+                        setBodyExamples(next);
+                      }}
+                      placeholder={`Exemplo para {{${i + 1}}}`}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -523,6 +578,23 @@ export function CriarTemplateDialog({ open, onOpenChange, onCreated }: CriarTemp
               Após enviar, a Meta analisa o template (até 24h). Templates com mídia podem demorar mais e
               serem rejeitados se a qualidade for baixa.
             </span>
+          </div>
+          </div>
+
+          {/* Coluna de pré-visualização (sticky em md+) */}
+          <div className="md:col-span-2">
+            <div className="md:sticky md:top-2">
+              <TemplatePreview
+                headerType={headerType}
+                headerText={headerText}
+                headerExample={headerExample}
+                headerMediaUrl={headerMediaUrl}
+                body={body}
+                bodyExamples={bodyExamples}
+                footer={footer}
+                buttons={buttons}
+              />
+            </div>
           </div>
         </div>
 

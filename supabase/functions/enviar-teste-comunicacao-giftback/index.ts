@@ -61,16 +61,28 @@ function montarComponents(
   for (const comp of templateComponents || []) {
     const type = String(comp?.type || "").toUpperCase();
     if (type === "HEADER") {
-      if (String(comp.format || "TEXT").toUpperCase() !== "TEXT") continue;
-      const ph = extractMetaPlaceholders(comp.text || "");
-      if (ph.length === 0) continue;
-      out.push({
-        type: "header",
-        parameters: ph.map((n) => ({
-          type: "text",
-          text: resolverVariaveis(mapping[`header.${n}`] || "", vars),
-        })),
-      });
+      const fmt = String(comp.format || "TEXT").toUpperCase();
+      if (fmt === "TEXT") {
+        const ph = extractMetaPlaceholders(comp.text || "");
+        if (ph.length === 0) continue;
+        out.push({
+          type: "header",
+          parameters: ph.map((n) => ({
+            type: "text",
+            text: resolverVariaveis(mapping[`header.${n}`] || "", vars),
+          })),
+        });
+      } else if (fmt === "IMAGE" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "image", image: { link: comp.media_url } }],
+        });
+      } else if (fmt === "VIDEO" && comp.media_url) {
+        out.push({
+          type: "header",
+          parameters: [{ type: "video", video: { link: comp.media_url } }],
+        });
+      }
     } else if (type === "BODY") {
       const ph = extractMetaPlaceholders(comp.text || "");
       if (ph.length === 0) continue;

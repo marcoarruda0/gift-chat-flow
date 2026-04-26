@@ -1,102 +1,94 @@
 ## Objetivo
 
-Evoluir o relatório `/relatorios/giftback` com 3 melhorias:
+Permitir que templates WhatsApp Cloud tenham **cabeçalho de mídia (Imagem JPG/PNG ou Vídeo MP4)** além do já suportado TEXTO. A mídia será **fixa** — definida uma vez na criação do template e enviada igual para todos os destinatários, simplificando campanhas, conversas e regras de giftback.
 
-1. **Comparação período atual × período anterior** (variação % de Receita total, Receita influenciada e Receita com Giftback)
-2. **Validações** para o filtro de período personalizado (datas obrigatórias e Data fim ≥ Data início)
-3. **Painel "Resumo executivo"** com Top atendente, Ticket médio por gênero e Ranking de meses por faturamento no período
+## Como a Meta lida com isso
+
+1. **Na criação** do template (`POST /message_templates`), o `HEADER` deve ter `format: "IMAGE" | "VIDEO"` + `example.header_handle: ["<URL pública de exemplo>"]`. Vamos passar a URL pública direta da mídia armazenada no nosso bucket `chat-media` (já existente e público).
+2. **No envio** (`POST /messages`), o `header` parameter recebe `{ type: "image", image: { link: "<URL>" } }` ou `{ type: "video", video: { link: "<URL>" } }`.
+3. Como a mídia é **fixa**, salvamos a URL dentro do próprio `components` do template no banco — sem necessidade de coluna extra ou input por destinatário.
 
 ---
 
-## 1) Banco de dados — Estender RPC `relatorio_giftback`
+## Mudanças
 
-Migração nova substituindo `relatorio_giftback` (mesma assinatura), agregando novos campos no JSON de retorno:
-
-- **Período anterior**: calcular `p_anterior_inicio = p_inicio - (p_fim - p_inicio)` e `p_anterior_fim = p_inicio`. Retornar `comparativo`:
-  ```json
-  {
-    "receita_total_anterior": number,
-    "receita_influenciada_anterior": number,
-    "receita_giftback_anterior": number
+### 1. `CriarTemplateDialog.tsx` — formulário
+- Adicionar `IMAGE` e `VIDEO` ao Select de tipo de cabeçalho (junto com `NONE` e `TEXT`).
+- Quando `IMAGE`/`VIDEO` selecionado:
+  - Mostrar componente de **upload** (input file) com validação:
+    - **Imagem**: `image/jpeg`, `image/png`, máx **5MB** (limite Meta).
+    - **Vídeo**: `video/mp4`, máx **16MB** (limite Meta).
+  - Upload para `chat-media/template-headers/<tenant_id>/<uuid>.<ext>`, gravando a `publicUrl` em `headerMediaUrl`.
+  - Preview inline da mídia carregada com botão "Remover/Trocar".
+- Texto/exemplo de cabeçalho ficam ocultos quando o tipo é mídia (não há placeholders em mídia fixa).
+- No `handleSubmit`, montar o componente HEADER apropriado:
+  ```ts
+  if (headerType === "IMAGE" || headerType === "VIDEO") {
+    components.push({
+      type: "HEADER",
+      format: headerType, // "IMAGE" ou "VIDEO"
+      example: { header_handle: [headerMediaUrl] },
+      // campo customizado nosso (não vai pra Meta, mas fica no snapshot local)
+      media_url: headerMediaUrl,
+    });
   }
   ```
-- **Top atendente** (no período): `LEFT JOIN profiles` em `compras.operador_id`, agrupar por operador, somar `valor`, retornar top 1: `{ id, nome, receita, num_vendas }`. Se não houver, `null`.
-- **Ticket médio por gênero** (no período): `AVG(valor)` agrupado por `COALESCE(contatos.genero, 'nao_informado')`. Retornar array `[{ genero, ticket_medio, num_vendas }]`.
-- **Ranking de meses por faturamento no período** (apenas meses dentro de `[p_inicio, p_fim)`): top 3 ordenados por valor desc, formato `[{ mes: 'YYYY-MM', valor }]`. Reaproveita a CTE de faturamento mensal mas filtrada pelo período.
+- Validação: bloquear submit se tipo for mídia mas nenhum arquivo carregado.
 
-A função continua `SECURITY DEFINER`, escopada pelo `tenant_id` via `get_user_tenant_id(auth.uid())`. Mantemos campos antigos para retrocompatibilidade.
+### 2. `enviar-campanha-cloud/index.ts` — envio em campanhas
+Atualizar `buildTemplateComponents`:
+```ts
+if (type === "HEADER") {
+  const format = String(comp.format || "TEXT").toUpperCase();
+  if (format === "TEXT") { /* ... lógica atual ... */ }
+  else if (format === "IMAGE" && comp.media_url) {
+    out.push({ type: "header", parameters: [{ type: "image", image: { link: comp.media_url } }] });
+  }
+  else if (format === "VIDEO" && comp.media_url) {
+    out.push({ type: "header", parameters: [{ type: "video", video: { link: comp.media_url } }] });
+  }
+}
+```
 
----
+### 3. `EnviarTemplateDialog.tsx` (conversas) — reaproveita media_url
+- Detectar header de mídia e empilhar parameter automaticamente (sem input adicional pro usuário, pois a mídia é fixa).
+- Mostrar preview da mídia acima do texto do template para o atendente saber o que vai enviar.
+- O backend que envia mensagens template em conversas precisa ser ajustado da mesma forma → vou verificar e ajustar `whatsapp-cloud-proxy` ou onde o `EnviarTemplateDialog` posta os components.
 
-## 2) Helpers puros — `src/lib/giftback-relatorio.ts`
+### 4. `TemplateCampanhaPicker.tsx` (campanhas) — preview
+- Renderizar miniatura da mídia (imagem com `<img>`, vídeo com `<video controls>`) acima do preview do corpo, quando o template tem header IMAGE/VIDEO.
 
-Adicionar:
+### 5. `processar-comunicacoes-giftback/index.ts` — regras de giftback
+- Mesma lógica de `buildTemplateComponents` precisa aceitar header IMAGE/VIDEO. Verificar se ele importa/duplica a função de `giftback-comunicacao.ts` e atualizar `montarComponentsTemplate` lá também (mantém paridade frontend/backend dos testes).
 
-- `calcularVariacaoPct(atual: number, anterior: number): { pct: number; direcao: 'up' | 'down' | 'flat' | 'novo' }`
-  - `anterior === 0 && atual > 0` → `{ pct: 100, direcao: 'novo' }`
-  - `anterior === 0 && atual === 0` → `{ pct: 0, direcao: 'flat' }`
-  - caso geral: `((atual - anterior) / anterior) * 100`
-- `formatVariacaoPct(v): string` → `+12,34%` / `-5,00%` / `—`
-- `validarPeriodoCustom(inicio: string, fim: string): { ok: boolean; erro?: string }`
-  - exige ambos preenchidos
-  - data válida (parse ISO)
-  - `fim >= inicio`
-- Estender `RelatorioGiftbackData` com:
-  ```ts
-  comparativo?: {
-    receita_total_anterior: number;
-    receita_influenciada_anterior: number;
-    receita_giftback_anterior: number;
-  };
-  top_atendente?: { id: string; nome: string; receita: number; num_vendas: number } | null;
-  ticket_por_genero?: { genero: string; ticket_medio: number; num_vendas: number }[];
-  ranking_meses_periodo?: { mes: string; valor: number }[];
-  ```
+### 6. `src/lib/giftback-comunicacao.ts` — paridade
+Atualizar `montarComponentsTemplate` para emitir header IMAGE/VIDEO quando `comp.media_url` estiver presente. Adicionar testes unitários cobrindo os dois novos formatos.
 
-Adicionar testes em `src/lib/__tests__/giftback-relatorio.test.ts` cobrindo:
-- variação positiva, negativa, zero, novo (anterior=0)
-- validação de período: vazio, fim<inicio, datas inválidas, caso ok
+### 7. Sincronização (`TemplatesCard.handleSync`)
+Quando puxamos templates já existentes da Meta, o `components` retornado tem `format: "IMAGE"` mas **sem** `media_url` (a Meta só guarda o handle interno). Solução:
+- Preservar `media_url` se já existirmos localmente (merge no upsert) — caso contrário, marcar template como "mídia ausente" e exigir reupload antes de usar.
+- Implementar via `select` prévio + merge antes do upsert, ou via SQL `coalesce` no upsert.
 
----
-
-## 3) UI — `src/pages/RelatorioGiftback.tsx`
-
-### 3a) Validação de período personalizado
-- Calcular `validacao = validarPeriodoCustom(dataInicio, dataFim)` quando `periodo === 'custom'`.
-- Quando inválido: exibir `<Alert variant="destructive">` abaixo dos filtros com a mensagem retornada e **desabilitar a query** (`enabled: ... && validacaoOk`).
-- Mantém o `useMemo` atual mas só constrói `inicio/fim` quando válido.
-
-### 3b) Cards de comparação (topo, acima do grid de métricas)
-Novo bloco "Variação vs período anterior" com 3 cards compactos lado a lado:
-- Receita total: valor atual + badge com variação % (verde ↑ / vermelho ↓ / cinza —) + valor do período anterior em texto pequeno.
-- Receita influenciada: idem.
-- Receita com Giftback: idem.
-
-Componente local `<ComparativoCard>` reutilizando tokens do design system (`text-success`, `text-destructive`, `bg-muted`). Ícones `ArrowUp`, `ArrowDown`, `Minus` do lucide-react.
-
-### 3c) Painel "Resumo executivo"
-Card único com `CardHeader` "Resumo executivo" e `CardContent` em grid `md:grid-cols-3`:
-- **Top atendente**: avatar inicial + nome + `formatBRL(receita)` + `num_vendas` vendas. Vazio: "Sem dados no período".
-- **Ticket médio por gênero**: lista compacta com badge colorido (`GENERO_COLORS`) + label + `formatBRL(ticket_medio)`. Ordenada desc.
-- **Ranking de meses (no período)**: top 3 com posição (1º, 2º, 3º) + `formatMesLabel(mes)` + `formatBRL(valor)`.
-
-Posicionado **acima dos cards de métricas** e **abaixo dos cards de comparação**, conforme pedido ("acima dos cards").
-
-Skeletons enquanto `isLoading`.
-
----
-
-## 4) Tipos do Supabase
-
-`src/integrations/supabase/types.ts` é regenerado automaticamente após a migration. Sem edição manual.
+### 8. RLS / Storage
+O bucket `chat-media` já é público — nada a mudar. Apenas confirmar que usuários autenticados conseguem fazer `upload` na pasta `template-headers/`. Se a policy atual restringir, adicionar policy permissiva para `INSERT` em `template-headers/<tenant_id>/*` (verifico durante implementação).
 
 ---
 
 ## Arquivos afetados
 
-- **Nova migration**: `supabase/migrations/<timestamp>_relatorio_giftback_v2.sql` (substitui a função com `CREATE OR REPLACE`)
-- **Modificado**: `src/lib/giftback-relatorio.ts` (helpers + tipos)
-- **Modificado**: `src/lib/__tests__/giftback-relatorio.test.ts` (novos testes)
-- **Modificado**: `src/pages/RelatorioGiftback.tsx` (validação, comparativos, resumo executivo)
+- **Editados**:
+  - `src/components/whatsapp-oficial/CriarTemplateDialog.tsx` — UI de upload + montagem do componente.
+  - `src/components/whatsapp-oficial/TemplatesCard.tsx` — preservar `media_url` no sync.
+  - `src/components/conversas/EnviarTemplateDialog.tsx` — preview e auto-anexar header de mídia.
+  - `src/components/campanhas/TemplateCampanhaPicker.tsx` — preview de mídia.
+  - `supabase/functions/enviar-campanha-cloud/index.ts` — envio com header de mídia.
+  - `supabase/functions/processar-comunicacoes-giftback/index.ts` — idem para giftback.
+  - `src/lib/giftback-comunicacao.ts` — `montarComponentsTemplate` com IMAGE/VIDEO.
+  - `src/lib/__tests__/giftback-comunicacao.test.ts` — novos testes.
+- **Possível migração** (apenas se policy de storage bloquear): policy adicional em `storage.objects` para `chat-media/template-headers/`.
 
-Sem mudanças em RLS (a função roda como SECURITY DEFINER e já filtra por tenant).
+## Pontos de atenção
+
+- Meta pode levar mais tempo para aprovar templates com mídia e às vezes rejeita por mídia de baixa qualidade — manter mensagem de aviso no dialog.
+- URL precisa ser **HTTPS pública** (ok, bucket é público).
+- Templates já existentes continuam funcionando (header TEXT/NONE) — a mudança é puramente aditiva.

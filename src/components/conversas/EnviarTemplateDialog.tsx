@@ -92,6 +92,15 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
     [headerComponent]
   );
 
+  const headerMedia = useMemo(() => {
+    if (!headerComponent) return null;
+    const fmt = String(headerComponent.format || "").toUpperCase();
+    if ((fmt === "IMAGE" || fmt === "VIDEO") && headerComponent.media_url) {
+      return { format: fmt as "IMAGE" | "VIDEO", url: headerComponent.media_url as string };
+    }
+    return null;
+  }, [headerComponent]);
+
   // Reset on template change
   useEffect(() => {
     setVars({});
@@ -117,7 +126,16 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
     try {
       // Build components array following Meta spec
       const components: any[] = [];
-      if (headerPlaceholders.length > 0) {
+      if (headerMedia) {
+        components.push({
+          type: "header",
+          parameters: [
+            headerMedia.format === "IMAGE"
+              ? { type: "image", image: { link: headerMedia.url } }
+              : { type: "video", video: { link: headerMedia.url } },
+          ],
+        });
+      } else if (headerPlaceholders.length > 0) {
         components.push({
           type: "header",
           parameters: headerPlaceholders.map(n => ({
@@ -230,6 +248,29 @@ export function EnviarTemplateDialog({ open, onOpenChange, onSend }: EnviarTempl
                           />
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {headerMedia && (
+                    <div className="space-y-1">
+                      <Label className="text-xs uppercase text-muted-foreground">
+                        Mídia do cabeçalho
+                      </Label>
+                      <div className="rounded-md border border-border bg-muted/30 p-2">
+                        {headerMedia.format === "IMAGE" ? (
+                          <img
+                            src={headerMedia.url}
+                            alt="Cabeçalho do template"
+                            className="max-h-40 rounded object-contain mx-auto"
+                          />
+                        ) : (
+                          <video
+                            src={headerMedia.url}
+                            controls
+                            className="max-h-40 rounded mx-auto"
+                          />
+                        )}
+                      </div>
                     </div>
                   )}
 

@@ -498,6 +498,19 @@ export default function Campanhas() {
     fetchCampanhas();
   }
 
+  async function atualizarGrupoCampanha(campanhaId: string, novoGrupoId: string | null) {
+    const { error } = await (supabase as any)
+      .from("campanhas")
+      .update({ grupo_id: novoGrupoId })
+      .eq("id", campanhaId);
+    if (error) {
+      toast({ title: "Erro ao atualizar grupo", description: error.message, variant: "destructive" });
+      return;
+    }
+    setEditGrupoCampanhaId(null);
+    fetchCampanhas();
+  }
+
   async function openDetail(campanhaId: string) {
     setDetailDialog(campanhaId);
     const { data } = await supabase

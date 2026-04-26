@@ -274,6 +274,12 @@ export default function Campanhas() {
     return list;
   }, [campanhas, filtroCanal, filtroGrupo]);
 
+  const gruposMap = useMemo(() => {
+    const m = new Map<string, CampanhaGrupo>();
+    grupos.forEach((g) => m.set(g.id, g));
+    return m;
+  }, [grupos]);
+
   useEffect(() => {
     if (tenantId) {
       fetchCampanhas();

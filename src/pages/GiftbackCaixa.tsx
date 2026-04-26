@@ -690,9 +690,16 @@ export default function GiftbackCaixa() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Switch
-                      checked={aplicarGiftback}
-                      onCheckedChange={setAplicarGiftback}
-                      disabled={!regrasOk || configAusente || configCarregando}
+                      checked={aplicarGiftback && !bloqueadoMesmoDia}
+                      onCheckedChange={(v) =>
+                        setAplicarGiftback(v && !bloqueadoMesmoDia)
+                      }
+                      disabled={
+                        !regrasOk ||
+                        configAusente ||
+                        configCarregando ||
+                        bloqueadoMesmoDia
+                      }
                     />
                     <Label>
                       Aplicar giftback de{" "}
@@ -700,8 +707,35 @@ export default function GiftbackCaixa() {
                     </Label>
                   </div>
 
+                  {/* Bloqueio D+1: criado hoje, só pode usar amanhã */}
+                  {bloqueadoMesmoDia && (
+                    <div
+                      className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground flex gap-2"
+                      role="status"
+                      data-testid="aviso-bloqueio-mesmo-dia"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        Este giftback foi gerado hoje (
+                        {new Date(giftbackAtivo.created_at).toLocaleDateString(
+                          "pt-BR",
+                        )}
+                        ) e só poderá ser utilizado a partir de{" "}
+                        <strong>
+                          {(() => {
+                            const d = new Date(giftbackAtivo.created_at);
+                            d.setDate(d.getDate() + 1);
+                            return d.toLocaleDateString("pt-BR");
+                          })()}
+                        </strong>{" "}
+                        (D+1). O ativo será preservado mesmo que você registre
+                        nova compra hoje.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Erro: tentando resgate parcial */}
-                  {aplicarGiftback && erroResgate && (
+                  {aplicarGiftback && erroResgate && !bloqueadoMesmoDia && (
                     <div
                       className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex gap-2"
                       role="alert"
@@ -712,8 +746,8 @@ export default function GiftbackCaixa() {
                     </div>
                   )}
 
-                  {/* Aviso: NÃO aplicar perde o ativo */}
-                  {!aplicarGiftback && (
+                  {/* Aviso: NÃO aplicar perde o ativo (apenas se não houver bloqueio D+1) */}
+                  {!aplicarGiftback && !bloqueadoMesmoDia && (
                     <div
                       className="rounded-md border border-warning/50 bg-warning/10 p-2 text-xs text-warning-foreground"
                       role="status"

@@ -755,6 +755,12 @@ export default function Campanhas() {
                           <Button size="sm" variant="ghost" onClick={() => openDetail(c.id)}>
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <EditarGrupoPopover
+                            campanhaId={c.id}
+                            grupoAtualId={c.grupo_id}
+                            grupos={grupos}
+                            onChange={atualizarGrupoCampanha}
+                          />
                           {(c.status === "rascunho" || c.status === "agendada") && (
                             <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)}>
                               <Send className="h-4 w-4" />

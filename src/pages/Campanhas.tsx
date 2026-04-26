@@ -24,6 +24,8 @@ import { InsertVariableButton } from "@/components/campanhas/InsertVariableButto
 import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
 import { TestarCampanhaCloudDialog } from "@/components/campanhas/TestarCampanhaCloudDialog";
 import { GerenciarGruposDialog, type CampanhaGrupo } from "@/components/campanhas/GerenciarGruposDialog";
+import { EditarGrupoPopover } from "@/components/campanhas/EditarGrupoPopover";
+import { AnaliticaGrupos } from "@/components/campanhas/AnaliticaGrupos";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "whatsapp_cloud" | "email";

@@ -258,9 +258,19 @@ export default function Campanhas() {
   );
 
   const campanhasFiltradas = useMemo(() => {
-    if (filtroCanal === "todas") return campanhas;
-    return campanhas.filter((c) => (c.canal || "whatsapp") === filtroCanal);
-  }, [campanhas, filtroCanal]);
+    let list = campanhas;
+    if (filtroCanal !== "todas") {
+      list = list.filter((c) => (c.canal || "whatsapp") === filtroCanal);
+    }
+    if (filtroGrupo !== "todos") {
+      if (filtroGrupo === "sem_grupo") {
+        list = list.filter((c) => !c.grupo_id);
+      } else {
+        list = list.filter((c) => c.grupo_id === filtroGrupo);
+      }
+    }
+    return list;
+  }, [campanhas, filtroCanal, filtroGrupo]);
 
   useEffect(() => {
     if (tenantId) {

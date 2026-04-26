@@ -24,6 +24,8 @@ import { InsertVariableButton } from "@/components/campanhas/InsertVariableButto
 import { TemplateCampanhaPicker } from "@/components/campanhas/TemplateCampanhaPicker";
 import { TestarCampanhaCloudDialog } from "@/components/campanhas/TestarCampanhaCloudDialog";
 import { GerenciarGruposDialog, type CampanhaGrupo } from "@/components/campanhas/GerenciarGruposDialog";
+import { EditarGrupoPopover } from "@/components/campanhas/EditarGrupoPopover";
+import { AnaliticaGrupos } from "@/components/campanhas/AnaliticaGrupos";
 
 type AtrasoTipo = "muito_curto" | "curto" | "medio" | "longo" | "muito_longo";
 type Canal = "whatsapp" | "whatsapp_cloud" | "email";
@@ -172,7 +174,6 @@ export default function Campanhas() {
   const [grupoId, setGrupoId] = useState<string>("none");
   const [filtroGrupo, setFiltroGrupo] = useState<string>("todos");
   const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
-  const [editGrupoCampanhaId, setEditGrupoCampanhaId] = useState<string | null>(null);
 
   // Teste de disparo Oficial
   const [testarOpen, setTestarOpen] = useState(false);
@@ -271,6 +272,12 @@ export default function Campanhas() {
     }
     return list;
   }, [campanhas, filtroCanal, filtroGrupo]);
+
+  const gruposMap = useMemo(() => {
+    const m = new Map<string, CampanhaGrupo>();
+    grupos.forEach((g) => m.set(g.id, g));
+    return m;
+  }, [grupos]);
 
   useEffect(() => {
     if (tenantId) {
@@ -507,7 +514,7 @@ export default function Campanhas() {
       toast({ title: "Erro ao atualizar grupo", description: error.message, variant: "destructive" });
       return;
     }
-    setEditGrupoCampanhaId(null);
+    toast({ title: novoGrupoId ? "Grupo atualizado" : "Grupo removido" });
     fetchCampanhas();
   }
 
@@ -602,20 +609,53 @@ export default function Campanhas() {
         </div>
       </div>
 
-      <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
-        <TabsList>
-          <TabsTrigger value="todas">Todas</TabsTrigger>
-          <TabsTrigger value="whatsapp" className="gap-1">
-            <MessageSquare className="h-3.5 w-3.5" /> Z-API
-          </TabsTrigger>
-          <TabsTrigger value="whatsapp_cloud" className="gap-1">
-            <Sparkles className="h-3.5 w-3.5" /> Oficial
-          </TabsTrigger>
-          <TabsTrigger value="email" className="gap-1">
-            <Mail className="h-3.5 w-3.5" /> E-mail
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Tabs value={filtroCanal} onValueChange={(v) => setFiltroCanal(v as any)}>
+          <TabsList>
+            <TabsTrigger value="todas">Todas</TabsTrigger>
+            <TabsTrigger value="whatsapp" className="gap-1">
+              <MessageSquare className="h-3.5 w-3.5" /> Z-API
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp_cloud" className="gap-1">
+              <Sparkles className="h-3.5 w-3.5" /> Oficial
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-1">
+              <Mail className="h-3.5 w-3.5" /> E-mail
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="flex items-center gap-2">
+          <Tags className="h-4 w-4 text-muted-foreground" />
+          <Select value={filtroGrupo} onValueChange={setFiltroGrupo}>
+            <SelectTrigger className="w-[200px] h-9">
+              <SelectValue placeholder="Filtrar por grupo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os grupos</SelectItem>
+              <SelectItem value="sem_grupo">Sem grupo</SelectItem>
+              {grupos.map((g) => (
+                <SelectItem key={g.id} value={g.id}>
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: g.cor || "#6B7280" }}
+                    />
+                    {g.nome}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <AnaliticaGrupos
+        tenantId={tenantId}
+        campanhas={campanhas as any}
+        grupos={grupos}
+        onSelecionarGrupo={(id) => setFiltroGrupo(id)}
+      />
 
       {loading ? (
         <p className="text-muted-foreground">Carregando...</p>
@@ -634,6 +674,7 @@ export default function Campanhas() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Canal</TableHead>
+                  <TableHead>Grupo</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Atraso</TableHead>
                   <TableHead>Status</TableHead>
@@ -668,6 +709,23 @@ export default function Campanhas() {
                         )}
                       </TableCell>
                       <TableCell>
+                        {(() => {
+                          const g = c.grupo_id ? gruposMap.get(c.grupo_id) : null;
+                          if (!g) {
+                            return <span className="text-xs text-muted-foreground">—</span>;
+                          }
+                          return (
+                            <Badge
+                              className="border-transparent text-white"
+                              style={{ backgroundColor: g.cor || "#6B7280" }}
+                              title={g.descricao || g.nome}
+                            >
+                              {g.nome}
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
                         <span className="flex items-center gap-1 text-muted-foreground capitalize">
                           {cn === "email"
                             ? <><FileText className="h-4 w-4" /> html</>
@@ -696,6 +754,12 @@ export default function Campanhas() {
                           <Button size="sm" variant="ghost" onClick={() => openDetail(c.id)}>
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <EditarGrupoPopover
+                            campanhaId={c.id}
+                            grupoAtualId={c.grupo_id}
+                            grupos={grupos}
+                            onChange={atualizarGrupoCampanha}
+                          />
                           {(c.status === "rascunho" || c.status === "agendada") && (
                             <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)}>
                               <Send className="h-4 w-4" />

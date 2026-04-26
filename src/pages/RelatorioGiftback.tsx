@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Navigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -35,6 +36,15 @@ import {
   Receipt,
   Percent,
   Repeat,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  Sparkles,
+  AlertCircle,
+  Trophy,
+  Crown,
+  Users,
+  CalendarDays,
 } from "lucide-react";
 import {
   formatBRL,
@@ -42,7 +52,11 @@ import {
   formatMesLabel,
   GENERO_LABELS,
   GENERO_COLORS,
+  calcularVariacaoPct,
+  formatVariacaoPct,
+  validarPeriodoCustom,
   type RelatorioGiftbackData,
+  type VariacaoPct,
 } from "@/lib/giftback-relatorio";
 
 function MetricCard({
@@ -82,6 +96,68 @@ function MetricCard({
   );
 }
 
+function VariacaoBadge({ v }: { v: VariacaoPct }) {
+  const Icon =
+    v.direcao === "up" ? ArrowUp : v.direcao === "down" ? ArrowDown : Minus;
+  const cls =
+    v.direcao === "up"
+      ? "text-emerald-600 bg-emerald-500/10"
+      : v.direcao === "down"
+        ? "text-destructive bg-destructive/10"
+        : v.direcao === "novo"
+          ? "text-primary bg-primary/10"
+          : "text-muted-foreground bg-muted";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${cls}`}
+    >
+      <Icon className="h-3 w-3" />
+      {formatVariacaoPct(v)}
+    </span>
+  );
+}
+
+function ComparativoCard({
+  title,
+  atual,
+  anterior,
+  icon: Icon,
+  loading,
+}: {
+  title: string;
+  atual: number;
+  anterior: number;
+  icon: React.ElementType;
+  loading?: boolean;
+}) {
+  const v = calcularVariacaoPct(atual, anterior);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-12 w-40" />
+        ) : (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-2xl font-bold">{formatBRL(atual)}</div>
+              <VariacaoBadge v={v} />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Período anterior: {formatBRL(anterior)}
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function RelatorioGiftback() {
   const { profile, hasRole, loading: authLoading } = useAuth();
   const tenantId = profile?.tenant_id;
@@ -106,38 +182,46 @@ export default function RelatorioGiftback() {
     enabled: !!tenantId && isAdmin,
   });
 
+  const validacao = useMemo(() => {
+    if (periodo !== "custom") return { ok: true as const };
+    return validarPeriodoCustom(dataInicio, dataFim);
+  }, [periodo, dataInicio, dataFim]);
+
   const { inicio, fim } = useMemo(() => {
-    if (periodo === "custom" && dataInicio && dataFim) {
+    if (periodo === "custom") {
+      if (!validacao.ok) return { inicio: null, fim: null };
       const i = new Date(dataInicio);
       i.setHours(0, 0, 0, 0);
       const f = new Date(dataFim);
       f.setHours(23, 59, 59, 999);
       return { inicio: i.toISOString(), fim: f.toISOString() };
     }
-    const dias = parseInt(periodo === "custom" ? "30" : periodo, 10);
+    const dias = parseInt(periodo, 10);
     const i = new Date();
     i.setHours(0, 0, 0, 0);
     i.setDate(i.getDate() - dias);
     const f = new Date();
     f.setHours(23, 59, 59, 999);
     return { inicio: i.toISOString(), fim: f.toISOString() };
-  }, [periodo, dataInicio, dataFim]);
+  }, [periodo, dataInicio, dataFim, validacao]);
 
   const atendenteParam =
     atendenteFiltro === "todos" ? null : atendenteFiltro;
+
+  const queryHabilitada = !!tenantId && isAdmin && !!inicio && !!fim;
 
   const { data, isLoading } = useQuery({
     queryKey: ["relatorio-giftback", tenantId, inicio, fim, atendenteParam],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("relatorio_giftback", {
-        p_inicio: inicio,
-        p_fim: fim,
+        p_inicio: inicio!,
+        p_fim: fim!,
         p_atendente_id: atendenteParam,
       });
       if (error) throw error;
       return data as unknown as RelatorioGiftbackData;
     },
-    enabled: !!tenantId && isAdmin,
+    enabled: queryHabilitada,
   });
 
   if (authLoading) return null;
@@ -157,6 +241,11 @@ export default function RelatorioGiftback() {
     })) || [];
 
   const totalGenero = generoChartData.reduce((s, g) => s + g.value, 0);
+
+  const comp = data?.comparativo;
+  const top = data?.top_atendente;
+  const ticketGenero = data?.ticket_por_genero || [];
+  const rankingMeses = data?.ranking_meses_periodo || [];
 
   return (
     <div className="space-y-6">
@@ -233,6 +322,170 @@ export default function RelatorioGiftback() {
               </Select>
             </div>
           </div>
+
+          {periodo === "custom" && !validacao.ok && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Período inválido</AlertTitle>
+              <AlertDescription>{validacao.erro}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Variação vs período anterior */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+          Variação vs período anterior
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ComparativoCard
+            title="Receita total"
+            atual={Number(data?.receita_total ?? 0)}
+            anterior={Number(comp?.receita_total_anterior ?? 0)}
+            icon={DollarSign}
+            loading={isLoading}
+          />
+          <ComparativoCard
+            title="Receita influenciada"
+            atual={Number(data?.receita_influenciada ?? 0)}
+            anterior={Number(comp?.receita_influenciada_anterior ?? 0)}
+            icon={TrendingUp}
+            loading={isLoading}
+          />
+          <ComparativoCard
+            title="Receita com Giftback"
+            atual={Number(data?.receita_giftback ?? 0)}
+            anterior={Number(comp?.receita_giftback_anterior ?? 0)}
+            icon={Gift}
+            loading={isLoading}
+          />
+        </div>
+      </div>
+
+      {/* Resumo executivo */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Resumo executivo
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Destaques do período selecionado
+          </p>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Top atendente */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Crown className="h-4 w-4" />
+                  Top atendente
+                </div>
+                {top ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-9 w-9 rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center">
+                        {(top.nome || "?").trim().charAt(0).toUpperCase()}
+                      </div>
+                      <div className="font-semibold truncate">{top.nome}</div>
+                    </div>
+                    <div className="text-lg font-bold">
+                      {formatBRL(top.receita)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {top.num_vendas} venda{top.num_vendas === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Sem dados no período
+                  </p>
+                )}
+              </div>
+
+              {/* Ticket médio por gênero */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  Ticket médio por gênero
+                </div>
+                {ticketGenero.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Sem dados no período
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {ticketGenero.map((tg) => (
+                      <li
+                        key={tg.genero}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{
+                              backgroundColor:
+                                GENERO_COLORS[tg.genero] ||
+                                "hsl(220 9% 46%)",
+                            }}
+                          />
+                          <span className="text-sm truncate">
+                            {GENERO_LABELS[tg.genero] || tg.genero}
+                          </span>
+                        </div>
+                        <div className="text-sm font-semibold">
+                          {formatBRL(tg.ticket_medio)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Ranking de meses */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Trophy className="h-4 w-4" />
+                  Ranking de meses (período)
+                </div>
+                {rankingMeses.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Sem dados no período
+                  </p>
+                ) : (
+                  <ol className="space-y-2">
+                    {rankingMeses.map((m, idx) => (
+                      <li
+                        key={m.mes}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-6 w-6 rounded-full bg-muted text-xs font-bold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="text-sm capitalize truncate flex items-center gap-1">
+                            <CalendarDays className="h-3 w-3 text-muted-foreground" />
+                            {formatMesLabel(m.mes)}
+                          </span>
+                        </div>
+                        <div className="text-sm font-semibold">
+                          {formatBRL(m.valor)}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

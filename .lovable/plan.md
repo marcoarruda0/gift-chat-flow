@@ -1,128 +1,102 @@
+## Objetivo
 
-# Relatórios do Giftback — `/relatorios/giftback`
+Evoluir o relatório `/relatorios/giftback` com 3 melhorias:
 
-Nova página de gestão com 9 métricas, filtros de período/atendente e gráficos. Inclui campo `genero` em contatos para a métrica de "Compras por gênero".
-
----
-
-## 1. Banco de dados (1 migração)
-
-### Coluna nova em `contatos`
-- `genero text` (nullable) com CHECK em `('masculino','feminino','outro','nao_informado')`.
-- Sem default — clientes antigos ficam `NULL` (exibidos como "Não informado" no relatório).
-
-### Não criar enum
-Texto simples + CHECK constraint é mais flexível para evolução futura. Imutável (sem `now()`), respeita as regras de migration.
+1. **Comparação período atual × período anterior** (variação % de Receita total, Receita influenciada e Receita com Giftback)
+2. **Validações** para o filtro de período personalizado (datas obrigatórias e Data fim ≥ Data início)
+3. **Painel "Resumo executivo"** com Top atendente, Ticket médio por gênero e Ranking de meses por faturamento no período
 
 ---
 
-## 2. Cadastro de gênero — `Contatos.tsx` + `CamposDinamicos.tsx`
-- Adicionar Select de gênero no formulário de criação/edição de contato (logo após data de nascimento), com opções: Masculino, Feminino, Outro, Prefiro não informar.
-- Persistir no campo nativo `genero` (não em `campos_personalizados`).
+## 1) Banco de dados — Estender RPC `relatorio_giftback`
+
+Migração nova substituindo `relatorio_giftback` (mesma assinatura), agregando novos campos no JSON de retorno:
+
+- **Período anterior**: calcular `p_anterior_inicio = p_inicio - (p_fim - p_inicio)` e `p_anterior_fim = p_inicio`. Retornar `comparativo`:
+  ```json
+  {
+    "receita_total_anterior": number,
+    "receita_influenciada_anterior": number,
+    "receita_giftback_anterior": number
+  }
+  ```
+- **Top atendente** (no período): `LEFT JOIN profiles` em `compras.operador_id`, agrupar por operador, somar `valor`, retornar top 1: `{ id, nome, receita, num_vendas }`. Se não houver, `null`.
+- **Ticket médio por gênero** (no período): `AVG(valor)` agrupado por `COALESCE(contatos.genero, 'nao_informado')`. Retornar array `[{ genero, ticket_medio, num_vendas }]`.
+- **Ranking de meses por faturamento no período** (apenas meses dentro de `[p_inicio, p_fim)`): top 3 ordenados por valor desc, formato `[{ mes: 'YYYY-MM', valor }]`. Reaproveita a CTE de faturamento mensal mas filtrada pelo período.
+
+A função continua `SECURITY DEFINER`, escopada pelo `tenant_id` via `get_user_tenant_id(auth.uid())`. Mantemos campos antigos para retrocompatibilidade.
 
 ---
 
-## 3. Página `/relatorios/giftback`
+## 2) Helpers puros — `src/lib/giftback-relatorio.ts`
 
-### Roteamento
-- Adicionar rota em `src/App.tsx`: `/relatorios/giftback` → `RelatorioGiftback` (protegida, somente `admin_tenant` ou `admin_master`).
-- Atualizar `AppSidebar.tsx` — submenu "Relatórios" passa a ter dois itens: "Atendimento" e "Giftback".
+Adicionar:
 
-### Filtros (topo da página)
-- **Período**: Select 7 / 30 / 90 / 365 dias + opção "Personalizado" (date range).
-- **Atendente** (admin): "Todos" + lista de operadores via `profiles` do tenant.
+- `calcularVariacaoPct(atual: number, anterior: number): { pct: number; direcao: 'up' | 'down' | 'flat' | 'novo' }`
+  - `anterior === 0 && atual > 0` → `{ pct: 100, direcao: 'novo' }`
+  - `anterior === 0 && atual === 0` → `{ pct: 0, direcao: 'flat' }`
+  - caso geral: `((atual - anterior) / anterior) * 100`
+- `formatVariacaoPct(v): string` → `+12,34%` / `-5,00%` / `—`
+- `validarPeriodoCustom(inicio: string, fim: string): { ok: boolean; erro?: string }`
+  - exige ambos preenchidos
+  - data válida (parse ISO)
+  - `fim >= inicio`
+- Estender `RelatorioGiftbackData` com:
+  ```ts
+  comparativo?: {
+    receita_total_anterior: number;
+    receita_influenciada_anterior: number;
+    receita_giftback_anterior: number;
+  };
+  top_atendente?: { id: string; nome: string; receita: number; num_vendas: number } | null;
+  ticket_por_genero?: { genero: string; ticket_medio: number; num_vendas: number }[];
+  ranking_meses_periodo?: { mes: string; valor: number }[];
+  ```
 
-### Layout
-1. **Linha 1 — Cards de métricas (grid 3 colunas em desktop, 1 em mobile)**:
-   - Receita total
-   - Receita influenciada pela CRM Connect
-   - Receita Gerada com Giftback
-   - Número de vendas
-   - Ticket médio
-   - Percentual de retorno
-   - Frequência média por cliente
-2. **Linha 2 — Gráficos (Recharts)**:
-   - **Faturamento por mês** — BarChart vertical, últimos 12 meses (independe do filtro de período, mostra evolução).
-   - **Compras por gênero** — PieChart com 4 segmentos.
-
----
-
-## 4. Definição das 9 métricas (todas escopadas por `tenant_id` + período + atendente opcional)
-
-| Métrica | Cálculo |
-|---|---|
-| **Receita total** | `SUM(compras.valor)` no período |
-| **Receita influenciada CRM Connect** | `SUM(compras.valor)` onde o `contato_id` recebeu nos últimos 30 dias antes da compra: (a) destinatário de campanha enviada (`campanha_destinatarios.status='enviado'`) OU (b) comunicação Giftback enviada (`giftback_comunicacao_log.status='enviado'`, `is_teste=false`) OU (c) execução de fluxo (`fluxo_sessoes` ativa para o contato). Deduplicado por `compra_id`. |
-| **Receita Gerada com Giftback** | `SUM(compras.valor)` onde `compras.giftback_usado > 0` OR `compras.giftback_gerado > 0` |
-| **Número de vendas** | `COUNT(compras)` no período |
-| **Ticket médio** | Receita total / Número de vendas (0 se sem vendas) |
-| **Percentual de retorno** | `(SUM(giftback_usado) / SUM(valor)) * 100` no período |
-| **Frequência média por cliente** | `COUNT(compras) / COUNT(DISTINCT contato_id)` no período |
-| **Faturamento por mês** | `date_trunc('month', created_at)` últimos 12 meses, soma de `valor` |
-| **Compras por gênero** | `COUNT(compras)` agrupado por `contatos.genero` (NULL → "Não informado") |
-
-### Função RPC SQL (server-side, performance)
-Criar função `relatorio_giftback(p_inicio timestamptz, p_fim timestamptz, p_atendente_id uuid)` que retorna JSON com todas as métricas pré-calculadas. Vantagens:
-- Uma única query → muito mais rápido que 9 fetches separados.
-- Mantém a lógica de "receita influenciada" no Postgres (mais simples com EXISTS de 3 fontes).
-- Tenant_id derivado de `get_user_tenant_id(auth.uid())` dentro da função (SECURITY DEFINER, search_path setado).
-- Validação: se `p_atendente_id` informado, filtra `compras.operador_id`.
-
-Estrutura do retorno:
-```json
-{
-  "receita_total": 12345.67,
-  "receita_influenciada": 8900.00,
-  "receita_giftback": 2300.00,
-  "num_vendas": 89,
-  "ticket_medio": 138.71,
-  "percentual_retorno": 5.2,
-  "frequencia_media": 1.8,
-  "faturamento_mensal": [{"mes":"2026-01","valor":3400}, ...],
-  "compras_por_genero": [{"genero":"feminino","total":45}, {"genero":"masculino","total":30}, {"genero":"nao_informado","total":14}]
-}
-```
+Adicionar testes em `src/lib/__tests__/giftback-relatorio.test.ts` cobrindo:
+- variação positiva, negativa, zero, novo (anterior=0)
+- validação de período: vazio, fim<inicio, datas inválidas, caso ok
 
 ---
 
-## 5. Frontend
+## 3) UI — `src/pages/RelatorioGiftback.tsx`
 
-### `src/pages/RelatorioGiftback.tsx` (novo)
-- Mesma estrutura visual de `RelatorioAtendimento.tsx` (reusar `MetricCard`).
-- Hook `useQuery` chamando `supabase.rpc('relatorio_giftback', { p_inicio, p_fim, p_atendente_id })`.
-- Formatar valores em BRL via `Intl.NumberFormat('pt-BR', {style:'currency',currency:'BRL'})`.
-- Skeletons enquanto carrega; mensagem "Sem dados no período" quando vazio.
+### 3a) Validação de período personalizado
+- Calcular `validacao = validarPeriodoCustom(dataInicio, dataFim)` quando `periodo === 'custom'`.
+- Quando inválido: exibir `<Alert variant="destructive">` abaixo dos filtros com a mensagem retornada e **desabilitar a query** (`enabled: ... && validacaoOk`).
+- Mantém o `useMemo` atual mas só constrói `inicio/fim` quando válido.
 
-### `src/lib/giftback-relatorio.ts` (novo, lib pura)
-- `formatBRL(n: number): string`
-- `calcularTicketMedio(receita, vendas)`: pure (testável)
-- `calcularPercentualRetorno(usado, total)`: pure
-- `calcularFrequenciaMedia(vendas, clientesUnicos)`: pure
-- Constantes `GENERO_LABELS`, `GENERO_COLORS` (paleta consistente com tokens).
+### 3b) Cards de comparação (topo, acima do grid de métricas)
+Novo bloco "Variação vs período anterior" com 3 cards compactos lado a lado:
+- Receita total: valor atual + badge com variação % (verde ↑ / vermelho ↓ / cinza —) + valor do período anterior em texto pequeno.
+- Receita influenciada: idem.
+- Receita com Giftback: idem.
 
-### `src/lib/__tests__/giftback-relatorio.test.ts` (novo)
-- Casos: divisão por zero, vendas zero, todos os clientes únicos, % retorno > 100% bloqueado, etc.
+Componente local `<ComparativoCard>` reutilizando tokens do design system (`text-success`, `text-destructive`, `bg-muted`). Ícones `ArrowUp`, `ArrowDown`, `Minus` do lucide-react.
+
+### 3c) Painel "Resumo executivo"
+Card único com `CardHeader` "Resumo executivo" e `CardContent` em grid `md:grid-cols-3`:
+- **Top atendente**: avatar inicial + nome + `formatBRL(receita)` + `num_vendas` vendas. Vazio: "Sem dados no período".
+- **Ticket médio por gênero**: lista compacta com badge colorido (`GENERO_COLORS`) + label + `formatBRL(ticket_medio)`. Ordenada desc.
+- **Ranking de meses (no período)**: top 3 com posição (1º, 2º, 3º) + `formatMesLabel(mes)` + `formatBRL(valor)`.
+
+Posicionado **acima dos cards de métricas** e **abaixo dos cards de comparação**, conforme pedido ("acima dos cards").
+
+Skeletons enquanto `isLoading`.
 
 ---
 
-## 6. Exportação (bonus)
-- Botão "Exportar PDF" no header da página, reusando padrão de `giftback-comunicacao-export.ts` (jspdf + autotable já instalado).
-- PDF inclui: nome do tenant, período, todos os 7 cards + tabelas de faturamento mensal e compras por gênero.
+## 4) Tipos do Supabase
+
+`src/integrations/supabase/types.ts` é regenerado automaticamente após a migration. Sem edição manual.
 
 ---
 
-## Resumo de arquivos
+## Arquivos afetados
 
-**Migração (1 nova)**:
-- Adiciona `contatos.genero` text com CHECK constraint
-- Cria função `public.relatorio_giftback(...)` SECURITY DEFINER
+- **Nova migration**: `supabase/migrations/<timestamp>_relatorio_giftback_v2.sql` (substitui a função com `CREATE OR REPLACE`)
+- **Modificado**: `src/lib/giftback-relatorio.ts` (helpers + tipos)
+- **Modificado**: `src/lib/__tests__/giftback-relatorio.test.ts` (novos testes)
+- **Modificado**: `src/pages/RelatorioGiftback.tsx` (validação, comparativos, resumo executivo)
 
-**Frontend (1 nova página + 1 lib + 1 teste + 3 modificados)**:
-- `src/pages/RelatorioGiftback.tsx` (novo)
-- `src/lib/giftback-relatorio.ts` (novo)
-- `src/lib/__tests__/giftback-relatorio.test.ts` (novo)
-- `src/App.tsx` — registrar rota
-- `src/components/AppSidebar.tsx` — adicionar submenu Relatórios → Giftback
-- `src/pages/Contatos.tsx` (e formulário relacionado) — campo gênero
-
-**Sem novas dependências** (Recharts e jspdf já no projeto).
+Sem mudanças em RLS (a função roda como SECURITY DEFINER e já filtra por tenant).

@@ -130,6 +130,7 @@ describe("montarComponentsTemplate", () => {
     const components = [{ type: "HEADER", format: "IMAGE" }];
     expect(montarComponentsTemplate(components, {}, {})).toEqual([]);
   });
+});
 
 describe("buildPreviewText", () => {
   it("renderiza body com variáveis", () => {

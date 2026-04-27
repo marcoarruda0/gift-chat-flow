@@ -24,6 +24,11 @@ export default function IAConfig() {
   const [usarEmojis, setUsarEmojis] = useState("pouco");
   const [instrucoesExtras, setInstrucoesExtras] = useState("");
   const [ativo, setAtivo] = useState(true);
+  const [copilotoAtivo, setCopilotoAtivo] = useState(false);
+  const [ultimaAnaliseEm, setUltimaAnaliseEm] = useState<string | null>(null);
+  const [ultimaAnaliseResumo, setUltimaAnaliseResumo] = useState<string | null>(null);
+  const [analisando, setAnalisando] = useState(false);
+  const [sugestoesAnalise, setSugestoesAnalise] = useState<string>("");
 
   // Preview state
   const [perguntaTeste, setPerguntaTeste] = useState("");

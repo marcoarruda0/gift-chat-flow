@@ -157,11 +157,33 @@ export default function ZapiConfig() {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const webhookUrl = `https://${projectId}.supabase.co/functions/v1/zapi-webhook`;
 
-      // Endpoints da Z-API que precisam apontar para o nosso webhook
+      // Helper: trata sucesso pelo HTTP status retornado pelo proxy
+      const isOk = (res: any) =>
+        res && typeof res._httpStatus === "number" && res._httpStatus >= 200 && res._httpStatus < 300 && !res.error;
+
+      // 1) Tenta o endpoint único que registra TODOS os webhooks de uma vez
+      let allOk = false;
+      try {
+        const result = await callProxy("update-every-webhooks", "PUT", { value: webhookUrl });
+        allOk = isOk(result);
+      } catch {
+        allOk = false;
+      }
+
+      if (allOk) {
+        if (existingId) {
+          await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
+        }
+        toast.success("✅ Todos os webhooks configurados (recebidas, enviadas e entregas)");
+        setSettingWebhook(false);
+        return;
+      }
+
+      // 2) Fallback: registra individualmente
       const endpoints = [
-        { key: "received", path: "update-webhook-received", label: "Mensagens recebidas" },
-        { key: "message-send", path: "update-webhook-message-send", label: "Mensagens enviadas (celular/WA Web)" },
-        { key: "delivery", path: "update-webhook-delivery", label: "Status de entrega" },
+        { path: "update-webhook-received", label: "Mensagens recebidas" },
+        { path: "update-webhook-message-send", label: "Mensagens enviadas (celular/WA Web)" },
+        { path: "update-webhook-delivery", label: "Status de entrega" },
       ];
 
       const results = await Promise.allSettled(
@@ -172,13 +194,12 @@ export default function ZapiConfig() {
       const falhas: string[] = [];
       results.forEach((r, i) => {
         const ep = endpoints[i];
-        const ok = r.status === "fulfilled" && (r.value?.value || r.value?.webhook || r.value?.success || !r.value?.error);
-        if (ok) sucessos.push(ep.label);
+        if (r.status === "fulfilled" && isOk(r.value)) sucessos.push(ep.label);
         else falhas.push(ep.label);
       });
 
-      // Persistir webhook_url somente se 'received' e 'message-send' deram certo
-      const criticosOk = sucessos.includes(endpoints[0].label) && sucessos.includes(endpoints[1].label);
+      const criticosOk =
+        sucessos.includes(endpoints[0].label) && sucessos.includes(endpoints[1].label);
       if (criticosOk && existingId) {
         await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
       }

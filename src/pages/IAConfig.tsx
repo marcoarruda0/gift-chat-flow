@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Bot, Save, Send, Loader2 } from "lucide-react";
+import { Bot, Save, Send, Loader2, Sparkles, BarChart3, ScanSearch } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function IAConfig() {
   const { profile } = useAuth();

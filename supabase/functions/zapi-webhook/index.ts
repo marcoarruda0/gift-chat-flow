@@ -295,7 +295,7 @@ async function processIncomingPayload(
 // ===========================================================================
 // Telephone resolution / normalization helper
 // ===========================================================================
-export function resolveRecipientPhone(
+function resolveRecipientPhone(
   p: any,
   zapiConfig?: { connected_phone?: string | null } | any,
 ): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean } {

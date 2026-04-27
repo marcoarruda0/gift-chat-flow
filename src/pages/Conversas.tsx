@@ -386,10 +386,11 @@ export default function Conversas() {
       // Send via Z-API
       try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
-        await callZapi("send-text", "POST", {
+        const resp = await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),
           message: zapiMessage,
         });
+        await persistZapiMessageId(inserted?.id, resp);
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);
       }

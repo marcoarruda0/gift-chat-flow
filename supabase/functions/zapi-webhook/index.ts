@@ -17,7 +17,27 @@ Deno.serve(async (req) => {
 
   try {
     const payload = await req.json();
-    console.log("Webhook received:", JSON.stringify(payload).slice(0, 500));
+    console.log("Webhook received:", JSON.stringify(payload).slice(0, 800));
+
+    // Structured diagnostic log — always print key fields so we can see exactly
+    // what Z-API is sending for outbound (fromMe:true) events.
+    try {
+      console.log("[zapi-wh] meta", JSON.stringify({
+        type: payload?.type ?? null,
+        status: payload?.status ?? null,
+        fromMe: payload?.fromMe ?? null,
+        fromApi: payload?.fromApi ?? null,
+        phone: payload?.phone ?? null,
+        chatLid: payload?.chatLid ?? null,
+        connectedPhone: payload?.connectedPhone ?? null,
+        messageId: payload?.messageId ?? payload?.id?.id ?? null,
+        isGroup: payload?.isGroup ?? null,
+        topKeys: payload && typeof payload === "object" ? Object.keys(payload) : [],
+        textKeys: payload?.text && typeof payload.text === "object" ? Object.keys(payload.text) : null,
+      }));
+    } catch (_) {
+      // never break the webhook because of logging
+    }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Smile } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Send, Smile, Sparkles, Trash2, Loader2 } from "lucide-react";
 import { AudioRecorder } from "./AudioRecorder";
 import { AttachmentButton } from "./AttachmentButton";
 import { RespostasRapidasPopup } from "./RespostasRapidasPopup";
@@ -16,6 +17,13 @@ interface ChatInputProps {
   onSendAudio?: (blob: Blob) => void;
   onSendAttachment?: (file: File) => void;
   disabled?: boolean;
+  // Copiloto
+  rascunho?: { id: string; conteudo: string } | null;
+  copilotoAtivo?: boolean;
+  onDescartarRascunho?: () => void;
+  onSugerirRascunho?: () => void;
+  rascunhoLoading?: boolean;
+  onEnviarRascunho?: (textoFinal: string, rascunhoOriginal: string) => void;
 }
 
 interface RespostaRapida {
@@ -24,8 +32,13 @@ interface RespostaRapida {
   conteudo: string;
 }
 
-export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: ChatInputProps) {
+export function ChatInput({
+  onSend, onSendAudio, onSendAttachment, disabled,
+  rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading,
+  onEnviarRascunho,
+}: ChatInputProps) {
   const [text, setText] = useState("");
+  const [rascunhoOriginal, setRascunhoOriginal] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const { profile } = useAuth();
   const [respostas, setRespostas] = useState<RespostaRapida[]>([]);
@@ -47,6 +60,24 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
         if (data) setRespostas(data as RespostaRapida[]);
       });
   }, [profile?.tenant_id]);
+
+  // When rascunho arrives, prefill (only if textarea is empty or matches previous draft)
+  useEffect(() => {
+    if (!rascunho) {
+      setRascunhoOriginal(null);
+      return;
+    }
+    // Avoid overwriting user typing
+    if (!text.trim() || text === rascunhoOriginal) {
+      setText(rascunho.conteudo);
+      setRascunhoOriginal(rascunho.conteudo);
+      requestAnimationFrame(() => ref.current?.focus());
+    } else {
+      // user already typed something — just remember the new draft for tracking but don't overwrite
+      setRascunhoOriginal(rascunho.conteudo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rascunho?.id]);
 
   // Detect slash command
   useEffect(() => {
@@ -73,7 +104,6 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
       const end = textarea.selectionEnd ?? text.length;
       const newText = text.substring(0, start) + emoji.native + text.substring(end);
       setText(newText);
-      // Set cursor position after emoji
       requestAnimationFrame(() => {
         textarea.focus();
         const pos = start + emoji.native.length;
@@ -88,8 +118,19 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    if (rascunho && onEnviarRascunho) {
+      onEnviarRascunho(trimmed, rascunhoOriginal || rascunho.conteudo);
+    }
     onSend(trimmed);
     setText("");
+    setRascunhoOriginal(null);
+    ref.current?.focus();
+  };
+
+  const handleDescartar = () => {
+    setText("");
+    setRascunhoOriginal(null);
+    onDescartarRascunho?.();
     ref.current?.focus();
   };
 
@@ -101,52 +142,93 @@ export function ChatInput({ onSend, onSendAudio, onSendAttachment, disabled }: C
     }
   };
 
+  const temRascunhoAtivo = !!rascunho && text.trim().length > 0;
+
   return (
-    <div className="relative flex items-end gap-1 p-3 border-t border-border bg-card">
-      {showPopup && (
-        <RespostasRapidasPopup
-          respostas={respostas}
-          filter={slashFilter}
-          onSelect={handleSelectResposta}
-        />
-      )}
-      <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
-        <PopoverTrigger asChild>
-          <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" disabled={disabled}>
-            <Smile className="h-5 w-5 text-muted-foreground" />
+    <div className="border-t border-border bg-card">
+      {temRascunhoAtivo && (
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <Badge variant="default" className="gap-1 font-normal">
+            <Sparkles className="h-3 w-3" />
+            Rascunho da IA
+          </Badge>
+          {text !== rascunhoOriginal && (
+            <span className="text-xs text-muted-foreground">editado</span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 ml-auto text-muted-foreground hover:text-destructive"
+            onClick={handleDescartar}
+            title="Descartar rascunho"
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Descartar
           </Button>
-        </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-auto p-0 border-0">
-          <Picker
-            data={data}
-            onEmojiSelect={handleEmojiSelect}
-            locale="pt"
-            theme="auto"
-            previewPosition="none"
-            skinTonePosition="search"
+        </div>
+      )}
+      <div className="relative flex items-end gap-1 p-3">
+        {showPopup && (
+          <RespostasRapidasPopup
+            respostas={respostas}
+            filter={slashFilter}
+            onSelect={handleSelectResposta}
           />
-        </PopoverContent>
-      </Popover>
-      {onSendAttachment && (
-        <AttachmentButton onSelect={onSendAttachment} disabled={disabled} />
-      )}
-      <Textarea
-        ref={ref}
-        value={text}
-        onChange={e => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Digite uma mensagem... (/ para atalhos)"
-        disabled={disabled}
-        className="min-h-[40px] max-h-[120px] resize-none flex-1"
-        rows={1}
-      />
-      {text.trim() ? (
-        <Button size="icon" onClick={handleSend} disabled={disabled}>
-          <Send className="h-4 w-4" />
-        </Button>
-      ) : (
-        onSendAudio && <AudioRecorder onSend={onSendAudio} disabled={disabled} />
-      )}
+        )}
+        <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" disabled={disabled}>
+              <Smile className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="start" className="w-auto p-0 border-0">
+            <Picker
+              data={data}
+              onEmojiSelect={handleEmojiSelect}
+              locale="pt"
+              theme="auto"
+              previewPosition="none"
+              skinTonePosition="search"
+            />
+          </PopoverContent>
+        </Popover>
+        {copilotoAtivo && onSugerirRascunho && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 shrink-0"
+            onClick={onSugerirRascunho}
+            disabled={disabled || rascunhoLoading}
+            title="Sugerir resposta com IA"
+          >
+            {rascunhoLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            ) : (
+              <Sparkles className="h-4 w-4 text-primary" />
+            )}
+          </Button>
+        )}
+        {onSendAttachment && (
+          <AttachmentButton onSelect={onSendAttachment} disabled={disabled} />
+        )}
+        <Textarea
+          ref={ref}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Digite uma mensagem... (/ para atalhos)"
+          disabled={disabled}
+          className="min-h-[40px] max-h-[120px] resize-none flex-1"
+          rows={1}
+        />
+        {text.trim() ? (
+          <Button size="icon" onClick={handleSend} disabled={disabled}>
+            <Send className="h-4 w-4" />
+          </Button>
+        ) : (
+          onSendAudio && <AudioRecorder onSend={onSendAudio} disabled={disabled} />
+        )}
+      </div>
     </div>
   );
 }

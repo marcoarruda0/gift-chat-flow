@@ -25,6 +25,7 @@ import Empresa from "@/pages/Empresa";
 import PecaRara from "@/pages/PecaRara";
 import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import RelatorioGiftback from "@/pages/RelatorioGiftback";
+import Relatorios from "@/pages/Relatorios";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -61,8 +62,10 @@ function AppRoutes() {
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />
       <Route path="/empresas" element={<ProtectedRoute><Empresa initialTab="empresas" /></ProtectedRoute>} />
       <Route path="/peca-rara" element={<ProtectedRoute><PecaRara /></ProtectedRoute>} />
-      <Route path="/relatorios/atendimento" element={<ProtectedRoute><RelatorioAtendimento /></ProtectedRoute>} />
-      <Route path="/relatorios/giftback" element={<ProtectedRoute><RelatorioGiftback /></ProtectedRoute>} />
+      <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
+      <Route path="/relatorios/atendimento" element={<Navigate to="/relatorios?tab=atendimento" replace />} />
+      <Route path="/relatorios/giftback" element={<Navigate to="/relatorios?tab=giftback" replace />} />
+      <Route path="/relatorios/crm" element={<Navigate to="/relatorios?tab=crm" replace />} />
       <Route path="/admin" element={<ProtectedRoute><Placeholder title="Admin Master" /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>

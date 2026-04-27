@@ -267,6 +267,26 @@ export default function Conversas() {
     });
   };
 
+  // Helper: persist Z-API messageId returned by send-* into mensagens.metadata.
+  // This prevents duplicates when the Z-API "fromMe" webhook echoes our own send.
+  const persistZapiMessageId = async (mensagemId: string | undefined, response: Response) => {
+    if (!mensagemId) return;
+    try {
+      const json = await response.clone().json().catch(() => null);
+      const mid = json?.messageId || json?.id?.id || json?.id || null;
+      if (!mid) return;
+      const { data: cur } = await supabase
+        .from("mensagens")
+        .select("metadata")
+        .eq("id", mensagemId)
+        .maybeSingle();
+      const newMeta = { ...((cur?.metadata as any) || {}), messageId: mid };
+      await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", mensagemId);
+    } catch {
+      /* swallow */
+    }
+  };
+
   // Helper: call WhatsApp Cloud proxy
   const callCloud = async (endpoint: string, method: string, data?: any, useWabaId = false) => {
     const { data: session } = await supabase.auth.getSession();

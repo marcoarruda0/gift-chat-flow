@@ -53,9 +53,20 @@ Deno.serve(async (req) => {
 
     const { data: zapiConfig } = await supabase
       .from("zapi_config")
-      .select("tenant_id, instance_id, token, client_token")
+      .select("tenant_id, instance_id, token, client_token, connected_phone")
       .eq("instance_id", instanceId)
       .single();
+
+    // Auto-atualiza connected_phone do tenant a partir do payload (Z-API envia em todo evento)
+    if (zapiConfig?.tenant_id && payload?.connectedPhone && zapiConfig.connected_phone !== String(payload.connectedPhone)) {
+      try {
+        await supabase
+          .from("zapi_config")
+          .update({ connected_phone: String(payload.connectedPhone) })
+          .eq("tenant_id", zapiConfig.tenant_id);
+        zapiConfig.connected_phone = String(payload.connectedPhone);
+      } catch (_) {}
+    }
 
     if (!zapiConfig) {
       console.log("No tenant found for instanceId:", instanceId);

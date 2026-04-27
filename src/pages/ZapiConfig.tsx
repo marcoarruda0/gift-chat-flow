@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Wifi, WifiOff, TestTube, Webhook, Save, Loader2, QrCode, Unplug, RefreshCw } from "lucide-react";
+import { Wifi, WifiOff, TestTube, Webhook, Save, Loader2, QrCode, Unplug, RefreshCw, RotateCcw } from "lucide-react";
 
 export default function ZapiConfig() {
   const { profile } = useAuth();

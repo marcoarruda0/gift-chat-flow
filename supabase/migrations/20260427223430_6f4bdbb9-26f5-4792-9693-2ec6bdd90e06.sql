@@ -1,0 +1,1 @@
+ALTER TABLE public.zapi_config ADD COLUMN IF NOT EXISTS connected_phone text;

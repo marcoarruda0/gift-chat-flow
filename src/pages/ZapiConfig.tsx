@@ -381,7 +381,10 @@ export default function ZapiConfig() {
           </p>
           <p>2. Copie o Instance ID, Token e Client-Token para os campos acima</p>
           <p>3. Clique em "Salvar" e depois "Testar Conexão"</p>
-          <p>4. Clique em "Configurar Webhook" para receber mensagens automaticamente</p>
+          <p>
+            4. Clique em <strong>"Configurar Webhook"</strong> para receber automaticamente tanto as mensagens
+            recebidas quanto as enviadas pelo seu celular ou WhatsApp Web (assim elas aparecem em Conversas).
+          </p>
           <p>5. Se desconectar, use "Reconectar" para gerar novo QR Code</p>
         </CardContent>
       </Card>

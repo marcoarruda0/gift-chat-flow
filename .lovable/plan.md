@@ -1,110 +1,148 @@
 ## Objetivo
 
-Cobrir 3 lacunas identificadas no fluxo de mensagens enviadas pelo celular/WhatsApp Web:
+Isolar com precisão por que mensagens enviadas diretamente do celular/WhatsApp Web não aparecem em `Conversas`, separando o problema entre:
+- registro do webhook na Z-API,
+- formato real do payload recebido,
+- parser/normalização no backend,
+- gravação no banco,
+- atualização da UI.
 
-1. Webhook recebendo `phone` vazio ou em formato inesperado (DDI/DD, `@lid`, `@g.us`, `connectedPhone`).
-2. UI não atualiza imediatamente quando o webhook anexa `messageId` numa mensagem já existente (porque o realtime só escuta `INSERT`).
-3. Quando o webhook chega mas falha em gravar, não há forma fácil de reprocessar — só logs.
+## Evidências já confirmadas
 
-## O que será feito
+- O backend está recebendo e gravando eventos `ReceivedCallback` com `fromMe:false` normalmente.
+- Há registros recentes em `mensagens`, `conversas` e `zapi_webhook_eventos` para mensagens recebidas.
+- Não há eventos recentes com `fromMe:true` em `zapi_webhook_eventos`.
+- Também não há tipos de evento contendo `send`/`sent` gravados.
+- O helper atual de telefone espera `connected_phone` em `zapi_config`, mas essa coluna não existe hoje.
+- O helper atual trata `@g.us` como grupo, mas os logs mostram grupos no formato `...-group`, então parte da classificação está incorreta.
 
-### 1. Validação e normalização de telefone (`zapi-webhook`)
+Isso indica que o fluxo base funciona para mensagens recebidas, mas o problema das mensagens enviadas do celular provavelmente está em uma destas camadas: webhook de saída não cadastrado/ativo, tipo de callback inesperado, parser incompleto, ou roteamento incorreto para contato/conversa.
 
-Criar um helper `resolveRecipientPhone(payload)` que devolve `{ raw, normalized, source, isGroup, isLid }`:
+## Plano de verificação
 
-- `raw`: valor original recebido (`phone`, `chatLid`, `connectedPhone`, conforme prioridade).
-- `normalized`: somente dígitos no padrão BR (E.164 sem `+`), com fallback inteligente:
-  - se vier só com 8/9 dígitos → assume DDD do `connectedPhone`/tenant.
-  - se vier sem DDI 55 e tiver 10/11 dígitos → prepend `55`.
-  - se vier `@g.us` → mantém como group id.
-  - se vier `@lid` → mantém como `chatLid`, `normalized = null`, e tenta casar contato pelo `chatLid` salvo em `metadata`.
-- `source`: `"phone" | "chatLid" | "connectedPhone"`.
+### 1. Confirmar se a Z-API está realmente enviando o callback de mensagem enviada do celular
 
-Mudanças no fluxo:
+- Validar, via proxy já existente, o estado atual dos webhooks cadastrados para:
+  - recebidas,
+  - enviadas pelo celular/WhatsApp Web,
+  - status de entrega.
+- Comparar o endpoint configurado com o webhook esperado do projeto.
+- Fazer teste controlado com envio pelo celular para 3 cenários:
+  - conversa individual comum,
+  - conversa com `@lid`,
+  - grupo.
+- Verificar se algum POST chega ao backend nesses testes.
 
-- Para `fromMe:true`, se `payload.phone` estiver vazio, cair em `chatLid` → `connectedPhone` (último é o número do dono da conta, então NÃO usar como destinatário; só serve para detectar DDI/DDD do tenant).
-- Logar sempre `{ raw, normalized, source }` para diagnóstico.
-- Salvar em `mensagens.metadata`: `{ phoneRaw, phoneNormalized, phoneSource, chatLid }` para auditoria.
-- Se a normalização falhar (`normalized` nulo e sem `chatLid` mapeável), gravar a mensagem mesmo assim numa "fila de pendentes" lógica: insere com `metadata.pending_reason = "phone_unresolved"` em uma conversa nova de placeholder ligada a um contato `unknown-<hash>`, para o admin reprocessar manualmente. (Evita perder mensagem.)
+Resultado esperado:
+- Se nenhum evento de saída chegar, a causa está antes do parser (cadastro/compatibilidade do webhook na Z-API).
+- Se chegar, seguimos para parse e persistência.
 
-### 2. Realtime de UPDATE de mensagens (`Conversas.tsx`)
+### 2. Capturar e classificar o payload real das mensagens “fromMe”
 
-Hoje o canal `mensagens-realtime-${tenantId}` só escuta `INSERT`. Quando o webhook anexa `messageId` numa mensagem já existente (echo da UI) é um `UPDATE` e a tela não reflete imediatamente.
+- Auditar o payload bruto do evento de saída que vier da Z-API.
+- Catalogar campos relevantes:
+  - `type`, `status`, `fromMe`, `fromApi`,
+  - `phone`, `participantPhone`, `chatLid`, `participantLid`,
+  - `messageId`, `ids`, `text`, `message`, `body`, `conversation`,
+  - `isGroup`.
+- Verificar se a Z-API usa um tipo diferente do esperado para saída (ex.: callback de status sem corpo, callback de mensagem enviada com outro formato, etc.).
 
-Mudanças:
+Resultado esperado:
+- Determinar o formato exato que precisa ser suportado para mensagens enviadas fora da UI.
 
-- Adicionar um segundo handler `event: "UPDATE"` no mesmo canal:
-  - se `new.conversa_id === selectedId`, fazer merge do registro atualizado em `mensagens` (substituir item por id, preservar ordem).
-  - chamar `fetchConversas()` para refletir `ultimo_texto`/`ultima_msg_at`.
-- Ao inserir na UI (`handleSend`, áudio, anexo), guardar `localStatus: "pending"` no `metadata` local até o webhook devolver `messageId` (aí o UPDATE atualiza para entregue). Apenas visual — não bloqueia o fluxo atual.
+### 3. Verificar o parser de conteúdo e a detecção de origem
 
-### 3. Botão "Reprocessar última mensagem não gravada"
+- Conferir se `parseMessageContent` cobre o formato real do payload de saída.
+- Validar se eventos de saída estão sendo descartados como `skipped_no_content` mesmo contendo texto em outra chave.
+- Ajustar a detecção de `isFromMe` para não depender apenas de `payload.fromMe === true` quando o provedor usar outro indicador.
+- Revisar onde o `messageId` está vindo para eventos de saída, incluindo fallbacks.
 
-Local: cabeçalho do `ChatPanel` (menu de ações da conversa) e em `ZapiConfig.tsx` como ação global "Reprocessar última pendente".
+Resultado esperado:
+- Garantir que o backend consiga extrair conteúdo e classificar corretamente a mensagem como enviada pelo atendente.
 
-Comportamento:
+### 4. Verificar resolução de telefone e mapeamento da conversa
 
-- Nova edge function `zapi-reprocessar-ultima` (verify_jwt em código, scoped no tenant do usuário):
-  - lê últimos N (ex.: 20) eventos do log do `zapi-webhook` via tabela auxiliar `zapi_webhook_eventos` que será criada (ver migration abaixo).
-  - filtra por `tenant_id` e `processed = false` (ou `error_msg IS NOT NULL`).
-  - re-executa a mesma lógica de parse/normalização/insert da função principal, refatorada num helper compartilhado `processIncomingPayload(payload)`.
-  - retorna `{ reprocessed, inserted, skipped, errors }`.
-- Migration nova:
-  - tabela `public.zapi_webhook_eventos` (`id uuid pk`, `tenant_id uuid`, `instance_id text`, `payload jsonb`, `processed boolean default false`, `error_msg text`, `created_at timestamptz default now()`).
-  - RLS: somente `admin_tenant`/`admin_master` do tenant podem `select`. `service_role` faz tudo.
-- `zapi-webhook` passa a SEMPRE inserir o evento bruto em `zapi_webhook_eventos` no início, marcar `processed=true` no fim, ou gravar `error_msg` em catch.
-- Frontend: botão que chama a função, mostra toast com resumo (`"3 reprocessadas, 1 erro"`).
+- Revisar a prioridade de resolução do destinatário para mensagens enviadas pelo celular:
+  - individual: `phone` -> `participantPhone` -> `chatLid/participantLid`,
+  - grupo: `phone`/id do grupo + `participantPhone` para autor quando necessário.
+- Corrigir a detecção de grupo para aceitar tanto `@g.us` quanto formatos `-group` vistos nos logs.
+- Remover a dependência de `zapi_config.connected_phone` enquanto a coluna não existir, usando apenas `payload.connectedPhone` quando disponível.
+- Validar o que fazer quando vier apenas `@lid` sem telefone numérico.
 
-## Arquivos envolvidos
+Resultado esperado:
+- Identificar se a mensagem não entra porque está sendo roteada para o telefone/conversa errados, ou porque o número fica irrecuperável.
 
-- `supabase/functions/zapi-webhook/index.ts` — refatorar para usar `resolveRecipientPhone` e `processIncomingPayload`; gravar evento bruto em `zapi_webhook_eventos`.
-- `supabase/functions/zapi-reprocessar-ultima/index.ts` — nova função.
-- `src/pages/Conversas.tsx` — adicionar handler `UPDATE`, status visual pendente, botão de reprocessar no menu.
-- `src/components/conversas/ChatPanel.tsx` — expor item de menu "Reprocessar última".
-- `src/pages/ZapiConfig.tsx` — botão "Reprocessar pendentes".
-- Migration nova: tabela `zapi_webhook_eventos` + RLS.
+### 5. Verificar a persistência no banco ponta a ponta
+
+- Auditar o resultado salvo em `zapi_webhook_eventos.resultado` para cada evento de saída testado.
+- Classificar casos em:
+  - `inserted`,
+  - `echo_attached`,
+  - `duplicate`,
+  - `skipped_no_content`,
+  - `skipped_phone_unresolved`,
+  - `insert_failed`,
+  - `contact_failed`,
+  - `conversa_failed`.
+- Confirmar se `findOrCreateContact` e `findOrCreateConversa` conseguem localizar a conversa correta para mensagens enviadas do celular.
+- Verificar se há divergência entre número salvo no contato e número resolvido do webhook.
+
+Resultado esperado:
+- Saber exatamente em qual etapa o fluxo quebra quando a mensagem sai do celular.
+
+### 6. Verificar a exibição em `Conversas`
+
+- Confirmar se, quando a mensagem é gravada, ela aparece na lista e no painel sem reload.
+- Verificar se a conversa correta está sendo atualizada com `ultimo_texto` e `ultima_msg_at`.
+- Validar o realtime para `INSERT` e `UPDATE` no caso das mensagens vindas do webhook.
+- Separar problema de “não gravou” versus “gravou, mas a UI não mostrou”.
+
+Resultado esperado:
+- Eliminar falso negativo de interface quando o backend já tiver salvo a mensagem.
+
+### 7. Fortalecer diagnóstico e reprocessamento
+
+- Melhorar a auditoria do evento bruto com motivo de descarte mais explícito.
+- Permitir reprocessar um evento específico de saída, não só pendentes genéricos.
+- Exibir no admin os campos originais e normalizados usados para roteamento.
+
+Resultado esperado:
+- Reduzir tentativas cegas e permitir correção rápida em casos reais.
+
+## Entregáveis dessa rodada
+
+1. Diagnóstico conclusivo da causa principal.
+2. Lista das causas secundárias encontradas.
+3. Ajustes necessários no backend para suportar o payload real.
+4. Ajustes necessários na UI, se houver problema de visibilidade.
+5. Estratégia de reprocessamento confiável para novos casos.
+
+## Prioridade de investigação
+
+1. Confirmar ausência real de callbacks `fromMe`.
+2. Validar cadastro efetivo do webhook de mensagens enviadas.
+3. Capturar um payload real de saída do celular.
+4. Corrigir parser + resolução de telefone/grupo.
+5. Validar gravação e exibição na UI.
 
 ## Detalhes técnicos
 
-Helper de telefone (esboço):
+Pontos mais prováveis a serem validados primeiro:
 
-```ts
-function resolveRecipientPhone(p: any, tenantConnectedPhone?: string) {
-  const raw = p.phone || p.chatLid || "";
-  const isGroup = raw.includes("@g.us");
-  const isLid = raw.includes("@lid");
-  if (isGroup) return { raw, normalized: raw, source: "phone", isGroup, isLid };
-  if (isLid)   return { raw, normalized: null, source: "chatLid", isGroup, isLid };
-  let n = raw.replace(/\D/g, "");
-  if (n.length === 8 || n.length === 9) {
-    const ddd = (tenantConnectedPhone || "").replace(/\D/g, "").slice(2, 4);
-    if (ddd) n = "55" + ddd + n;
-  } else if (n.length === 10 || n.length === 11) {
-    n = "55" + n;
-  }
-  return { raw, normalized: n || null, source: "phone", isGroup, isLid };
-}
-```
+- O webhook de “mensagens enviadas (celular/WA Web)” pode não estar ativo de fato, mesmo após o cadastro.
+- A Z-API pode estar enviando o callback de saída em um tipo diferente de `ReceivedCallback`/`fromMe:true`.
+- O parser atual pode descartar a mensagem por não encontrar texto na chave esperada.
+- O helper de telefone hoje não cobre corretamente grupos no formato `...-group`.
+- O código espera `connected_phone` em `zapi_config`, mas essa coluna não existe.
+- Mesmo quando gravada, a conversa pode não ser a esperada se o telefone resolvido não bater com o contato existente.
 
-Realtime UPDATE handler:
+## Critério de sucesso
 
-```ts
-.on("postgres_changes", {
-  event: "UPDATE", schema: "public", table: "mensagens",
-  filter: `tenant_id=eq.${tenantId}`,
-}, (payload) => {
-  const upd = payload.new as any;
-  if (upd.conversa_id === selectedId) {
-    setMensagens(prev => prev.map(m => m.id === upd.id ? { ...m, ...upd } : m));
-  }
-  fetchConversas();
-})
-```
+Após a execução desse plano, ficará claro qual destes cenários é o verdadeiro:
 
-## Validação
+- a Z-API não envia o callback de saída;
+- o callback chega, mas o backend não interpreta;
+- o backend interpreta, mas grava na conversa errada;
+- o backend grava corretamente, mas a UI não atualiza.
 
-1. Mandar mensagem do celular para o Felipe → log mostra `{ raw, normalized, source }` e mensagem é gravada.
-2. Mandar mensagem pela UI → ao receber echo do webhook, a UI atualiza o `messageId` sem precisar recarregar.
-3. Forçar payload com `phone:""` → mensagem cai em "pendentes"; clicar em "Reprocessar última" devolve toast com resultado.
-
-Aprovando, eu implemento todos os itens (refator do webhook + função nova + migration + UI).
+Com isso, a próxima etapa já entra direto na correção certa, sem tentativa e erro.

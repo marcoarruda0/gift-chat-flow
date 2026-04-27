@@ -127,170 +127,14 @@ export async function processIncomingPayload(
 ): Promise<{ ok: boolean; action?: string; mensagemId?: string; conversaId?: string; error?: string }> {
   const tenantId = zapiConfig.tenant_id;
 
-    // Detect message type and content
-    const { messageType, messageContent, messageText } = parseMessageContent(payload);
+  const { messageType, messageContent, messageText } = parseMessageContent(payload);
 
-    // Handle incoming or outgoing message
-    if (payload.phone && messageContent) {
-      const isFromMe = payload.fromMe === true;
-      const rawPhone = payload.phone || "";
-      const isGroup = payload.isGroup === true || rawPhone.includes("@g.us");
-      // Para mensagens enviadas (fromMe), `phone` da Z-API é o destinatário.
-      const phone = isGroup ? rawPhone : rawPhone.replace(/\D/g, "");
-      const groupName = payload.chatName || "Grupo";
-      const senderName = payload.senderName || payload.chatName || phone;
-      const contactName = isGroup ? groupName : senderName;
-      const zapiMessageId = payload.messageId || payload.id?.id || null;
+  if (payload.status) {
+    console.log("Status update:", payload.status);
+  }
 
-      console.log(
-        `[zapi-wh] msg dir=${isFromMe ? "out" : "in"} phone=${phone} group=${isGroup} type=${messageType} msgId=${zapiMessageId} text="${(messageText || "").slice(0, 80)}"`,
-      );
-
-      if (!phone) {
-        console.warn("[zapi-wh] ignored: empty phone after normalization", { rawPhone });
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Deduplication by messageId
-      if (zapiMessageId) {
-        const { data: existing } = await supabase
-          .from("mensagens")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("metadata->>messageId", zapiMessageId)
-          .limit(1);
-
-        if (existing && existing.length > 0) {
-          console.log("[zapi-wh] duplicate, skipping:", zapiMessageId);
-          return new Response(JSON.stringify({ ok: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-
-      // Echo de mensagem enviada pela própria UI (sem messageId ainda).
-      // Casa pelo conteúdo + janela curta de 2 min e, se achar, anexa o
-      // messageId no registro existente em vez de duplicar.
-      if (isFromMe && messageContent && zapiMessageId) {
-        const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-        const { data: recent } = await supabase
-          .from("mensagens")
-          .select("id, metadata")
-          .eq("tenant_id", tenantId)
-          .eq("remetente", "atendente")
-          .eq("conteudo", messageContent)
-          .gte("created_at", cutoff)
-          .limit(5);
-        const match = (recent || []).find((m: any) => !m.metadata?.messageId);
-        if (match) {
-          await supabase
-            .from("mensagens")
-            .update({ metadata: { ...(match.metadata || {}), messageId: zapiMessageId, fromMe: true } })
-            .eq("id", match.id);
-          console.log("[zapi-wh] outbound echo matched UI message, attaching messageId");
-          return new Response(JSON.stringify({ ok: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-
-      const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
-      if (!contato) {
-        console.error("[zapi-wh] could not find/create contact", { phone, contactName });
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const conversa = await findOrCreateConversa(supabase, tenantId, contato.id);
-      if (!conversa) {
-        console.error("[zapi-wh] could not find/create conversation", { contatoId: contato.id });
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const remetente = isFromMe ? "atendente" : "contato";
-
-      const { error: insertErr } = await supabase.from("mensagens").insert({
-        conversa_id: conversa.id,
-        tenant_id: tenantId,
-        conteudo: messageContent,
-        remetente,
-        tipo: messageType,
-        metadata: {
-          senderName: payload.senderName || payload.chatName || null,
-          senderAvatar: payload.senderPhoto || payload.photo || null,
-          messageId: zapiMessageId,
-          fromMe: isFromMe,
-        },
-      });
-      if (insertErr) {
-        console.error("[zapi-wh] insert mensagens failed:", insertErr);
-      }
-
-      // Update conversation
-      const previewText = isGroup ? `${senderName}: ${messageText}`.slice(0, 100) : messageText;
-
-      if (isFromMe) {
-        await supabase
-          .from("conversas")
-          .update({
-            ultimo_texto: previewText,
-            ultima_msg_at: new Date().toISOString(),
-          })
-          .eq("id", conversa.id);
-      } else {
-        const currentUnread = await supabase
-          .from("conversas")
-          .select("nao_lidas")
-          .eq("id", conversa.id)
-          .single()
-          .then(r => r.data?.nao_lidas || 0);
-
-        await supabase
-          .from("conversas")
-          .update({
-            ultimo_texto: previewText,
-            ultima_msg_at: new Date().toISOString(),
-            nao_lidas: currentUnread + 1,
-          })
-          .eq("id", conversa.id);
-      }
-
-      // Update group name if changed
-      if (isGroup && payload.chatName) {
-        await supabase
-          .from("contatos")
-          .update({ nome: payload.chatName })
-          .eq("id", contato.id);
-      }
-
-      // Update avatar if available
-      if (payload.photo) {
-        await supabase
-          .from("contatos")
-          .update({ avatar_url: payload.photo })
-          .eq("id", contato.id);
-      }
-
-      console.log(`Message saved (${remetente}) for conversa:`, conversa.id);
-
-      // ✨ FLOW ENGINE — only for incoming text messages (not fromMe, not group)
-      if (!isFromMe && !isGroup && messageType === "texto" && messageContent) {
-        const fluxoHandled = await handleFluxoEngine(
-          supabase, tenantId, phone, messageContent, conversa.id, contato.id, zapiConfig
-        );
-
-        // AI Auto-Responder — only if flow engine didn't handle it
-        if (!fluxoHandled) {
-          await handleAIAutoResponder(supabase, tenantId, phone, messageContent, conversa.id);
-        }
-      }
-    } else if (!payload.status) {
-      // Não é mensagem nem callback de status — log para diagnóstico.
+  if (!messageContent) {
+    if (!payload.status) {
       console.log("[zapi-wh] ignored event (no content, no status)", {
         type: payload?.type ?? null,
         hasPhone: !!payload?.phone,
@@ -298,22 +142,199 @@ export async function processIncomingPayload(
         topKeys: payload && typeof payload === "object" ? Object.keys(payload) : [],
       });
     }
-
-    if (payload.status) {
-      console.log("Status update:", payload.status);
-    }
-
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return { ok: true, action: "skipped_no_content" };
   }
-});
+
+  const isFromMe = payload.fromMe === true;
+  const resolved = resolveRecipientPhone(payload, zapiConfig);
+  const phone = resolved.normalized;
+  const isGroup = resolved.isGroup;
+
+  console.log("[zapi-wh] phone resolved", JSON.stringify({
+    raw: resolved.raw,
+    normalized: resolved.normalized,
+    source: resolved.source,
+    isGroup, isLid: resolved.isLid, fromMe: isFromMe,
+  }));
+
+  const groupName = payload.chatName || "Grupo";
+  const senderName = payload.senderName || payload.chatName || phone || resolved.raw || "Contato";
+  const contactName = isGroup ? groupName : senderName;
+  const zapiMessageId = payload.messageId || payload.id?.id || null;
+
+  if (!phone) {
+    console.warn("[zapi-wh] phone could not be resolved — saving as pending", {
+      raw: resolved.raw, source: resolved.source,
+    });
+    return { ok: true, action: "skipped_phone_unresolved", error: "phone_unresolved" };
+  }
+
+  // Deduplication by messageId
+  if (zapiMessageId) {
+    const { data: existing } = await supabase
+      .from("mensagens")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("metadata->>messageId", zapiMessageId)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      console.log("[zapi-wh] duplicate, skipping:", zapiMessageId);
+      return { ok: true, action: "duplicate" };
+    }
+  }
+
+  // Echo de mensagem enviada pela própria UI (sem messageId ainda)
+  if (isFromMe && messageContent && zapiMessageId) {
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from("mensagens")
+      .select("id, metadata")
+      .eq("tenant_id", tenantId)
+      .eq("remetente", "atendente")
+      .eq("conteudo", messageContent)
+      .gte("created_at", cutoff)
+      .limit(5);
+    const match = (recent || []).find((m: any) => !m.metadata?.messageId);
+    if (match) {
+      await supabase
+        .from("mensagens")
+        .update({ metadata: { ...(match.metadata || {}), messageId: zapiMessageId, fromMe: true, phoneRaw: resolved.raw, phoneNormalized: phone, phoneSource: resolved.source } })
+        .eq("id", match.id);
+      console.log("[zapi-wh] outbound echo matched UI message, attaching messageId");
+      return { ok: true, action: "echo_attached", mensagemId: match.id };
+    }
+  }
+
+  const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
+  if (!contato) {
+    console.error("[zapi-wh] could not find/create contact", { phone, contactName });
+    return { ok: false, error: "contact_failed" };
+  }
+
+  const conversa = await findOrCreateConversa(supabase, tenantId, contato.id);
+  if (!conversa) {
+    console.error("[zapi-wh] could not find/create conversation", { contatoId: contato.id });
+    return { ok: false, error: "conversa_failed" };
+  }
+
+  const remetente = isFromMe ? "atendente" : "contato";
+
+  const { data: inserted, error: insertErr } = await supabase.from("mensagens").insert({
+    conversa_id: conversa.id,
+    tenant_id: tenantId,
+    conteudo: messageContent,
+    remetente,
+    tipo: messageType,
+    metadata: {
+      senderName: payload.senderName || payload.chatName || null,
+      senderAvatar: payload.senderPhoto || payload.photo || null,
+      messageId: zapiMessageId,
+      fromMe: isFromMe,
+      phoneRaw: resolved.raw,
+      phoneNormalized: phone,
+      phoneSource: resolved.source,
+      chatLid: payload.chatLid || null,
+    },
+  }).select("id").maybeSingle();
+  if (insertErr) {
+    console.error("[zapi-wh] insert mensagens failed:", insertErr);
+    return { ok: false, error: "insert_failed: " + (insertErr.message || "") };
+  }
+
+  // Update conversation
+  const previewText = isGroup ? `${senderName}: ${messageText}`.slice(0, 100) : messageText;
+
+  if (isFromMe) {
+    await supabase
+      .from("conversas")
+      .update({
+        ultimo_texto: previewText,
+        ultima_msg_at: new Date().toISOString(),
+      })
+      .eq("id", conversa.id);
+  } else {
+    const currentUnread = await supabase
+      .from("conversas")
+      .select("nao_lidas")
+      .eq("id", conversa.id)
+      .single()
+      .then((r: any) => r.data?.nao_lidas || 0);
+
+    await supabase
+      .from("conversas")
+      .update({
+        ultimo_texto: previewText,
+        ultima_msg_at: new Date().toISOString(),
+        nao_lidas: currentUnread + 1,
+      })
+      .eq("id", conversa.id);
+  }
+
+  if (isGroup && payload.chatName) {
+    await supabase.from("contatos").update({ nome: payload.chatName }).eq("id", contato.id);
+  }
+  if (payload.photo) {
+    await supabase.from("contatos").update({ avatar_url: payload.photo }).eq("id", contato.id);
+  }
+
+  console.log(`Message saved (${remetente}) for conversa:`, conversa.id);
+
+  if (!isFromMe && !isGroup && messageType === "texto" && messageContent) {
+    const fluxoHandled = await handleFluxoEngine(
+      supabase, tenantId, phone, messageContent, conversa.id, contato.id, zapiConfig
+    );
+    if (!fluxoHandled) {
+      await handleAIAutoResponder(supabase, tenantId, phone, messageContent, conversa.id);
+    }
+  }
+
+  return { ok: true, action: "inserted", mensagemId: inserted?.id, conversaId: conversa.id };
+}
+
+// ===========================================================================
+// Telephone resolution / normalization helper
+// ===========================================================================
+export function resolveRecipientPhone(
+  p: any,
+  zapiConfig?: { connected_phone?: string | null } | any,
+): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean } {
+  const connected = (zapiConfig?.connected_phone || p?.connectedPhone || "") as string;
+  let raw: string = p?.phone || "";
+  let source: "phone" | "chatLid" | "connectedPhone" | "none" = raw ? "phone" : "none";
+
+  if (!raw && p?.chatLid) {
+    raw = p.chatLid;
+    source = "chatLid";
+  }
+
+  const isGroup = typeof raw === "string" && raw.includes("@g.us");
+  const isLid = typeof raw === "string" && raw.includes("@lid");
+
+  if (!raw) {
+    return { raw: "", normalized: null, source: "none", isGroup: false, isLid: false };
+  }
+  if (isGroup) {
+    return { raw, normalized: raw, source, isGroup, isLid };
+  }
+  if (isLid) {
+    // chatLid não é um telefone real; mantemos como identificador
+    return { raw, normalized: null, source: "chatLid", isGroup, isLid };
+  }
+
+  let n = String(raw).replace(/\D/g, "");
+  const connectedDigits = (connected || "").replace(/\D/g, "");
+  // BR: connectedPhone padrão é 55 + DDD(2) + número(8/9)
+  const tenantDdi = connectedDigits.slice(0, 2) || "55";
+  const tenantDdd = connectedDigits.slice(2, 4);
+
+  if (n.length === 8 || n.length === 9) {
+    if (tenantDdd) n = tenantDdi + tenantDdd + n;
+  } else if (n.length === 10 || n.length === 11) {
+    n = tenantDdi + n;
+  }
+  return { raw, normalized: n || null, source, isGroup, isLid };
+}
 
 // =====================================================
 // FLOW ENGINE

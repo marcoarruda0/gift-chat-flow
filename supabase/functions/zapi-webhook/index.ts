@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 // ===========================================================================
 // Helper compartilhado — extraído para permitir reprocessamento via outra fn
 // ===========================================================================
-export async function processIncomingPayload(
+async function processIncomingPayload(
   supabase: any,
   zapiConfig: any,
   payload: any,

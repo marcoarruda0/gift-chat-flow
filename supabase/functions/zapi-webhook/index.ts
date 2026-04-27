@@ -53,9 +53,20 @@ Deno.serve(async (req) => {
 
     const { data: zapiConfig } = await supabase
       .from("zapi_config")
-      .select("tenant_id, instance_id, token, client_token")
+      .select("tenant_id, instance_id, token, client_token, connected_phone")
       .eq("instance_id", instanceId)
       .single();
+
+    // Auto-atualiza connected_phone do tenant a partir do payload (Z-API envia em todo evento)
+    if (zapiConfig?.tenant_id && payload?.connectedPhone && zapiConfig.connected_phone !== String(payload.connectedPhone)) {
+      try {
+        await supabase
+          .from("zapi_config")
+          .update({ connected_phone: String(payload.connectedPhone) })
+          .eq("tenant_id", zapiConfig.tenant_id);
+        zapiConfig.connected_phone = String(payload.connectedPhone);
+      } catch (_) {}
+    }
 
     if (!zapiConfig) {
       console.log("No tenant found for instanceId:", instanceId);
@@ -162,14 +173,7 @@ async function processIncomingPayload(
   const contactName = isGroup ? groupName : senderName;
   const zapiMessageId = payload.messageId || payload.id?.id || null;
 
-  if (!phone) {
-    console.warn("[zapi-wh] phone could not be resolved — saving as pending", {
-      raw: resolved.raw, source: resolved.source,
-    });
-    return { ok: true, action: "skipped_phone_unresolved", error: "phone_unresolved" };
-  }
-
-  // Deduplication by messageId
+  // Deduplication by messageId — antes do bail-out, evita duplicar mesmo quando phone não resolveu
   if (zapiMessageId) {
     const { data: existing } = await supabase
       .from("mensagens")
@@ -184,7 +188,7 @@ async function processIncomingPayload(
     }
   }
 
-  // Echo de mensagem enviada pela própria UI (sem messageId ainda)
+  // Echo de mensagem enviada pela própria UI (sem messageId ainda) — também roda antes do bail-out
   if (isFromMe && messageContent && zapiMessageId) {
     const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: recent } = await supabase
@@ -205,6 +209,48 @@ async function processIncomingPayload(
       return { ok: true, action: "echo_attached", mensagemId: match.id };
     }
   }
+
+  // fromMe sem phone resolvível (ex.: @lid) — tenta achar conversa pelo chatLid em metadata anterior
+  if (!phone && isFromMe && messageContent && resolved.isLid) {
+    const lidKey = resolved.raw;
+    const { data: priorMsg } = await supabase
+      .from("mensagens")
+      .select("conversa_id, conversas(contato_id)")
+      .eq("tenant_id", tenantId)
+      .eq("metadata->>chatLid", lidKey)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const conversaId = priorMsg?.conversa_id;
+    if (conversaId) {
+      const { data: ins } = await supabase.from("mensagens").insert({
+        conversa_id: conversaId,
+        tenant_id: tenantId,
+        conteudo: messageContent,
+        remetente: "atendente",
+        tipo: messageType,
+        metadata: {
+          messageId: zapiMessageId, fromMe: true,
+          phoneRaw: resolved.raw, phoneNormalized: null, phoneSource: resolved.source,
+          chatLid: lidKey, viaLidFallback: true,
+        },
+      }).select("id").maybeSingle();
+      await supabase.from("conversas").update({
+        ultimo_texto: messageText, ultima_msg_at: new Date().toISOString(),
+      }).eq("id", conversaId);
+      console.log("[zapi-wh] fromMe @lid matched via prior chatLid, inserted in conversa:", conversaId);
+      return { ok: true, action: "inserted_lid_fallback", mensagemId: ins?.id, conversaId };
+    }
+  }
+
+  if (!phone) {
+    console.warn("[zapi-wh] phone could not be resolved — saving as pending", {
+      raw: resolved.raw, source: resolved.source, fromMe: isFromMe,
+    });
+    return { ok: true, action: "skipped_phone_unresolved", error: "phone_unresolved" };
+  }
+
 
   const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
   if (!contato) {
@@ -298,33 +344,40 @@ async function processIncomingPayload(
 function resolveRecipientPhone(
   p: any,
   zapiConfig?: { connected_phone?: string | null } | any,
-): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean } {
+): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "participant" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean; isBroadcast: boolean } {
   const connected = (zapiConfig?.connected_phone || p?.connectedPhone || "") as string;
   let raw: string = p?.phone || "";
-  let source: "phone" | "chatLid" | "connectedPhone" | "none" = raw ? "phone" : "none";
+  let source: "phone" | "chatLid" | "participant" | "connectedPhone" | "none" = raw ? "phone" : "none";
 
-  if (!raw && p?.chatLid) {
-    raw = p.chatLid;
-    source = "chatLid";
-  }
+  if (!raw && p?.chatLid) { raw = p.chatLid; source = "chatLid"; }
+  if (!raw && p?.participant) { raw = p.participant; source = "participant"; }
 
-  const isGroup = typeof raw === "string" && raw.includes("@g.us");
-  const isLid = typeof raw === "string" && raw.includes("@lid");
+  const rawStr = typeof raw === "string" ? raw : "";
+  const isGroup =
+    rawStr.includes("@g.us") ||
+    rawStr.endsWith("-group") ||
+    p?.isGroup === true;
+  const isLid = rawStr.includes("@lid");
+  const isBroadcast = rawStr.includes("@broadcast");
 
-  if (!raw) {
-    return { raw: "", normalized: null, source: "none", isGroup: false, isLid: false };
-  }
-  if (isGroup) {
-    return { raw, normalized: raw, source, isGroup, isLid };
-  }
+  if (!raw) return { raw: "", normalized: null, source: "none", isGroup: false, isLid: false, isBroadcast: false };
+  if (isBroadcast) return { raw, normalized: null, source, isGroup: false, isLid: false, isBroadcast: true };
+  if (isGroup) return { raw, normalized: rawStr, source, isGroup, isLid, isBroadcast: false };
+
   if (isLid) {
-    // chatLid não é um telefone real; mantemos como identificador
-    return { raw, normalized: null, source: "chatLid", isGroup, isLid };
+    // chatLid não é telefone — tenta usar participant como fallback se for telefone real
+    const participant = (p?.participant || "") as string;
+    if (participant && !participant.includes("@lid") && !participant.includes("@g.us")) {
+      const partDigits = String(participant).replace(/\D/g, "");
+      if (partDigits.length >= 10) {
+        return { raw, normalized: partDigits, source: "participant", isGroup, isLid, isBroadcast: false };
+      }
+    }
+    return { raw, normalized: null, source: "chatLid", isGroup, isLid, isBroadcast: false };
   }
 
   let n = String(raw).replace(/\D/g, "");
   const connectedDigits = (connected || "").replace(/\D/g, "");
-  // BR: connectedPhone padrão é 55 + DDD(2) + número(8/9)
   const tenantDdi = connectedDigits.slice(0, 2) || "55";
   const tenantDdd = connectedDigits.slice(2, 4);
 
@@ -333,7 +386,7 @@ function resolveRecipientPhone(
   } else if (n.length === 10 || n.length === 11) {
     n = tenantDdi + n;
   }
-  return { raw, normalized: n || null, source, isGroup, isLid };
+  return { raw, normalized: n || null, source, isGroup, isLid, isBroadcast: false };
 }
 
 // =====================================================

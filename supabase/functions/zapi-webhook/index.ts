@@ -173,14 +173,7 @@ async function processIncomingPayload(
   const contactName = isGroup ? groupName : senderName;
   const zapiMessageId = payload.messageId || payload.id?.id || null;
 
-  if (!phone) {
-    console.warn("[zapi-wh] phone could not be resolved — saving as pending", {
-      raw: resolved.raw, source: resolved.source,
-    });
-    return { ok: true, action: "skipped_phone_unresolved", error: "phone_unresolved" };
-  }
-
-  // Deduplication by messageId
+  // Deduplication by messageId — antes do bail-out, evita duplicar mesmo quando phone não resolveu
   if (zapiMessageId) {
     const { data: existing } = await supabase
       .from("mensagens")
@@ -195,7 +188,7 @@ async function processIncomingPayload(
     }
   }
 
-  // Echo de mensagem enviada pela própria UI (sem messageId ainda)
+  // Echo de mensagem enviada pela própria UI (sem messageId ainda) — também roda antes do bail-out
   if (isFromMe && messageContent && zapiMessageId) {
     const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: recent } = await supabase
@@ -216,6 +209,48 @@ async function processIncomingPayload(
       return { ok: true, action: "echo_attached", mensagemId: match.id };
     }
   }
+
+  // fromMe sem phone resolvível (ex.: @lid) — tenta achar conversa pelo chatLid em metadata anterior
+  if (!phone && isFromMe && messageContent && resolved.isLid) {
+    const lidKey = resolved.raw;
+    const { data: priorMsg } = await supabase
+      .from("mensagens")
+      .select("conversa_id, conversas(contato_id)")
+      .eq("tenant_id", tenantId)
+      .eq("metadata->>chatLid", lidKey)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const conversaId = priorMsg?.conversa_id;
+    if (conversaId) {
+      const { data: ins } = await supabase.from("mensagens").insert({
+        conversa_id: conversaId,
+        tenant_id: tenantId,
+        conteudo: messageContent,
+        remetente: "atendente",
+        tipo: messageType,
+        metadata: {
+          messageId: zapiMessageId, fromMe: true,
+          phoneRaw: resolved.raw, phoneNormalized: null, phoneSource: resolved.source,
+          chatLid: lidKey, viaLidFallback: true,
+        },
+      }).select("id").maybeSingle();
+      await supabase.from("conversas").update({
+        ultimo_texto: messageText, ultima_msg_at: new Date().toISOString(),
+      }).eq("id", conversaId);
+      console.log("[zapi-wh] fromMe @lid matched via prior chatLid, inserted in conversa:", conversaId);
+      return { ok: true, action: "inserted_lid_fallback", mensagemId: ins?.id, conversaId };
+    }
+  }
+
+  if (!phone) {
+    console.warn("[zapi-wh] phone could not be resolved — saving as pending", {
+      raw: resolved.raw, source: resolved.source, fromMe: isFromMe,
+    });
+    return { ok: true, action: "skipped_phone_unresolved", error: "phone_unresolved" };
+  }
+
 
   const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
   if (!contato) {

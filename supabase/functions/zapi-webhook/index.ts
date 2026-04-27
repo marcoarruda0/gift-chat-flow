@@ -61,6 +61,10 @@ Deno.serve(async (req) => {
       const contactName = isGroup ? groupName : senderName;
       const zapiMessageId = payload.messageId || payload.id?.id || null;
 
+      if (isFromMe) {
+        console.log(`📤 Outbound webhook: phone=${phone} msgId=${zapiMessageId} content="${(messageText || "").slice(0, 60)}"`);
+      }
+
       // Deduplication: check if message already exists by messageId
       if (zapiMessageId) {
         const { data: existing } = await supabase

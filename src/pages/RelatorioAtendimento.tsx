@@ -164,14 +164,16 @@ export default function RelatorioAtendimento({ embedded = false }: { embedded?: 
   }, [conversas, atendentesMap]);
 
   if (authLoading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin && !embedded) return <Navigate to="/" replace />;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Relatório de Atendimento</h1>
-        <p className="text-muted-foreground">Tempo médio, espera e desempenho por atendente</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold">Relatório de Atendimento</h1>
+          <p className="text-muted-foreground">Tempo médio, espera e desempenho por atendente</p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <Select value={periodo} onValueChange={(v) => setPeriodo(v as any)}>

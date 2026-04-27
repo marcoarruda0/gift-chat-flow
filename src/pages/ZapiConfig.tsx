@@ -156,15 +156,36 @@ export default function ZapiConfig() {
     try {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const webhookUrl = `https://${projectId}.supabase.co/functions/v1/zapi-webhook`;
-      const result = await callProxy("update-webhook-received", "PUT", { value: webhookUrl });
-      if (result.value || result.webhook) {
-        if (existingId) {
-          await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
-        }
-        toast.success("Webhook configurado com sucesso!");
-      } else {
-        toast.info("Resposta: " + JSON.stringify(result));
+
+      // Register BOTH webhook events on Z-API:
+      //  - "received": messages incoming from contacts
+      //  - "message-send": messages YOU send (from phone, WhatsApp Web, or API echo)
+      const endpoints: { ep: string; label: string }[] = [
+        { ep: "update-webhook-received", label: "recebidas" },
+        { ep: "update-webhook-message-send", label: "enviadas (do seu celular/WhatsApp Web)" },
+      ];
+
+      const results = await Promise.all(
+        endpoints.map(async ({ ep, label }) => {
+          try {
+            const r = await callProxy(ep, "PUT", { value: webhookUrl });
+            const ok = !!(r?.value || r?.webhook);
+            return { label, ok, raw: r };
+          } catch (err: any) {
+            return { label, ok: false, raw: { error: err?.message } };
+          }
+        })
+      );
+
+      const okCount = results.filter((r) => r.ok).length;
+      if (okCount > 0 && existingId) {
+        await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
       }
+
+      results.forEach((r) => {
+        if (r.ok) toast.success(`Webhook ${r.label} configurado`);
+        else toast.error(`Falha ao configurar webhook ${r.label}: ${JSON.stringify(r.raw).slice(0, 200)}`);
+      });
     } catch (e: any) {
       toast.error("Erro: " + e.message);
     }

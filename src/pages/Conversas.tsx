@@ -58,6 +58,12 @@ export default function Conversas() {
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});
 
+  // Copiloto state
+  const [copilotoAtivo, setCopilotoAtivo] = useState(false);
+  const [copilotoCanais, setCopilotoCanais] = useState<string[]>([]);
+  const [rascunho, setRascunho] = useState<{ id: string; conteudo: string } | null>(null);
+  const [rascunhoLoading, setRascunhoLoading] = useState(false);
+
   const tenantId = profile?.tenant_id;
 
   // Fetch departamentos and profiles for lookup
@@ -68,6 +74,13 @@ export default function Conversas() {
     });
     supabase.from("profiles").select("id, nome, apelido, mostrar_apelido").eq("tenant_id", tenantId).then(({ data }) => {
       if (data) setMembros(Object.fromEntries(data.map(p => [p.id, p.mostrar_apelido && p.apelido ? p.apelido : (p.nome || "Sem nome")])));
+    });
+    // Load copiloto config
+    supabase.from("ia_config").select("copiloto_ativo, copiloto_canais").eq("tenant_id", tenantId).maybeSingle().then(({ data }) => {
+      if (data) {
+        setCopilotoAtivo(!!(data as any).copiloto_ativo);
+        setCopilotoCanais(((data as any).copiloto_canais as string[]) || []);
+      }
     });
   }, [tenantId]);
 
@@ -267,26 +280,6 @@ export default function Conversas() {
     });
   };
 
-  // Helper: persist Z-API messageId returned by send-* into mensagens.metadata.
-  // This prevents duplicates when the Z-API "fromMe" webhook echoes our own send.
-  const persistZapiMessageId = async (mensagemId: string | undefined, response: Response) => {
-    if (!mensagemId) return;
-    try {
-      const json = await response.clone().json().catch(() => null);
-      const mid = json?.messageId || json?.id?.id || json?.id || null;
-      if (!mid) return;
-      const { data: cur } = await supabase
-        .from("mensagens")
-        .select("metadata")
-        .eq("id", mensagemId)
-        .maybeSingle();
-      const newMeta = { ...((cur?.metadata as any) || {}), messageId: mid };
-      await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", mensagemId);
-    } catch {
-      /* swallow */
-    }
-  };
-
   // Helper: call WhatsApp Cloud proxy
   const callCloud = async (endpoint: string, method: string, data?: any, useWabaId = false) => {
     const { data: session } = await supabase.auth.getSession();
@@ -386,11 +379,10 @@ export default function Conversas() {
       // Send via Z-API
       try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
-        const resp = await callZapi("send-text", "POST", {
+        await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),
           message: zapiMessage,
         });
-        await persistZapiMessageId(inserted?.id, resp);
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);
       }
@@ -430,13 +422,10 @@ export default function Conversas() {
           toast.error("Erro ao enviar áudio via WhatsApp Oficial");
         }
       } else if (selected?.contato_telefone) {
-        try {
-          const resp = await callZapi("send-audio", "POST", {
-            phone: formatPhone(selected.contato_telefone),
-            audio: url,
-          });
-          await persistZapiMessageId(inserted?.id, resp);
-        } catch { /* offline */ }
+        await callZapi("send-audio", "POST", {
+          phone: formatPhone(selected.contato_telefone),
+          audio: url,
+        }).catch(() => {});
       }
     } catch (e) {
       toast.error("Erro ao enviar áudio");
@@ -488,10 +477,7 @@ export default function Conversas() {
         const data = isImage
           ? { phone, image: url, caption: "" }
           : { phone, document: url, fileName: file.name };
-        try {
-          const resp = await callZapi(endpoint, "POST", data);
-          await persistZapiMessageId(inserted?.id, resp);
-        } catch { /* offline */ }
+        await callZapi(endpoint, "POST", data).catch(() => {});
       }
     } catch (e) {
       toast.error("Erro ao enviar anexo");
@@ -563,6 +549,42 @@ export default function Conversas() {
     fetchConversas();
   };
 
+  // Copiloto: gerar rascunho
+  const gerarRascunho = useCallback(async (conversaId: string, forcar = false) => {
+    setRascunhoLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ia-gerar-rascunho", {
+        body: { conversa_id: conversaId, forcar },
+      });
+      if (error) throw error;
+      if (data?.skip) return;
+      if (data?.error) { toast.error(data.error); return; }
+      if (data?.id && data?.conteudo) {
+        setRascunho({ id: data.id, conteudo: data.conteudo });
+      }
+    } catch (e: any) {
+      console.warn("rascunho err:", e);
+    } finally {
+      setRascunhoLoading(false);
+    }
+  }, []);
+
+  const handleDescartarRascunho = async () => {
+    if (!rascunho) return;
+    await supabase.from("ia_rascunhos").update({ status: "descartado" }).eq("id", rascunho.id);
+    setRascunho(null);
+  };
+
+  const handleEnviarRascunho = async (textoFinal: string, original: string) => {
+    if (!rascunho) return;
+    const status = textoFinal.trim() === original.trim() ? "enviado_sem_edicao" : "enviado_com_edicao";
+    await supabase.from("ia_rascunhos").update({ status, conteudo_enviado: textoFinal }).eq("id", rascunho.id);
+    setRascunho(null);
+  };
+
+  // Reset rascunho when switching conversas
+  useEffect(() => { setRascunho(null); }, [selectedId]);
+
   const handlePull = async () => {
     if (!selectedId || !tenantId || !user || !profile) return;
     const senderName = profile.mostrar_apelido && profile.apelido ? profile.apelido : (profile.nome || "Atendente");
@@ -583,6 +605,8 @@ export default function Conversas() {
     setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, atendente_id: user.id } : c));
     fetchConversas();
     toast.success("Conversa puxada com sucesso!");
+    // Trigger copiloto draft after pull
+    if (copilotoAtivo) gerarRascunho(selectedId);
   };
 
   const handleMarkUnread = async () => {
@@ -736,6 +760,12 @@ export default function Conversas() {
             cloudWindowBlocked={cloudWindowBlocked}
             onSendTemplate={() => setTemplateDialogOpen(true)}
             onPull={handlePull}
+            rascunho={rascunho}
+            copilotoAtivo={copilotoAtivo && (copilotoCanais.length === 0 || copilotoCanais.includes(selected.canal === "whatsapp_cloud" ? "whatsapp_cloud" : "whatsapp_zapi"))}
+            onDescartarRascunho={handleDescartarRascunho}
+            onSugerirRascunho={() => gerarRascunho(selected.id, true)}
+            rascunhoLoading={rascunhoLoading}
+            onEnviarRascunho={handleEnviarRascunho}
           />
         ) : (
           !isMobile && <ChatPanelEmpty />

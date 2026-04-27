@@ -66,6 +66,14 @@ serve(async (req) => {
         .maybeSingle();
 
       if (iaConfig) {
+        // Quando o modo copiloto está ativo, a IA NÃO responde automaticamente —
+        // o atendente recebe um rascunho via ia-gerar-rascunho.
+        if (iaConfig.copiloto_ativo) {
+          return new Response(
+            JSON.stringify({ resposta: null, fontes: [], skip: true, reason: "copiloto_ativo" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         configNome = iaConfig.nome_assistente;
         configTom = iaConfig.tom;
         configEmojis = iaConfig.usar_emojis;

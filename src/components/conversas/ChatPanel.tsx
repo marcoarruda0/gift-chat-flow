@@ -38,6 +38,13 @@ interface ChatPanelProps {
   canal?: string;
   cloudWindowBlocked?: boolean;
   onSendTemplate?: () => void;
+  // Copiloto
+  rascunho?: { id: string; conteudo: string } | null;
+  copilotoAtivo?: boolean;
+  onDescartarRascunho?: () => void;
+  onSugerirRascunho?: () => void;
+  rascunhoLoading?: boolean;
+  onEnviarRascunho?: (textoFinal: string, rascunhoOriginal: string) => void;
 }
 
 export function ChatPanelEmpty() {
@@ -50,7 +57,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate }: ChatPanelProps) {
+export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate, rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading, onEnviarRascunho }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -153,7 +160,17 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
             </div>
           </div>
         ) : (
-          <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+          <ChatInput
+            onSend={onSend}
+            onSendAudio={onSendAudio}
+            onSendAttachment={onSendAttachment}
+            rascunho={rascunho}
+            copilotoAtivo={copilotoAtivo}
+            onDescartarRascunho={onDescartarRascunho}
+            onSugerirRascunho={onSugerirRascunho}
+            rascunhoLoading={rascunhoLoading}
+            onEnviarRascunho={onEnviarRascunho}
+          />
         )
       ) : (
         <div className="px-4 py-4 border-t border-border bg-muted/50">

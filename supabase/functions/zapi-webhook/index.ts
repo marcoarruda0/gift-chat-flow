@@ -229,9 +229,16 @@ Deno.serve(async (req) => {
           await handleAIAutoResponder(supabase, tenantId, phone, messageContent, conversa.id);
         }
       }
+    } else if (!payload.status) {
+      // Não é mensagem nem callback de status — log para diagnóstico.
+      console.log("[zapi-wh] ignored event (no content, no status)", {
+        type: payload?.type ?? null,
+        hasPhone: !!payload?.phone,
+        fromMe: payload?.fromMe ?? null,
+        topKeys: payload && typeof payload === "object" ? Object.keys(payload) : [],
+      });
     }
 
-    // Handle message status updates
     if (payload.status) {
       console.log("Status update:", payload.status);
     }

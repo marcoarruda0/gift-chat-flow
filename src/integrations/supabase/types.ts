@@ -1091,37 +1091,97 @@ export type Database = {
           },
         ]
       }
+      ia_analises_conversas: {
+        Row: {
+          concluido_em: string | null
+          created_at: string
+          erro_mensagem: string | null
+          id: string
+          iniciado_por: string | null
+          periodo_fim: string | null
+          periodo_inicio: string | null
+          resumo_markdown: string | null
+          status: string
+          sugestoes_instrucoes: string | null
+          tenant_id: string
+          total_conversas: number | null
+          total_mensagens: number | null
+        }
+        Insert: {
+          concluido_em?: string | null
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          iniciado_por?: string | null
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
+          resumo_markdown?: string | null
+          status?: string
+          sugestoes_instrucoes?: string | null
+          tenant_id: string
+          total_conversas?: number | null
+          total_mensagens?: number | null
+        }
+        Update: {
+          concluido_em?: string | null
+          created_at?: string
+          erro_mensagem?: string | null
+          id?: string
+          iniciado_por?: string | null
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
+          resumo_markdown?: string | null
+          status?: string
+          sugestoes_instrucoes?: string | null
+          tenant_id?: string
+          total_conversas?: number | null
+          total_mensagens?: number | null
+        }
+        Relationships: []
+      }
       ia_config: {
         Row: {
           ativo: boolean
+          copiloto_ativo: boolean
+          copiloto_canais: string[]
           created_at: string
           id: string
           instrucoes_extras: string | null
           nome_assistente: string
           tenant_id: string
           tom: Database["public"]["Enums"]["ia_tom"]
+          ultima_analise_em: string | null
+          ultima_analise_resumo: string | null
           updated_at: string
           usar_emojis: Database["public"]["Enums"]["ia_emojis"]
         }
         Insert: {
           ativo?: boolean
+          copiloto_ativo?: boolean
+          copiloto_canais?: string[]
           created_at?: string
           id?: string
           instrucoes_extras?: string | null
           nome_assistente?: string
           tenant_id: string
           tom?: Database["public"]["Enums"]["ia_tom"]
+          ultima_analise_em?: string | null
+          ultima_analise_resumo?: string | null
           updated_at?: string
           usar_emojis?: Database["public"]["Enums"]["ia_emojis"]
         }
         Update: {
           ativo?: boolean
+          copiloto_ativo?: boolean
+          copiloto_canais?: string[]
           created_at?: string
           id?: string
           instrucoes_extras?: string | null
           nome_assistente?: string
           tenant_id?: string
           tom?: Database["public"]["Enums"]["ia_tom"]
+          ultima_analise_em?: string | null
+          ultima_analise_resumo?: string | null
           updated_at?: string
           usar_emojis?: Database["public"]["Enums"]["ia_emojis"]
         }
@@ -1134,6 +1194,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ia_rascunhos: {
+        Row: {
+          atendente_id: string
+          baseado_em_mensagem_id: string | null
+          conteudo_enviado: string | null
+          conteudo_sugerido: string
+          conversa_id: string
+          created_at: string
+          fontes: Json | null
+          id: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          atendente_id: string
+          baseado_em_mensagem_id?: string | null
+          conteudo_enviado?: string | null
+          conteudo_sugerido: string
+          conversa_id: string
+          created_at?: string
+          fontes?: Json | null
+          id?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          atendente_id?: string
+          baseado_em_mensagem_id?: string | null
+          conteudo_enviado?: string | null
+          conteudo_sugerido?: string
+          conversa_id?: string
+          created_at?: string
+          fontes?: Json | null
+          id?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       mensagens: {
         Row: {

@@ -760,6 +760,12 @@ export default function Conversas() {
             cloudWindowBlocked={cloudWindowBlocked}
             onSendTemplate={() => setTemplateDialogOpen(true)}
             onPull={handlePull}
+            rascunho={rascunho}
+            copilotoAtivo={copilotoAtivo && (copilotoCanais.length === 0 || copilotoCanais.includes(selected.canal === "whatsapp_cloud" ? "whatsapp_cloud" : "whatsapp_zapi"))}
+            onDescartarRascunho={handleDescartarRascunho}
+            onSugerirRascunho={() => gerarRascunho(selected.id, true)}
+            rascunhoLoading={rascunhoLoading}
+            onEnviarRascunho={handleEnviarRascunho}
           />
         ) : (
           !isMobile && <ChatPanelEmpty />

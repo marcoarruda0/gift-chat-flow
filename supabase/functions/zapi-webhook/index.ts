@@ -99,6 +99,52 @@ Deno.serve(async (req) => {
       // Determine remetente based on fromMe
       const remetente = isFromMe ? "atendente" : "contato";
 
+      // Secondary dedup for fromMe echoes: when the in-app UI just inserted a
+      // message via zapi-proxy and the messageId update from the client hasn't
+      // landed yet, an incoming "message-send" webhook would otherwise duplicate it.
+      // If we find a recent matching atendente row in the same conversa with no
+      // messageId saved, update it with the messageId instead of inserting.
+      if (isFromMe) {
+        const sinceIso = new Date(Date.now() - 60_000).toISOString();
+        const { data: recent } = await supabase
+          .from("mensagens")
+          .select("id, metadata, conteudo, tipo")
+          .eq("tenant_id", tenantId)
+          .eq("conversa_id", conversa.id)
+          .eq("remetente", "atendente")
+          .eq("tipo", messageType)
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(10);
+
+        const match = (recent || []).find((m: any) => {
+          const meta = m.metadata || {};
+          if (meta.messageId) return false; // already has an id, not the same row
+          // Texto: comparar conteúdo exato (a UI pode prefixar "*Apelido:*\n", então também aceitamos endsWith)
+          if (messageType === "texto") {
+            return m.conteudo === messageContent ||
+              m.conteudo?.endsWith(messageContent) ||
+              messageContent?.endsWith(m.conteudo);
+          }
+          // Mídia: o conteudo da UI é a URL do nosso storage e o do webhook é uma URL Z-API/Backblaze.
+          // Não dá para comparar por URL — confiamos na janela de 60s + mesmo tipo + mesmo remetente.
+          return true;
+        });
+
+        if (match) {
+          const newMeta = {
+            ...((match.metadata as any) || {}),
+            messageId: zapiMessageId,
+            senderName: payload.senderName || payload.chatName || (match.metadata as any)?.senderName || null,
+          };
+          await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", match.id);
+          console.log(`Echo dedup: updated existing atendente msg ${match.id} with messageId ${zapiMessageId}`);
+          return new Response(JSON.stringify({ ok: true, deduped: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       // Insert message
       await supabase.from("mensagens").insert({
         conversa_id: conversa.id,

@@ -267,6 +267,26 @@ export default function Conversas() {
     });
   };
 
+  // Helper: persist Z-API messageId returned by send-* into mensagens.metadata.
+  // This prevents duplicates when the Z-API "fromMe" webhook echoes our own send.
+  const persistZapiMessageId = async (mensagemId: string | undefined, response: Response) => {
+    if (!mensagemId) return;
+    try {
+      const json = await response.clone().json().catch(() => null);
+      const mid = json?.messageId || json?.id?.id || json?.id || null;
+      if (!mid) return;
+      const { data: cur } = await supabase
+        .from("mensagens")
+        .select("metadata")
+        .eq("id", mensagemId)
+        .maybeSingle();
+      const newMeta = { ...((cur?.metadata as any) || {}), messageId: mid };
+      await supabase.from("mensagens").update({ metadata: newMeta }).eq("id", mensagemId);
+    } catch {
+      /* swallow */
+    }
+  };
+
   // Helper: call WhatsApp Cloud proxy
   const callCloud = async (endpoint: string, method: string, data?: any, useWabaId = false) => {
     const { data: session } = await supabase.auth.getSession();
@@ -366,10 +386,11 @@ export default function Conversas() {
       // Send via Z-API
       try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
-        await callZapi("send-text", "POST", {
+        const resp = await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),
           message: zapiMessage,
         });
+        await persistZapiMessageId(inserted?.id, resp);
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);
       }
@@ -409,10 +430,13 @@ export default function Conversas() {
           toast.error("Erro ao enviar áudio via WhatsApp Oficial");
         }
       } else if (selected?.contato_telefone) {
-        await callZapi("send-audio", "POST", {
-          phone: formatPhone(selected.contato_telefone),
-          audio: url,
-        }).catch(() => {});
+        try {
+          const resp = await callZapi("send-audio", "POST", {
+            phone: formatPhone(selected.contato_telefone),
+            audio: url,
+          });
+          await persistZapiMessageId(inserted?.id, resp);
+        } catch { /* offline */ }
       }
     } catch (e) {
       toast.error("Erro ao enviar áudio");
@@ -464,7 +488,10 @@ export default function Conversas() {
         const data = isImage
           ? { phone, image: url, caption: "" }
           : { phone, document: url, fileName: file.name };
-        await callZapi(endpoint, "POST", data).catch(() => {});
+        try {
+          const resp = await callZapi(endpoint, "POST", data);
+          await persistZapiMessageId(inserted?.id, resp);
+        } catch { /* offline */ }
       }
     } catch (e) {
       toast.error("Erro ao enviar anexo");

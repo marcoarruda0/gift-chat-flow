@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Wifi, WifiOff, TestTube, Webhook, Save, Loader2, QrCode, Unplug, RefreshCw } from "lucide-react";
+import { Wifi, WifiOff, TestTube, Webhook, Save, Loader2, QrCode, Unplug, RefreshCw, RotateCcw } from "lucide-react";
 
 export default function ZapiConfig() {
   const { profile } = useAuth();
@@ -33,6 +33,7 @@ export default function ZapiConfig() {
   const [settingWebhook, setSettingWebhook] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -214,7 +215,35 @@ export default function ZapiConfig() {
     } catch (e: any) {
       toast.error("Erro: " + e.message);
     }
-    setSettingWebhook(false);
+  };
+
+  const handleReprocess = async () => {
+    setReprocessing(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/zapi-reprocessar-pendentes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.session?.access_token}`,
+        },
+        body: JSON.stringify({ limit: 20 }),
+      });
+      const result = await res.json();
+      if (result?.error) {
+        toast.error("Erro: " + result.error);
+      } else if (result?.reprocessed === 0) {
+        toast.info("Nenhum evento pendente para reprocessar.");
+      } else {
+        toast.success(
+          `${result.inserted} gravadas, ${result.skipped} ignoradas, ${result.errors} com erro (${result.reprocessed} reprocessadas)`
+        );
+      }
+    } catch (e: any) {
+      toast.error("Erro ao reprocessar: " + e.message);
+    }
+    setReprocessing(false);
   };
 
   const handleDisconnect = async () => {
@@ -321,6 +350,10 @@ export default function ZapiConfig() {
             <Button variant="outline" onClick={handleSetWebhook} disabled={settingWebhook || !existingId}>
               {settingWebhook ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Webhook className="h-4 w-4 mr-1" />}
               Configurar Webhook
+            </Button>
+            <Button variant="outline" onClick={handleReprocess} disabled={reprocessing || !existingId} title="Reprocessa eventos do webhook que falharam ou ficaram pendentes">
+              {reprocessing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
+              Reprocessar pendentes
             </Button>
           </div>
 

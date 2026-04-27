@@ -1850,6 +1850,42 @@ export type Database = {
           },
         ]
       }
+      zapi_webhook_eventos: {
+        Row: {
+          created_at: string
+          error_msg: string | null
+          id: string
+          instance_id: string | null
+          payload: Json
+          processed: boolean
+          processed_at: string | null
+          resultado: Json | null
+          tenant_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_msg?: string | null
+          id?: string
+          instance_id?: string | null
+          payload: Json
+          processed?: boolean
+          processed_at?: string | null
+          resultado?: Json | null
+          tenant_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_msg?: string | null
+          id?: string
+          instance_id?: string | null
+          payload?: Json
+          processed?: boolean
+          processed_at?: string | null
+          resultado?: Json | null
+          tenant_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -174,8 +174,28 @@ export default function Conversas() {
               tipo: newMsg.tipo,
               created_at: newMsg.created_at,
               metadata: newMsg.metadata,
+              status_entrega: newMsg.status_entrega,
+              status_entrega_at: newMsg.status_entrega_at,
             }];
           });
+        }
+        fetchConversas();
+      })
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "mensagens",
+        filter: `tenant_id=eq.${tenantId}`,
+      }, (payload) => {
+        const upd = payload.new as any;
+        if (upd.conversa_id === selectedId) {
+          setMensagens(prev => prev.map(m => m.id === upd.id ? {
+            ...m,
+            conteudo: upd.conteudo,
+            metadata: upd.metadata,
+            status_entrega: upd.status_entrega,
+            status_entrega_at: upd.status_entrega_at,
+          } : m));
         }
         fetchConversas();
       })

@@ -38,6 +38,13 @@ interface ChatPanelProps {
   canal?: string;
   cloudWindowBlocked?: boolean;
   onSendTemplate?: () => void;
+  // Copiloto
+  rascunho?: { id: string; conteudo: string } | null;
+  copilotoAtivo?: boolean;
+  onDescartarRascunho?: () => void;
+  onSugerirRascunho?: () => void;
+  rascunhoLoading?: boolean;
+  onEnviarRascunho?: (textoFinal: string, rascunhoOriginal: string) => void;
 }
 
 export function ChatPanelEmpty() {

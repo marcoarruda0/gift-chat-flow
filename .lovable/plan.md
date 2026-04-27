@@ -1,55 +1,121 @@
-## Diagnóstico
+## Diagnóstico atual
 
-Vendo os logs do `zapi-proxy`, **as 3 chamadas voltaram HTTP 200** — ou seja, a Z-API aceitou todas. O problema é só na **nossa lógica de detecção de sucesso** no front:
+O problema não está na tela de Conversas lendo o banco. Hoje o cenário é este:
 
-```ts
-const ok = r.status === "fulfilled" && (r.value?.value || r.value?.webhook || r.value?.success || !r.value?.error);
-```
+- A conversa do Felipe existe e está sendo atualizada normalmente para mensagens recebidas.
+- O banco tem mensagens do Felipe gravadas como `remetente=contato`.
+- O banco também tem mensagens enviadas pelo sistema/UI como `remetente=atendente`, mas nenhuma delas tem `metadata.messageId` vindo da Z-API.
+- Nos logs recentes do `zapi-webhook`, só aparecem:
+  - mensagens recebidas (`fromMe: false`)
+  - callbacks de status (`RECEIVED`, `READ_BY_ME`)
+- Não apareceu nenhum log de `fromMe: true` nem `Message saved (atendente)`.
 
-A resposta do `update-webhook-message-send` provavelmente vem em outro formato (ex.: `{ updated: true }` ou body vazio `{}`), então caímos no `else` e marcamos como falha — apesar do webhook ter sido registrado de fato.
-
-Além disso, descobri na doc da Z-API que existe um endpoint **muito melhor**: **`update-every-webhooks`** ([doc oficial](https://developer.z-api.io/webhooks/update-every-webhooks)) — uma única chamada `PUT` que registra **todos** os webhooks (recebida, enviada por mim, status de entrega, presença, conexão, etc.) para a mesma URL. Resolve o problema de raiz.
+Conclusão: neste momento, a mensagem enviada direto do celular/WhatsApp Web não está chegando até a etapa de gravação no banco. Ou a Z-API não está disparando o evento correto, ou o payload do evento de saída vem em um formato que nossa função ainda não reconhece.
 
 ## Plano de correção
 
-### 1. `src/pages/ZapiConfig.tsx` — usar `update-every-webhooks`
+### 1. Instrumentar melhor o `zapi-webhook`
 
-Substituir as 3 chamadas separadas por **uma única**:
+Adicionar logs estruturados antes de qualquer parse para capturar exatamente o formato real dos eventos de saída:
 
-```ts
-const result = await callProxy("update-every-webhooks", "PUT", { value: webhookUrl });
+- `instanceId`
+- `type`
+- `status`
+- `fromMe`
+- `phone`
+- `chatLid`
+- `connectedPhone`
+- `messageId`
+- chaves disponíveis do payload
+
+Também registrar explicitamente:
+
+- quando o evento foi ignorado por não ter `messageContent`
+- quando falhou `findOrCreateContact`
+- quando falhou `findOrCreateConversa`
+- quando falhou o `insert` em `mensagens`
+
+Isso elimina a hipótese de falha silenciosa.
+
+### 2. Tornar o parser compatível com payloads de saída
+
+Hoje a função só salva mensagem quando encontra conteúdo em formatos como `payload.text.message`, `image`, `document`, etc.
+
+Vou ampliar o parser para aceitar formatos alternativos que a Z-API costuma usar em eventos de mensagens enviadas, por exemplo:
+
+- `payload.text`
+- `payload.message`
+- `payload.messageText`
+- outros campos textuais equivalentes, se vierem no webhook real
+
+Também vou separar claramente:
+
+- callback de status
+- mensagem com conteúdo
+
+para não depender só do shape usado nas mensagens recebidas.
+
+### 3. Normalizar o identificador do contato para mensagens `fromMe`
+
+Para saída, a Z-API pode mandar combinações diferentes entre:
+
+- `phone`
+- `chatLid`
+- `connectedPhone`
+
+Vou ajustar a resolução do contato para usar a origem correta do destinatário em mensagens enviadas, evitando gravar no número errado ou não achar a conversa existente.
+
+Fluxo esperado:
+
+```text
+Evento fromMe:true
+  -> extrair destinatário real
+  -> localizar/criar contato
+  -> localizar/criar conversa
+  -> gravar mensagem remetente=atendente
+  -> atualizar ultimo_texto/ultima_msg_at
 ```
 
-Lógica nova:
-- Considerar sucesso se a resposta **não tiver `error`** (status 200 do proxy + payload sem campo de erro).
-- Manter fallback: se `update-every-webhooks` falhar, tentar individualmente os 3 endpoints como hoje, mas com **detecção de sucesso baseada em status HTTP** (não no shape do JSON).
-- Persistir `webhook_url` no banco assim que `update-every-webhooks` der OK.
-- Toast: `"✅ Todos os webhooks configurados (recebidas, enviadas e entregas)"`.
+### 4. Persistir `messageId` nas mensagens enviadas pela própria UI
 
-### 2. `supabase/functions/zapi-proxy/index.ts` — devolver status HTTP real
+Hoje, quando a mensagem sai pelo módulo Conversas, ela é inserida no banco imediatamente, mas o retorno do `send-text` da Z-API não está sendo salvo como `metadata.messageId`.
 
-Hoje o proxy devolve só o JSON da Z-API. Vou incluir o status HTTP no payload retornado para o front conseguir distinguir 200 de 4xx mesmo quando o body for vazio:
+Vou corrigir isso para:
 
-```ts
-return new Response(
-  JSON.stringify({ _httpStatus: zapiResponse.status, ...responseData }),
-  { status: zapiResponse.status, ... }
-);
-```
+- salvar `messageId` retornado pelo envio
+- permitir correlação entre envio da UI, webhook e status de entrega
+- melhorar deduplicação e rastreio
 
-Isso permite que o front faça `result._httpStatus >= 200 && result._httpStatus < 300` como critério confiável de sucesso, em vez de adivinhar pelo shape do JSON.
+Isso não resolve sozinho o envio via celular, mas ajuda muito a diferenciar:
 
-### 3. Validação após deploy
+- mensagens enviadas pela UI
+- mensagens enviadas fora do sistema
+- callbacks posteriores
 
-1. Você clica em "Configurar Webhook" novamente.
-2. Toast esperado: ✅ Todos os webhooks configurados.
-3. Manda outra mensagem do celular para o Felipe (algo como "teste depois do fix").
-4. Confirmo nos logs do `zapi-webhook` que chegou um evento com `fromMe:true` e que ele entrou na conversa com `remetente=atendente`.
+### 5. Validar ponta a ponta
 
-## Arquivos afetados
-- `src/pages/ZapiConfig.tsx` (refatorar `handleSetWebhook`)
-- `supabase/functions/zapi-proxy/index.ts` (incluir `_httpStatus` na resposta)
+Depois da correção:
 
-## O que **não** muda
-- A mensagem "virou cobaia haha" continua perdida — Z-API não guarda eventos de webhooks não registrados na época do envio.
-- A lógica de dedup do `zapi-webhook` (que casa mensagens echoadas com as enviadas pela UI) continua válida e já está deployada.
+1. registrar novamente os webhooks se necessário
+2. enviar uma mensagem pelo celular para o Felipe
+3. confirmar nos logs que chegou um evento `fromMe:true`
+4. confirmar no banco um novo registro em `mensagens` com `remetente=atendente`
+5. confirmar que a conversa sobe na lista e aparece no chat
+
+## Arquivos envolvidos
+
+- `supabase/functions/zapi-webhook/index.ts`
+- `src/pages/Conversas.tsx`
+- possivelmente `src/pages/ZapiConfig.tsx` apenas se eu precisar reforçar a validação/configuração do webhook
+
+## Detalhes técnicos
+
+Achados relevantes da investigação:
+
+- `zapi-webhook` salva mensagens só quando `payload.phone && messageContent`.
+- O parser atual não cobre formatos alternativos de texto de saída.
+- A lista de Conversas está lendo corretamente de `conversas` e `mensagens`; não há evidência de bug de exibição no front para este caso.
+- A tabela `zapi_config` já está com `webhook_url` preenchida.
+- Não há registros recentes de mensagem de atendente originada por webhook.
+
+Se você aprovar, eu implemento a instrumentação e a correção do parser/normalização para fechar o diagnóstico e resolver a gravação.

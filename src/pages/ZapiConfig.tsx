@@ -156,14 +156,39 @@ export default function ZapiConfig() {
     try {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const webhookUrl = `https://${projectId}.supabase.co/functions/v1/zapi-webhook`;
-      const result = await callProxy("update-webhook-received", "PUT", { value: webhookUrl });
-      if (result.value || result.webhook) {
-        if (existingId) {
-          await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
-        }
-        toast.success("Webhook configurado com sucesso!");
+
+      // Endpoints da Z-API que precisam apontar para o nosso webhook
+      const endpoints = [
+        { key: "received", path: "update-webhook-received", label: "Mensagens recebidas" },
+        { key: "message-send", path: "update-webhook-message-send", label: "Mensagens enviadas (celular/WA Web)" },
+        { key: "delivery", path: "update-webhook-delivery", label: "Status de entrega" },
+      ];
+
+      const results = await Promise.allSettled(
+        endpoints.map((e) => callProxy(e.path, "PUT", { value: webhookUrl }))
+      );
+
+      const sucessos: string[] = [];
+      const falhas: string[] = [];
+      results.forEach((r, i) => {
+        const ep = endpoints[i];
+        const ok = r.status === "fulfilled" && (r.value?.value || r.value?.webhook || r.value?.success || !r.value?.error);
+        if (ok) sucessos.push(ep.label);
+        else falhas.push(ep.label);
+      });
+
+      // Persistir webhook_url somente se 'received' e 'message-send' deram certo
+      const criticosOk = sucessos.includes(endpoints[0].label) && sucessos.includes(endpoints[1].label);
+      if (criticosOk && existingId) {
+        await supabase.from("zapi_config").update({ webhook_url: webhookUrl }).eq("id", existingId);
+      }
+
+      if (falhas.length === 0) {
+        toast.success(`✅ ${sucessos.length}/${endpoints.length} webhooks configurados`);
+      } else if (sucessos.length > 0) {
+        toast.warning(`${sucessos.length}/${endpoints.length} configurados. Falha em: ${falhas.join(", ")}`);
       } else {
-        toast.info("Resposta: " + JSON.stringify(result));
+        toast.error(`Falha ao configurar webhooks: ${falhas.join(", ")}`);
       }
     } catch (e: any) {
       toast.error("Erro: " + e.message);

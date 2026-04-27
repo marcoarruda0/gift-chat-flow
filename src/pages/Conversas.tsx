@@ -75,6 +75,13 @@ export default function Conversas() {
     supabase.from("profiles").select("id, nome, apelido, mostrar_apelido").eq("tenant_id", tenantId).then(({ data }) => {
       if (data) setMembros(Object.fromEntries(data.map(p => [p.id, p.mostrar_apelido && p.apelido ? p.apelido : (p.nome || "Sem nome")])));
     });
+    // Load copiloto config
+    supabase.from("ia_config").select("copiloto_ativo, copiloto_canais").eq("tenant_id", tenantId).maybeSingle().then(({ data }) => {
+      if (data) {
+        setCopilotoAtivo(!!(data as any).copiloto_ativo);
+        setCopilotoCanais(((data as any).copiloto_canais as string[]) || []);
+      }
+    });
   }, [tenantId]);
 
   // Fetch conversas with contato name

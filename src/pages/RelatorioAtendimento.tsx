@@ -51,7 +51,7 @@ function MetricCard({ title, value, icon: Icon, loading }: {
   );
 }
 
-export default function RelatorioAtendimento() {
+export default function RelatorioAtendimento({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile, hasRole, loading: authLoading } = useAuth();
   const tenantId = profile?.tenant_id;
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");

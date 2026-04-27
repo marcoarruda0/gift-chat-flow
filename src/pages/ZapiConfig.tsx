@@ -215,8 +215,35 @@ export default function ZapiConfig() {
     } catch (e: any) {
       toast.error("Erro: " + e.message);
     }
-    setSettingWebhook(false);
   };
+
+  const handleReprocess = async () => {
+    setReprocessing(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/zapi-reprocessar-pendentes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.session?.access_token}`,
+        },
+        body: JSON.stringify({ limit: 20 }),
+      });
+      const result = await res.json();
+      if (result?.error) {
+        toast.error("Erro: " + result.error);
+      } else if (result?.reprocessed === 0) {
+        toast.info("Nenhum evento pendente para reprocessar.");
+      } else {
+        toast.success(
+          `${result.inserted} gravadas, ${result.skipped} ignoradas, ${result.errors} com erro (${result.reprocessed} reprocessadas)`
+        );
+      }
+    } catch (e: any) {
+      toast.error("Erro ao reprocessar: " + e.message);
+    }
+    setReprocessing(false);
 
   const handleDisconnect = async () => {
     setDisconnecting(true);

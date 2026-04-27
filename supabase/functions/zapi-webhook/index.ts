@@ -309,33 +309,40 @@ async function processIncomingPayload(
 function resolveRecipientPhone(
   p: any,
   zapiConfig?: { connected_phone?: string | null } | any,
-): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean } {
+): { raw: string; normalized: string | null; source: "phone" | "chatLid" | "participant" | "connectedPhone" | "none"; isGroup: boolean; isLid: boolean; isBroadcast: boolean } {
   const connected = (zapiConfig?.connected_phone || p?.connectedPhone || "") as string;
   let raw: string = p?.phone || "";
-  let source: "phone" | "chatLid" | "connectedPhone" | "none" = raw ? "phone" : "none";
+  let source: "phone" | "chatLid" | "participant" | "connectedPhone" | "none" = raw ? "phone" : "none";
 
-  if (!raw && p?.chatLid) {
-    raw = p.chatLid;
-    source = "chatLid";
-  }
+  if (!raw && p?.chatLid) { raw = p.chatLid; source = "chatLid"; }
+  if (!raw && p?.participant) { raw = p.participant; source = "participant"; }
 
-  const isGroup = typeof raw === "string" && raw.includes("@g.us");
-  const isLid = typeof raw === "string" && raw.includes("@lid");
+  const rawStr = typeof raw === "string" ? raw : "";
+  const isGroup =
+    rawStr.includes("@g.us") ||
+    rawStr.endsWith("-group") ||
+    p?.isGroup === true;
+  const isLid = rawStr.includes("@lid");
+  const isBroadcast = rawStr.includes("@broadcast");
 
-  if (!raw) {
-    return { raw: "", normalized: null, source: "none", isGroup: false, isLid: false };
-  }
-  if (isGroup) {
-    return { raw, normalized: raw, source, isGroup, isLid };
-  }
+  if (!raw) return { raw: "", normalized: null, source: "none", isGroup: false, isLid: false, isBroadcast: false };
+  if (isBroadcast) return { raw, normalized: null, source, isGroup: false, isLid: false, isBroadcast: true };
+  if (isGroup) return { raw, normalized: rawStr, source, isGroup, isLid, isBroadcast: false };
+
   if (isLid) {
-    // chatLid não é um telefone real; mantemos como identificador
-    return { raw, normalized: null, source: "chatLid", isGroup, isLid };
+    // chatLid não é telefone — tenta usar participant como fallback se for telefone real
+    const participant = (p?.participant || "") as string;
+    if (participant && !participant.includes("@lid") && !participant.includes("@g.us")) {
+      const partDigits = String(participant).replace(/\D/g, "");
+      if (partDigits.length >= 10) {
+        return { raw, normalized: partDigits, source: "participant", isGroup, isLid, isBroadcast: false };
+      }
+    }
+    return { raw, normalized: null, source: "chatLid", isGroup, isLid, isBroadcast: false };
   }
 
   let n = String(raw).replace(/\D/g, "");
   const connectedDigits = (connected || "").replace(/\D/g, "");
-  // BR: connectedPhone padrão é 55 + DDD(2) + número(8/9)
   const tenantDdi = connectedDigits.slice(0, 2) || "55";
   const tenantDdd = connectedDigits.slice(2, 4);
 
@@ -344,7 +351,7 @@ function resolveRecipientPhone(
   } else if (n.length === 10 || n.length === 11) {
     n = tenantDdi + n;
   }
-  return { raw, normalized: n || null, source, isGroup, isLid };
+  return { raw, normalized: n || null, source, isGroup, isLid, isBroadcast: false };
 }
 
 // =====================================================

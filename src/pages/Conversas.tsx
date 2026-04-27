@@ -549,6 +549,46 @@ export default function Conversas() {
     fetchConversas();
   };
 
+  // Copiloto: gerar rascunho
+  const gerarRascunho = useCallback(async (conversaId: string, forcar = false) => {
+    if (!copilotoAtivo || !selected) return;
+    const canalKey = selected.canal === "whatsapp_cloud" ? "whatsapp_cloud" : "whatsapp_zapi";
+    if (copilotoCanais.length > 0 && !copilotoCanais.includes(canalKey)) return;
+    setRascunhoLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ia-gerar-rascunho", {
+        body: { conversa_id: conversaId, forcar },
+      });
+      if (error) throw error;
+      if (data?.skip) return;
+      if (data?.error) { toast.error(data.error); return; }
+      if (data?.id && data?.conteudo) {
+        setRascunho({ id: data.id, conteudo: data.conteudo });
+      }
+    } catch (e: any) {
+      console.warn("rascunho err:", e);
+    } finally {
+      setRascunhoLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copilotoAtivo, copilotoCanais, selected?.canal, selected?.id]);
+
+  const handleDescartarRascunho = async () => {
+    if (!rascunho) return;
+    await supabase.from("ia_rascunhos").update({ status: "descartado" }).eq("id", rascunho.id);
+    setRascunho(null);
+  };
+
+  const handleEnviarRascunho = async (textoFinal: string, original: string) => {
+    if (!rascunho) return;
+    const status = textoFinal.trim() === original.trim() ? "enviado_sem_edicao" : "enviado_com_edicao";
+    await supabase.from("ia_rascunhos").update({ status, conteudo_enviado: textoFinal }).eq("id", rascunho.id);
+    setRascunho(null);
+  };
+
+  // Reset rascunho when switching conversas
+  useEffect(() => { setRascunho(null); }, [selectedId]);
+
   const handlePull = async () => {
     if (!selectedId || !tenantId || !user || !profile) return;
     const senderName = profile.mostrar_apelido && profile.apelido ? profile.apelido : (profile.nome || "Atendente");
@@ -569,6 +609,8 @@ export default function Conversas() {
     setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, atendente_id: user.id } : c));
     fetchConversas();
     toast.success("Conversa puxada com sucesso!");
+    // Trigger copiloto draft after pull
+    if (copilotoAtivo) gerarRascunho(selectedId);
   };
 
   const handleMarkUnread = async () => {

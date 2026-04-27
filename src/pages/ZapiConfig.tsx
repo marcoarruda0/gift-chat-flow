@@ -33,6 +33,7 @@ export default function ZapiConfig() {
   const [settingWebhook, setSettingWebhook] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);

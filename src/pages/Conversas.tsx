@@ -488,7 +488,10 @@ export default function Conversas() {
         const data = isImage
           ? { phone, image: url, caption: "" }
           : { phone, document: url, fileName: file.name };
-        await callZapi(endpoint, "POST", data).catch(() => {});
+        try {
+          const resp = await callZapi(endpoint, "POST", data);
+          await persistZapiMessageId(inserted?.id, resp);
+        } catch { /* offline */ }
       }
     } catch (e) {
       toast.error("Erro ao enviar anexo");

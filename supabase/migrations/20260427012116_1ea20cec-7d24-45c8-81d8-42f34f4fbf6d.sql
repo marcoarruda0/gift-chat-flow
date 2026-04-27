@@ -1,0 +1,2 @@
+DELETE FROM public.contato_campos_config WHERE nome = 'Cliente e Fornecedor';
+UPDATE public.contatos SET campos_personalizados = campos_personalizados - 'cliente_e_fornecedor' WHERE campos_personalizados ? 'cliente_e_fornecedor';

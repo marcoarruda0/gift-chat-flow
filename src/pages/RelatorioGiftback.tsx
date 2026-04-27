@@ -158,7 +158,7 @@ function ComparativoCard({
   );
 }
 
-export default function RelatorioGiftback() {
+export default function RelatorioGiftback({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile, hasRole, loading: authLoading } = useAuth();
   const tenantId = profile?.tenant_id;
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
@@ -225,7 +225,7 @@ export default function RelatorioGiftback() {
   });
 
   if (authLoading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin && !embedded) return <Navigate to="/" replace />;
 
   const faturamentoChartData =
     data?.faturamento_mensal?.map((m) => ({
@@ -249,14 +249,16 @@ export default function RelatorioGiftback() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Relatórios — Giftback</h1>
-          <p className="text-sm text-muted-foreground">
-            Visão de gestão das vendas e do impacto do CRM Connect.
-          </p>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Relatórios — Giftback</h1>
+            <p className="text-sm text-muted-foreground">
+              Visão de gestão das vendas e do impacto do CRM Connect.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Filtros */}
       <Card>

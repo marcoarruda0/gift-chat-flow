@@ -51,7 +51,7 @@ function MetricCard({ title, value, icon: Icon, loading }: {
   );
 }
 
-export default function RelatorioAtendimento() {
+export default function RelatorioAtendimento({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile, hasRole, loading: authLoading } = useAuth();
   const tenantId = profile?.tenant_id;
   const isAdmin = hasRole("admin_tenant") || hasRole("admin_master");
@@ -164,14 +164,16 @@ export default function RelatorioAtendimento() {
   }, [conversas, atendentesMap]);
 
   if (authLoading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin && !embedded) return <Navigate to="/" replace />;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Relatório de Atendimento</h1>
-        <p className="text-muted-foreground">Tempo médio, espera e desempenho por atendente</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold">Relatório de Atendimento</h1>
+          <p className="text-muted-foreground">Tempo médio, espera e desempenho por atendente</p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <Select value={periodo} onValueChange={(v) => setPeriodo(v as any)}>

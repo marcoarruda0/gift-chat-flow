@@ -194,11 +194,20 @@ export default function Contatos() {
 
   const exportCSV = () => {
     if (!contatos?.length) return;
-    const headers = ["Nome", "Telefone", "CPF", "Email", "Tags", "Saldo Giftback"];
-    const rows = contatos.map((c) => [
-      c.nome, c.telefone || "", c.cpf || "", c.email || "",
-      (c.tags || []).join(";"), c.saldo_giftback?.toString() || "0",
-    ]);
+    const headers = ["Nome", "Telefone", "CPF", "Email", "Cliente", "Fornecedor", "Tags", "Saldo Giftback"];
+    const rows = contatos.map((c: any) => {
+      const cp = c.campos_personalizados || {};
+      return [
+        c.nome,
+        c.telefone || "",
+        c.cpf || "",
+        c.email || "",
+        cp.cliente === true ? "S" : "N",
+        cp.fornecedor === true ? "S" : "N",
+        (c.tags || []).join(";"),
+        c.saldo_giftback?.toString() || "0",
+      ];
+    });
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -320,6 +329,8 @@ export default function Contatos() {
               <TableHead>Nome</TableHead>
               <TableHead className="hidden sm:table-cell">Telefone</TableHead>
               <TableHead className="hidden md:table-cell">CPF</TableHead>
+              <TableHead className="hidden md:table-cell">Cliente</TableHead>
+              <TableHead className="hidden md:table-cell">Fornecedor</TableHead>
               <TableHead className="hidden lg:table-cell">Tags</TableHead>
               <TableHead>RFV</TableHead>
               <TableHead>Saldo GB</TableHead>
@@ -330,26 +341,40 @@ export default function Contatos() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : !contatos?.length ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   Nenhum contato encontrado. Clique em "Novo Contato" para começar.
                 </TableCell>
               </TableRow>
             ) : (
-              contatos.map((c) => (
+              contatos.map((c: any) => {
+                const cp = c.campos_personalizados || {};
+                const isCliente = cp.cliente === true;
+                const isFornecedor = cp.fornecedor === true;
+                return (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.nome}</TableCell>
                   <TableCell className="hidden sm:table-cell">{c.telefone || "—"}</TableCell>
                   <TableCell className="hidden md:table-cell">{c.cpf || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant={isCliente ? "default" : "secondary"} className="text-xs">
+                      {isCliente ? "S" : "N"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant={isFornecedor ? "default" : "secondary"} className="text-xs">
+                      {isFornecedor ? "S" : "N"}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <div className="flex gap-1 flex-wrap">
-                      {(c.tags || []).map((tag) => (
+                      {(c.tags || []).map((tag: string) => (
                         <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
                       ))}
                     </div>
@@ -388,7 +413,8 @@ export default function Contatos() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>

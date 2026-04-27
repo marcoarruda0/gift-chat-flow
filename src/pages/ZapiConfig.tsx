@@ -351,6 +351,10 @@ export default function ZapiConfig() {
               {settingWebhook ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Webhook className="h-4 w-4 mr-1" />}
               Configurar Webhook
             </Button>
+            <Button variant="outline" onClick={handleReprocess} disabled={reprocessing || !existingId} title="Reprocessa eventos do webhook que falharam ou ficaram pendentes">
+              {reprocessing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
+              Reprocessar pendentes
+            </Button>
           </div>
 
           {/* Reconnect / Disconnect buttons */}

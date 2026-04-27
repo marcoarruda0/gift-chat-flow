@@ -75,17 +75,25 @@ Deno.serve(async (req) => {
       const isFromMe = payload.fromMe === true;
       const rawPhone = payload.phone || "";
       const isGroup = payload.isGroup === true || rawPhone.includes("@g.us");
+      // Para mensagens enviadas (fromMe), `phone` da Z-API é o destinatário.
       const phone = isGroup ? rawPhone : rawPhone.replace(/\D/g, "");
       const groupName = payload.chatName || "Grupo";
       const senderName = payload.senderName || payload.chatName || phone;
       const contactName = isGroup ? groupName : senderName;
       const zapiMessageId = payload.messageId || payload.id?.id || null;
 
-      if (isFromMe) {
-        console.log(`📤 Outbound webhook: phone=${phone} msgId=${zapiMessageId} content="${(messageText || "").slice(0, 60)}"`);
+      console.log(
+        `[zapi-wh] msg dir=${isFromMe ? "out" : "in"} phone=${phone} group=${isGroup} type=${messageType} msgId=${zapiMessageId} text="${(messageText || "").slice(0, 80)}"`,
+      );
+
+      if (!phone) {
+        console.warn("[zapi-wh] ignored: empty phone after normalization", { rawPhone });
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      // Deduplication: check if message already exists by messageId
+      // Deduplication by messageId
       if (zapiMessageId) {
         const { data: existing } = await supabase
           .from("mensagens")
@@ -95,36 +103,58 @@ Deno.serve(async (req) => {
           .limit(1);
 
         if (existing && existing.length > 0) {
-          console.log("Duplicate message, skipping:", zapiMessageId);
+          console.log("[zapi-wh] duplicate, skipping:", zapiMessageId);
           return new Response(JSON.stringify({ ok: true }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
 
-      // Find or create contact
+      // Echo de mensagem enviada pela própria UI (sem messageId ainda).
+      // Casa pelo conteúdo + janela curta de 2 min e, se achar, anexa o
+      // messageId no registro existente em vez de duplicar.
+      if (isFromMe && messageContent && zapiMessageId) {
+        const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { data: recent } = await supabase
+          .from("mensagens")
+          .select("id, metadata")
+          .eq("tenant_id", tenantId)
+          .eq("remetente", "atendente")
+          .eq("conteudo", messageContent)
+          .gte("created_at", cutoff)
+          .limit(5);
+        const match = (recent || []).find((m: any) => !m.metadata?.messageId);
+        if (match) {
+          await supabase
+            .from("mensagens")
+            .update({ metadata: { ...(match.metadata || {}), messageId: zapiMessageId, fromMe: true } })
+            .eq("id", match.id);
+          console.log("[zapi-wh] outbound echo matched UI message, attaching messageId");
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       const contato = await findOrCreateContact(supabase, tenantId, phone, contactName);
       if (!contato) {
-        console.error("Could not find/create contact");
+        console.error("[zapi-wh] could not find/create contact", { phone, contactName });
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Find or create conversation
       const conversa = await findOrCreateConversa(supabase, tenantId, contato.id);
       if (!conversa) {
-        console.error("Could not find/create conversation");
+        console.error("[zapi-wh] could not find/create conversation", { contatoId: contato.id });
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Determine remetente based on fromMe
       const remetente = isFromMe ? "atendente" : "contato";
 
-      // Insert message
-      await supabase.from("mensagens").insert({
+      const { error: insertErr } = await supabase.from("mensagens").insert({
         conversa_id: conversa.id,
         tenant_id: tenantId,
         conteudo: messageContent,
@@ -134,8 +164,12 @@ Deno.serve(async (req) => {
           senderName: payload.senderName || payload.chatName || null,
           senderAvatar: payload.senderPhoto || payload.photo || null,
           messageId: zapiMessageId,
+          fromMe: isFromMe,
         },
       });
+      if (insertErr) {
+        console.error("[zapi-wh] insert mensagens failed:", insertErr);
+      }
 
       // Update conversation
       const previewText = isGroup ? `${senderName}: ${messageText}`.slice(0, 100) : messageText;

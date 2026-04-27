@@ -58,6 +58,12 @@ export default function Conversas() {
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});
 
+  // Copiloto state
+  const [copilotoAtivo, setCopilotoAtivo] = useState(false);
+  const [copilotoCanais, setCopilotoCanais] = useState<string[]>([]);
+  const [rascunho, setRascunho] = useState<{ id: string; conteudo: string } | null>(null);
+  const [rascunhoLoading, setRascunhoLoading] = useState(false);
+
   const tenantId = profile?.tenant_id;
 
   // Fetch departamentos and profiles for lookup

@@ -244,6 +244,7 @@ export default function ZapiConfig() {
       toast.error("Erro ao reprocessar: " + e.message);
     }
     setReprocessing(false);
+  };
 
   const handleDisconnect = async () => {
     setDisconnecting(true);

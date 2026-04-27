@@ -1167,11 +1167,47 @@ function parseMessageContent(payload: any) {
   let messageType = "texto";
   let messageContent: string | null = null;
 
-  if (payload.text?.message) {
-    messageText = payload.text.message;
+  // ---- TEXT (cobre formatos diferentes vistos em mensagens enviadas vs recebidas)
+  // payload.text.message (recebida padrão)
+  // payload.text.body / payload.text (string)
+  // payload.message (string)
+  // payload.body / payload.conversation
+  // payload.extendedTextMessage.text (formato bruto WA)
+  if (payload?.text && typeof payload.text === "object") {
+    messageText =
+      payload.text.message ??
+      payload.text.body ??
+      payload.text.text ??
+      payload.text.caption ??
+      null;
+  } else if (typeof payload?.text === "string") {
+    messageText = payload.text;
+  }
+
+  if (!messageText && typeof payload?.message === "string") {
+    messageText = payload.message;
+  }
+  if (!messageText && typeof payload?.body === "string") {
+    messageText = payload.body;
+  }
+  if (!messageText && typeof payload?.conversation === "string") {
+    messageText = payload.conversation;
+  }
+  if (!messageText && payload?.extendedTextMessage?.text) {
+    messageText = payload.extendedTextMessage.text;
+  }
+  if (!messageText && payload?.notifyName && payload?.caption) {
+    // raw WA caption fallback
+    messageText = payload.caption;
+  }
+
+  if (messageText) {
     messageType = "texto";
-    messageContent = payload.text.message;
-  } else if (payload.image) {
+    messageContent = messageText;
+    return { messageType, messageContent, messageText };
+  }
+
+  if (payload.image) {
     messageType = "imagem";
     messageContent = payload.image.imageUrl || payload.image.thumbnailUrl || "";
     messageText = payload.image.caption || "📷 Imagem";

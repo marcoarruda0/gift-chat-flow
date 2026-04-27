@@ -1,60 +1,55 @@
-# Diagnóstico — por que "virou cobaia haha" não apareceu
+## Diagnóstico
 
-Olhei o banco e os logs do `zapi-webhook` agora há pouco:
-
-- **Conversa do Felipe (`555198858566`)** existe (`ed705ba3-...`) e a última mensagem registrada é a sua resposta de **01:56 enviada pela UI do sistema** ("Nossa, total! A burocracia trava muito..."). Nada depois disso.
-- **Logs do webhook após você reconfigurar (01:58)**: chegou apenas **1 evento** — uma mensagem **recebida** de um grupo da Vanessa (`fromMe:false`). Nenhum evento com `fromMe:true` chegou.
-- **Config Z-API**: instância `3F174F6075A7F1A816049ED390C0144C` está conectada, `webhook_url` está salvo corretamente apontando pro `zapi-webhook`.
-
-Conclusão: **o webhook de mensagens enviadas pelo celular nunca foi registrado na Z-API**, então a Z-API não está mandando essas mensagens pra gente — por isso "virou cobaia haha" não chegou.
-
-## A causa do bug
-
-Na entrega anterior eu **disse** que o botão "Configurar Webhook" passaria a registrar também o endpoint `update-webhook-message-send`, mas no código real (`src/pages/ZapiConfig.tsx`, linha 159) a função `handleSetWebhook` **continua chamando apenas `update-webhook-received`**:
+Vendo os logs do `zapi-proxy`, **as 3 chamadas voltaram HTTP 200** — ou seja, a Z-API aceitou todas. O problema é só na **nossa lógica de detecção de sucesso** no front:
 
 ```ts
-const result = await callProxy("update-webhook-received", "PUT", { value: webhookUrl });
-// FALTOU: chamada para "update-webhook-message-send"
+const ok = r.status === "fulfilled" && (r.value?.value || r.value?.webhook || r.value?.success || !r.value?.error);
 ```
 
-Foi alteração documentada que não foi aplicada no código. Quando você clicou em "Configurar Webhook" novamente, só re-registrou o endpoint de mensagens **recebidas**.
+A resposta do `update-webhook-message-send` provavelmente vem em outro formato (ex.: `{ updated: true }` ou body vazio `{}`), então caímos no `else` e marcamos como falha — apesar do webhook ter sido registrado de fato.
 
-# Plano de correção
+Além disso, descobri na doc da Z-API que existe um endpoint **muito melhor**: **`update-every-webhooks`** ([doc oficial](https://developer.z-api.io/webhooks/update-every-webhooks)) — uma única chamada `PUT` que registra **todos** os webhooks (recebida, enviada por mim, status de entrega, presença, conexão, etc.) para a mesma URL. Resolve o problema de raiz.
 
-## 1. `src/pages/ZapiConfig.tsx` — registrar os 3 endpoints relevantes
+## Plano de correção
 
-Refatorar `handleSetWebhook` para chamar em sequência os três endpoints da Z-API que apontam pro mesmo `zapi-webhook`:
+### 1. `src/pages/ZapiConfig.tsx` — usar `update-every-webhooks`
 
-| Endpoint Z-API | O que captura |
-|---|---|
-| `update-webhook-received` | Mensagens **recebidas** (clientes te mandando) |
-| `update-webhook-message-send` | Mensagens **enviadas pelo seu celular / WhatsApp Web** ← faltando |
-| `update-webhook-delivery` *(opcional, recomendado)* | Confirmação de entrega/leitura, melhora os ticks |
+Substituir as 3 chamadas separadas por **uma única**:
 
-Lógica:
-- Disparar as três chamadas (Promise.allSettled para não falhar tudo se uma der erro).
-- Mostrar toast com resumo: `"3/3 webhooks configurados"` ou `"2/3 — falha em: message-send"`.
-- Persistir `webhook_url` no banco apenas se pelo menos `received` e `message-send` tiverem sucesso.
-- Se a Z-API exigir formato diferente (ex.: `enabled: true` no payload), fazer fallback testando alternativas.
-
-## 2. `supabase/functions/zapi-webhook/index.ts` — só uma melhoria de log
-
-Acrescentar log explícito quando chegar evento `fromMe:true` para facilitar debug futuro:
 ```ts
-if (payload.fromMe) console.log(`📤 Outbound webhook: phone=${phone} content="${messageText?.slice(0,40)}"`);
+const result = await callProxy("update-every-webhooks", "PUT", { value: webhookUrl });
 ```
-A lógica de dedup secundária (já implementada na entrega anterior) continua válida — ela vai casar a mensagem ecoada com a que você digitar no celular.
 
-## 3. Validação após deploy
+Lógica nova:
+- Considerar sucesso se a resposta **não tiver `error`** (status 200 do proxy + payload sem campo de erro).
+- Manter fallback: se `update-every-webhooks` falhar, tentar individualmente os 3 endpoints como hoje, mas com **detecção de sucesso baseada em status HTTP** (não no shape do JSON).
+- Persistir `webhook_url` no banco assim que `update-every-webhooks` der OK.
+- Toast: `"✅ Todos os webhooks configurados (recebidas, enviadas e entregas)"`.
 
-Depois de aplicar:
-1. Você clica em "Configurar Webhook" mais uma vez (agora vai registrar os 3).
-2. Manda outra mensagem do celular para qualquer contato.
-3. Eu verifico os logs e o banco para confirmar que a mensagem entrou com `remetente=atendente`.
+### 2. `supabase/functions/zapi-proxy/index.ts` — devolver status HTTP real
 
-## Sobre a "virou cobaia haha"
-Mensagens enviadas **antes** do webhook `message-send` estar registrado **não podem ser recuperadas** — a Z-API não guarda histórico de eventos não entregues. A partir do fix, todas as próximas serão capturadas.
+Hoje o proxy devolve só o JSON da Z-API. Vou incluir o status HTTP no payload retornado para o front conseguir distinguir 200 de 4xx mesmo quando o body for vazio:
+
+```ts
+return new Response(
+  JSON.stringify({ _httpStatus: zapiResponse.status, ...responseData }),
+  { status: zapiResponse.status, ... }
+);
+```
+
+Isso permite que o front faça `result._httpStatus >= 200 && result._httpStatus < 300` como critério confiável de sucesso, em vez de adivinhar pelo shape do JSON.
+
+### 3. Validação após deploy
+
+1. Você clica em "Configurar Webhook" novamente.
+2. Toast esperado: ✅ Todos os webhooks configurados.
+3. Manda outra mensagem do celular para o Felipe (algo como "teste depois do fix").
+4. Confirmo nos logs do `zapi-webhook` que chegou um evento com `fromMe:true` e que ele entrou na conversa com `remetente=atendente`.
 
 ## Arquivos afetados
 - `src/pages/ZapiConfig.tsx` (refatorar `handleSetWebhook`)
-- `supabase/functions/zapi-webhook/index.ts` (log adicional, deploy)
+- `supabase/functions/zapi-proxy/index.ts` (incluir `_httpStatus` na resposta)
+
+## O que **não** muda
+- A mensagem "virou cobaia haha" continua perdida — Z-API não guarda eventos de webhooks não registrados na época do envio.
+- A lógica de dedup do `zapi-webhook` (que casa mensagens echoadas com as enviadas pela UI) continua válida e já está deployada.

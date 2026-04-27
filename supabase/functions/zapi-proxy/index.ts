@@ -100,9 +100,22 @@ Deno.serve(async (req) => {
     }
 
     const zapiResponse = await fetch(zapiUrl, fetchOptions);
-    const responseData = await zapiResponse.json();
+    const rawText = await zapiResponse.text();
+    let responseData: any = {};
+    try {
+      responseData = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      responseData = { _raw: rawText };
+    }
 
-    return new Response(JSON.stringify(responseData), {
+    // Inject HTTP status so the front can reliably detect success
+    // even when the Z-API returns an empty body (common on PUT updates).
+    const payload =
+      responseData && typeof responseData === "object" && !Array.isArray(responseData)
+        ? { _httpStatus: zapiResponse.status, ...responseData }
+        : { _httpStatus: zapiResponse.status, data: responseData };
+
+    return new Response(JSON.stringify(payload), {
       status: zapiResponse.status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

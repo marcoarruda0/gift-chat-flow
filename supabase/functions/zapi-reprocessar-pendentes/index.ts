@@ -78,6 +78,13 @@ Deno.serve(async (req) => {
         if (action === "inserted" || action === "echo_attached") inserted++;
         else if (result?.ok) skipped++;
         else errors++;
+        // marca o evento original como processado para não voltar à fila
+        await supabase.from("zapi_webhook_eventos").update({
+          processed: true,
+          processed_at: new Date().toISOString(),
+          resultado: result,
+          error_msg: result?.error || null,
+        }).eq("id", ev.id);
         details.push({ id: ev.id, status: r.status, ...result });
       } catch (e: any) {
         errors++;

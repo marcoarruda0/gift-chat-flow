@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.enviar-teste-comunicacao-giftback]
 verify_jwt = true
+
+[functions.zapi-webhook]
+verify_jwt = false

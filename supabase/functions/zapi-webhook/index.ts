@@ -15,12 +15,13 @@ Deno.serve(async (req) => {
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
 
+  let eventoId: string | null = null;
+  let supabaseRef: any = null;
+  let tenantIdRef: string | null = null;
   try {
     const payload = await req.json();
     console.log("Webhook received:", JSON.stringify(payload).slice(0, 800));
 
-    // Structured diagnostic log — always print key fields so we can see exactly
-    // what Z-API is sending for outbound (fromMe:true) events.
     try {
       console.log("[zapi-wh] meta", JSON.stringify({
         type: payload?.type ?? null,
@@ -33,16 +34,14 @@ Deno.serve(async (req) => {
         messageId: payload?.messageId ?? payload?.id?.id ?? null,
         isGroup: payload?.isGroup ?? null,
         topKeys: payload && typeof payload === "object" ? Object.keys(payload) : [],
-        textKeys: payload?.text && typeof payload.text === "object" ? Object.keys(payload.text) : null,
       }));
-    } catch (_) {
-      // never break the webhook because of logging
-    }
+    } catch (_) {}
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+    supabaseRef = supabase;
 
     const instanceId = payload.instanceId;
     if (!instanceId) {
@@ -60,12 +59,73 @@ Deno.serve(async (req) => {
 
     if (!zapiConfig) {
       console.log("No tenant found for instanceId:", instanceId);
+      // grava mesmo assim (sem tenant) para auditoria
+      await supabase.from("zapi_webhook_eventos").insert({
+        instance_id: instanceId, payload, processed: false, error_msg: "no_tenant_for_instance",
+      });
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const tenantId = zapiConfig.tenant_id;
+    tenantIdRef = tenantId;
+
+    // Persiste evento bruto para permitir reprocessamento posterior
+    try {
+      const { data: ev } = await supabase
+        .from("zapi_webhook_eventos")
+        .insert({ tenant_id: tenantId, instance_id: instanceId, payload, processed: false })
+        .select("id")
+        .maybeSingle();
+      eventoId = ev?.id || null;
+    } catch (logErr) {
+      console.warn("[zapi-wh] failed to persist raw event:", logErr);
+    }
+
+    const result = await processIncomingPayload(supabase, zapiConfig, payload);
+
+    if (eventoId) {
+      await supabase
+        .from("zapi_webhook_eventos")
+        .update({
+          processed: true,
+          processed_at: new Date().toISOString(),
+          resultado: result,
+          error_msg: result?.error || null,
+        })
+        .eq("id", eventoId);
+    }
+
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    if (supabaseRef && eventoId) {
+      try {
+        await supabaseRef.from("zapi_webhook_eventos").update({
+          processed: false,
+          error_msg: String((error as any)?.message || error),
+        }).eq("id", eventoId);
+      } catch {}
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+// ===========================================================================
+// Helper compartilhado — extraído para permitir reprocessamento via outra fn
+// ===========================================================================
+export async function processIncomingPayload(
+  supabase: any,
+  zapiConfig: any,
+  payload: any,
+): Promise<{ ok: boolean; action?: string; mensagemId?: string; conversaId?: string; error?: string }> {
+  const tenantId = zapiConfig.tenant_id;
 
     // Detect message type and content
     const { messageType, messageContent, messageText } = parseMessageContent(payload);

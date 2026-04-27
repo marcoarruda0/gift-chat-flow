@@ -160,7 +160,17 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
             </div>
           </div>
         ) : (
-          <ChatInput onSend={onSend} onSendAudio={onSendAudio} onSendAttachment={onSendAttachment} />
+          <ChatInput
+            onSend={onSend}
+            onSendAudio={onSendAudio}
+            onSendAttachment={onSendAttachment}
+            rascunho={rascunho}
+            copilotoAtivo={copilotoAtivo}
+            onDescartarRascunho={onDescartarRascunho}
+            onSugerirRascunho={onSugerirRascunho}
+            rascunhoLoading={rascunhoLoading}
+            onEnviarRascunho={onEnviarRascunho}
+          />
         )
       ) : (
         <div className="px-4 py-4 border-t border-border bg-muted/50">

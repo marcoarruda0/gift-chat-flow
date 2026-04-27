@@ -551,9 +551,6 @@ export default function Conversas() {
 
   // Copiloto: gerar rascunho
   const gerarRascunho = useCallback(async (conversaId: string, forcar = false) => {
-    if (!copilotoAtivo || !selected) return;
-    const canalKey = selected.canal === "whatsapp_cloud" ? "whatsapp_cloud" : "whatsapp_zapi";
-    if (copilotoCanais.length > 0 && !copilotoCanais.includes(canalKey)) return;
     setRascunhoLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("ia-gerar-rascunho", {
@@ -570,8 +567,7 @@ export default function Conversas() {
     } finally {
       setRascunhoLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [copilotoAtivo, copilotoCanais, selected?.canal, selected?.id]);
+  }, []);
 
   const handleDescartarRascunho = async () => {
     if (!rascunho) return;

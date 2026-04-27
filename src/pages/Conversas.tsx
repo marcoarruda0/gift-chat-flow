@@ -379,10 +379,23 @@ export default function Conversas() {
       // Send via Z-API
       try {
         const zapiMessage = senderName ? `*${senderName}:*\n${text}` : text;
-        await callZapi("send-text", "POST", {
+        const res = await callZapi("send-text", "POST", {
           phone: formatPhone(selected.contato_telefone),
           message: zapiMessage,
         });
+        // Persist Z-API messageId so the webhook echo can dedupe by metadata.messageId
+        try {
+          const json = await res.json();
+          const zapiMsgId = json?.messageId || json?.id || null;
+          if (zapiMsgId && inserted?.id) {
+            await supabase
+              .from("mensagens")
+              .update({ metadata: { ...metadata, messageId: zapiMsgId } })
+              .eq("id", inserted.id);
+          }
+        } catch {
+          // ignore parse errors — message is still saved locally
+        }
       } catch (e) {
         console.warn("Z-API send failed (offline?):", e);
       }

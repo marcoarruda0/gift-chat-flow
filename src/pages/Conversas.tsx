@@ -430,10 +430,13 @@ export default function Conversas() {
           toast.error("Erro ao enviar áudio via WhatsApp Oficial");
         }
       } else if (selected?.contato_telefone) {
-        await callZapi("send-audio", "POST", {
-          phone: formatPhone(selected.contato_telefone),
-          audio: url,
-        }).catch(() => {});
+        try {
+          const resp = await callZapi("send-audio", "POST", {
+            phone: formatPhone(selected.contato_telefone),
+            audio: url,
+          });
+          await persistZapiMessageId(inserted?.id, resp);
+        } catch { /* offline */ }
       }
     } catch (e) {
       toast.error("Erro ao enviar áudio");

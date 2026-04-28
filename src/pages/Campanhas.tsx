@@ -505,6 +505,15 @@ export default function Campanhas() {
     fetchCampanhas();
   }
 
+  async function cancelarAgendamento(campanhaId: string) {
+    await supabase
+      .from("campanhas")
+      .update({ status: "rascunho" as any, agendada_para: null })
+      .eq("id", campanhaId);
+    toast({ title: "Agendamento cancelado", description: "Campanha voltou para rascunho." });
+    fetchCampanhas();
+  }
+
   async function atualizarGrupoCampanha(campanhaId: string, novoGrupoId: string | null) {
     const { error } = await (supabase as any)
       .from("campanhas")

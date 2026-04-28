@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2 } from "lucide-react";
+import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const CANAIS = [
@@ -54,6 +54,12 @@ export default function IAConfig() {
   // Copiloto
   const [copilotoAtivo, setCopilotoAtivo] = useState(false);
   const [copilotoCanais, setCopilotoCanais] = useState<string[]>(["whatsapp_zapi", "whatsapp_cloud"]);
+
+  // Satisfação
+  const [satisfacaoAtivo, setSatisfacaoAtivo] = useState(false);
+  const [satisfacaoCriterios, setSatisfacaoCriterios] = useState("");
+  const [satisfacaoMinMsgs, setSatisfacaoMinMsgs] = useState(2);
+  const [reanalisando, setReanalisando] = useState(false);
 
   // Análise
   const [ultimaAnaliseEm, setUltimaAnaliseEm] = useState<string | null>(null);
@@ -95,6 +101,9 @@ export default function IAConfig() {
         );
         setUltimaAnaliseEm(data.ultima_analise_em ?? null);
         if (data.ultima_analise_resumo) setResumoAnalise(data.ultima_analise_resumo);
+        setSatisfacaoAtivo((data as any).satisfacao_ativo ?? false);
+        setSatisfacaoCriterios((data as any).satisfacao_criterios ?? "");
+        setSatisfacaoMinMsgs((data as any).satisfacao_min_mensagens_cliente ?? 2);
       }
 
       const { data: analises } = await supabase
@@ -122,6 +131,9 @@ export default function IAConfig() {
         ativo,
         copiloto_ativo: copilotoAtivo,
         copiloto_canais: copilotoCanais,
+        satisfacao_ativo: satisfacaoAtivo,
+        satisfacao_criterios: satisfacaoCriterios,
+        satisfacao_min_mensagens_cliente: satisfacaoMinMsgs,
       };
 
       if (configId) {

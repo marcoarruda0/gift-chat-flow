@@ -296,6 +296,8 @@ export default function IAConfig() {
       setReanalisando(false);
     }
   };
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
         <p className="text-muted-foreground">Carregando...</p>

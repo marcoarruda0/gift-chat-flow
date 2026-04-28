@@ -350,6 +350,8 @@ export type Database = {
           id: string
           nome: string
           notas: string | null
+          opt_out_at: string | null
+          opt_out_whatsapp: boolean
           rfv_calculado_em: string | null
           rfv_frequencia: number | null
           rfv_recencia: number | null
@@ -373,6 +375,8 @@ export type Database = {
           id?: string
           nome: string
           notas?: string | null
+          opt_out_at?: string | null
+          opt_out_whatsapp?: boolean
           rfv_calculado_em?: string | null
           rfv_frequencia?: number | null
           rfv_recencia?: number | null
@@ -396,6 +400,8 @@ export type Database = {
           id?: string
           nome?: string
           notas?: string | null
+          opt_out_at?: string | null
+          opt_out_whatsapp?: boolean
           rfv_calculado_em?: string | null
           rfv_frequencia?: number | null
           rfv_recencia?: number | null
@@ -1237,6 +1243,36 @@ export type Database = {
         }
         Relationships: []
       }
+      lgpd_config: {
+        Row: {
+          created_at: string
+          id: string
+          incluir_link_automatico: boolean
+          politica_privacidade_url: string | null
+          tenant_id: string
+          texto_descadastro: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          incluir_link_automatico?: boolean
+          politica_privacidade_url?: string | null
+          tenant_id: string
+          texto_descadastro?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          incluir_link_automatico?: boolean
+          politica_privacidade_url?: string | null
+          tenant_id?: string
+          texto_descadastro?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       mensagens: {
         Row: {
           conteudo: string
@@ -1290,6 +1326,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      optout_tokens: {
+        Row: {
+          campanha_id: string | null
+          contato_id: string
+          created_at: string
+          id: string
+          tenant_id: string
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          campanha_id?: string | null
+          contato_id: string
+          created_at?: string
+          id?: string
+          tenant_id: string
+          token?: string
+          used_at?: string | null
+        }
+        Update: {
+          campanha_id?: string | null
+          contato_id?: string
+          created_at?: string
+          id?: string
+          tenant_id?: string
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: []
       }
       pinoquio_config: {
         Row: {
@@ -1894,6 +1960,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      contato_timeline: {
+        Args: { p_contato_id: string; p_limit?: number }
+        Returns: Json
+      }
       distribuir_atendente: {
         Args: { p_departamento_id: string; p_tenant_id: string }
         Returns: string
@@ -1921,7 +1991,7 @@ export type Database = {
         | "enviando"
         | "concluida"
         | "cancelada"
-      destinatario_status: "pendente" | "enviado" | "falha"
+      destinatario_status: "pendente" | "enviado" | "falha" | "optout"
       gb_gatilho_tipo: "criado" | "vencendo" | "expirado"
       giftback_status: "ativo" | "usado" | "expirado" | "inativo"
       giftback_tipo: "credito" | "debito" | "expiracao"
@@ -2065,7 +2135,7 @@ export const Constants = {
         "concluida",
         "cancelada",
       ],
-      destinatario_status: ["pendente", "enviado", "falha"],
+      destinatario_status: ["pendente", "enviado", "falha", "optout"],
       gb_gatilho_tipo: ["criado", "vencendo", "expirado"],
       giftback_status: ["ativo", "usado", "expirado", "inativo"],
       giftback_tipo: ["credito", "debito", "expiracao"],

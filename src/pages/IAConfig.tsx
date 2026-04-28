@@ -281,7 +281,21 @@ export default function IAConfig() {
     }
   };
 
-  if (loading) {
+  const handleReanalisar = async () => {
+    if (!tenantId) return;
+    setReanalisando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("analisar-satisfacao", {
+        body: { reanalise_tenant_id: tenantId, dias: 30 },
+      });
+      if (error) throw error;
+      toast.success(`${data?.enfileirados ?? 0} atendimentos enfileirados para análise.`);
+    } catch (err: any) {
+      toast.error("Erro ao enfileirar: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setReanalisando(false);
+    }
+  };
     return (
       <div className="flex items-center justify-center p-8">
         <p className="text-muted-foreground">Carregando...</p>

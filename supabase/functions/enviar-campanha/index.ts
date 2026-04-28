@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
     // Fetch ONE pending recipient
     const { data: destinatarios } = await serviceClient
       .from("campanha_destinatarios")
-      .select("*, contatos:contato_id(nome)")
+      .select("*, contatos:contato_id(nome, opt_out_whatsapp)")
       .eq("campanha_id", campanha_id)
       .eq("status", "pendente")
       .limit(1);
@@ -215,16 +215,52 @@ Deno.serve(async (req) => {
     }
 
     const dest = destinatarios[0];
+    const contatoRow = (dest.contatos as any) || {};
+
+    // Pular opt-out
+    if (contatoRow.opt_out_whatsapp) {
+      await serviceClient
+        .from("campanha_destinatarios")
+        .update({ status: "optout", erro: "Contato descadastrado (opt-out)" })
+        .eq("id", dest.id);
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha`;
+      fetch(functionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ campanha_id, internal: true, remaining_delay_ms: 0 }),
+      }).catch(() => {});
+      return new Response(JSON.stringify({ message: "Skipped opt-out" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let enviados = campanha.total_enviados || 0;
     let falhas = campanha.total_falhas || 0;
     const tipoMidia = campanha.tipo_midia || "texto";
     const midiaUrl = campanha.midia_url || null;
 
     try {
-      const nome = (dest.contatos as any)?.nome || "";
+      const nome = contatoRow.nome || "";
+
+      // Gera opt_out_url se template usar {opt_out_url}
+      let optOutUrl = "";
+      if (/\{opt_out_url\}/i.test(campanha.mensagem || "")) {
+        const { data: tk } = await serviceClient
+          .from("optout_tokens")
+          .insert({ tenant_id: campanha.tenant_id, contato_id: dest.contato_id, campanha_id })
+          .select("token")
+          .single();
+        if (tk?.token) {
+          optOutUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/optout-publica?token=${tk.token}`;
+        }
+      }
+
       const mensagemFinal = campanha.mensagem
         .replace(/\{nome\}/gi, nome)
-        .replace(/\{telefone\}/gi, dest.telefone);
+        .replace(/\{telefone\}/gi, dest.telefone)
+        .replace(/\{opt_out_url\}/gi, optOutUrl);
 
       const phone = dest.telefone.replace(/\D/g, "");
 

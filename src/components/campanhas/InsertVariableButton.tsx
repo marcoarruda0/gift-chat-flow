@@ -15,6 +15,7 @@ export const VARIAVEIS_DISPONIVEIS = [
   { token: "{email}", label: "E-mail do contato" },
   { token: "{telefone}", label: "Telefone do contato" },
   { token: "{empresa}", label: "Nome da sua empresa" },
+  { token: "{opt_out_url}", label: "Link de descadastro (LGPD)" },
 ] as const;
 
 interface InsertVariableButtonProps {

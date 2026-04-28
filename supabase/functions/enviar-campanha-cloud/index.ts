@@ -25,6 +25,7 @@ function resolveVariable(template: string, contato: any): string {
     email: contato?.email || "",
     cpf: contato?.cpf || "",
     endereco: contato?.endereco || "",
+    opt_out_url: contato?.opt_out_url || "",
   };
   for (const [k, v] of Object.entries(replacements)) {
     out = out.replace(new RegExp(`\\{${k}\\}`, "gi"), v);
@@ -279,11 +280,52 @@ Deno.serve(async (req) => {
 
     const dest = destinatarios[0];
     const contato = dest.contatos as any;
+
+    // Pular contatos com opt-out: marca como 'optout' e segue
+    if (contato?.opt_out_whatsapp) {
+      await serviceClient
+        .from("campanha_destinatarios")
+        .update({ status: "optout", erro: "Contato descadastrado (opt-out)" })
+        .eq("id", dest.id);
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const functionUrl = `${supabaseUrl}/functions/v1/enviar-campanha-cloud`;
+      fetch(functionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ campanha_id, internal: true, remaining_delay_ms: 0 }),
+      }).catch(() => {});
+      return new Response(JSON.stringify({ message: "Skipped opt-out" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let enviados = campanha.total_enviados || 0;
     let falhas = campanha.total_falhas || 0;
 
-    const variaveis = (campanha.template_variaveis || {}) as Record<string, string>;
+    const variaveis = { ...(campanha.template_variaveis || {}) } as Record<string, string>;
     const templateComponents = (campanha.template_components || []) as any[];
+
+    // Gerar opt_out_url (token único por destinatário)
+    let optOutUrl = "";
+    try {
+      const { data: tk } = await serviceClient
+        .from("optout_tokens")
+        .insert({ tenant_id: campanha.tenant_id, contato_id: dest.contato_id, campanha_id })
+        .select("token")
+        .single();
+      if (tk?.token) {
+        optOutUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/optout-publica?token=${tk.token}`;
+        if (contato) contato.opt_out_url = optOutUrl;
+        // Substitui {opt_out_url} em todas as variáveis configuradas pelo usuário
+        for (const k of Object.keys(variaveis)) {
+          variaveis[k] = String(variaveis[k] || "").replace(/\{opt_out_url\}/gi, optOutUrl);
+        }
+      }
+    } catch (err) {
+      console.error("[cloud] falha gerando opt_out_url:", err);
+    }
+
 
     try {
       const phone = String(dest.telefone || "").replace(/\D/g, "");

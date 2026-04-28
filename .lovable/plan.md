@@ -1,148 +1,107 @@
-## Objetivo
 
-Isolar com precisão por que mensagens enviadas diretamente do celular/WhatsApp Web não aparecem em `Conversas`, separando o problema entre:
-- registro do webhook na Z-API,
-- formato real do payload recebido,
-- parser/normalização no backend,
-- gravação no banco,
-- atualização da UI.
+# Plano de Implementação — Agendamento + LGPD + Timeline
 
-## Evidências já confirmadas
+Três entregas independentes, podem ser feitas na mesma onda.
 
-- O backend está recebendo e gravando eventos `ReceivedCallback` com `fromMe:false` normalmente.
-- Há registros recentes em `mensagens`, `conversas` e `zapi_webhook_eventos` para mensagens recebidas.
-- Não há eventos recentes com `fromMe:true` em `zapi_webhook_eventos`.
-- Também não há tipos de evento contendo `send`/`sent` gravados.
-- O helper atual de telefone espera `connected_phone` em `zapi_config`, mas essa coluna não existe hoje.
-- O helper atual trata `@g.us` como grupo, mas os logs mostram grupos no formato `...-group`, então parte da classificação está incorreta.
+---
 
-Isso indica que o fluxo base funciona para mensagens recebidas, mas o problema das mensagens enviadas do celular provavelmente está em uma destas camadas: webhook de saída não cadastrado/ativo, tipo de callback inesperado, parser incompleto, ou roteamento incorreto para contato/conversa.
+## 1) Agendamento de Campanhas (cron)
 
-## Plano de verificação
+**Estado atual:** o campo `campanhas.agendada_para` já existe e a UI em `Campanhas.tsx` já permite escolher data/hora ao criar. O que falta: um worker que dispara as campanhas quando chega a hora.
 
-### 1. Confirmar se a Z-API está realmente enviando o callback de mensagem enviada do celular
+**O que faremos:**
 
-- Validar, via proxy já existente, o estado atual dos webhooks cadastrados para:
-  - recebidas,
-  - enviadas pelo celular/WhatsApp Web,
-  - status de entrega.
-- Comparar o endpoint configurado com o webhook esperado do projeto.
-- Fazer teste controlado com envio pelo celular para 3 cenários:
-  - conversa individual comum,
-  - conversa com `@lid`,
-  - grupo.
-- Verificar se algum POST chega ao backend nesses testes.
+1. **Migration** — adicionar índice em `(status, agendada_para)` para varredura eficiente. Adicionar status `agendada` no enum `campanha_status` (se ainda não existir; senão usar `rascunho` + flag).
+2. **Nova edge function `processar-campanhas-agendadas`**
+   - Roda a cada 5 minutos.
+   - Busca campanhas com `status='agendada'` e `agendada_para <= now()`.
+   - Para cada uma: marca status `enviando` e invoca `enviar-campanha` ou `enviar-campanha-cloud` conforme `canal`.
+   - Logs estruturados (qtd processada, erros).
+3. **Cron job (pg_cron + pg_net)** — agendar a função a cada 5 min via `cron.schedule` (registrado como dado, não migration).
+4. **UI em Campanhas.tsx**
+   - Ao salvar com data futura → `status='agendada'` (hoje vai como rascunho).
+   - Badge "Agendada para 28/04 14:30" na lista.
+   - Botão "Cancelar agendamento" (volta para rascunho).
+   - Coluna ordenável por `agendada_para` quando filtro = agendadas.
 
-Resultado esperado:
-- Se nenhum evento de saída chegar, a causa está antes do parser (cadastro/compatibilidade do webhook na Z-API).
-- Se chegar, seguimos para parse e persistência.
+**Arquivos:** 1 migration, 1 nova edge function, edição em `src/pages/Campanhas.tsx`, registro do cron.
 
-### 2. Capturar e classificar o payload real das mensagens “fromMe”
+---
 
-- Auditar o payload bruto do evento de saída que vier da Z-API.
-- Catalogar campos relevantes:
-  - `type`, `status`, `fromMe`, `fromApi`,
-  - `phone`, `participantPhone`, `chatLid`, `participantLid`,
-  - `messageId`, `ids`, `text`, `message`, `body`, `conversation`,
-  - `isGroup`.
-- Verificar se a Z-API usa um tipo diferente do esperado para saída (ex.: callback de status sem corpo, callback de mensagem enviada com outro formato, etc.).
+## 2) Opt-out / LGPD
 
-Resultado esperado:
-- Determinar o formato exato que precisa ser suportado para mensagens enviadas fora da UI.
+**O que faremos:**
 
-### 3. Verificar o parser de conteúdo e a detecção de origem
+1. **Migration**
+   - Adicionar `contatos.opt_out_whatsapp boolean default false` e `contatos.opt_out_at timestamptz`.
+   - Criar tabela `optout_tokens` (`id, tenant_id, contato_id, token uuid unique, created_at, used_at`) — token público de uso único para o link de descadastro.
+   - RLS: SELECT por tenant; INSERT por tenant; UPDATE público restrito apenas via edge function (com service role).
 
-- Conferir se `parseMessageContent` cobre o formato real do payload de saída.
-- Validar se eventos de saída estão sendo descartados como `skipped_no_content` mesmo contendo texto em outra chave.
-- Ajustar a detecção de `isFromMe` para não depender apenas de `payload.fromMe === true` quando o provedor usar outro indicador.
-- Revisar onde o `messageId` está vindo para eventos de saída, incluindo fallbacks.
+2. **Nova edge function `optout-publica`** (verify_jwt = false)
+   - `GET /optout-publica?token=...` → renderiza HTML simples ("Confirmar descadastro do WhatsApp da Loja X" + botão).
+   - `POST` confirma → marca `contatos.opt_out_whatsapp=true`, `opt_out_at=now()`, registra `optout_tokens.used_at`.
+   - Página de sucesso amigável (PT-BR, branding da loja a partir de `tenants.nome`).
 
-Resultado esperado:
-- Garantir que o backend consiga extrair conteúdo e classificar corretamente a mensagem como enviada pelo atendente.
+3. **Geração do link no envio**
+   - Em `enviar-campanha-cloud` (e `enviar-campanha` Z-API): antes de cada envio, fazer upsert de `optout_tokens` para aquele contato e gerar URL `https://<projeto>.functions.supabase.co/optout-publica?token=...`.
+   - Nova variável de template `{{opt_out_url}}` disponível em `template_variaveis`.
+   - Ao montar o mapping no `montarComponentsTemplate`, expor essa variável (ou anexar como sufixo opcional ao body em campanhas Z-API texto livre).
 
-### 4. Verificar resolução de telefone e mapeamento da conversa
+4. **Filtro automático no envio**
+   - Em `enviar-campanha*`: quando montar a lista de destinatários, excluir `WHERE opt_out_whatsapp = false`.
+   - Em `processar-comunicacoes-giftback`: mesma exclusão.
+   - Marcar destinatário como `status='optout'` (novo enum) quando excluído por essa razão (auditável).
 
-- Revisar a prioridade de resolução do destinatário para mensagens enviadas pelo celular:
-  - individual: `phone` -> `participantPhone` -> `chatLid/participantLid`,
-  - grupo: `phone`/id do grupo + `participantPhone` para autor quando necessário.
-- Corrigir a detecção de grupo para aceitar tanto `@g.us` quanto formatos `-group` vistos nos logs.
-- Remover a dependência de `zapi_config.connected_phone` enquanto a coluna não existir, usando apenas `payload.connectedPhone` quando disponível.
-- Validar o que fazer quando vier apenas `@lid` sem telefone numérico.
+5. **UI**
+   - Campanhas: aviso ao criar, contador "X contatos opted-out serão pulados".
+   - Contato individual: badge "Descadastrado" + botão "Reativar opt-in" (admin).
+   - Página dedicada **Configurações → LGPD**: exportar CSV de opted-out, política de privacidade configurável, link manual para gerar opt-out de um contato.
+   - Variável `{{opt_out_url}}` aparece no `InsertVariableButton` ao editar campanha.
 
-Resultado esperado:
-- Identificar se a mensagem não entra porque está sendo roteada para o telefone/conversa errados, ou porque o número fica irrecuperável.
+**Arquivos:** 1 migration, 1 nova edge function pública, edições em `enviar-campanha`, `enviar-campanha-cloud`, `processar-comunicacoes-giftback`, `src/pages/Campanhas.tsx`, `src/pages/Contatos.tsx`, nova aba em `Configuracoes.tsx`, atualizar `giftback-comunicacao.ts` (variável).
 
-### 5. Verificar a persistência no banco ponta a ponta
+---
 
-- Auditar o resultado salvo em `zapi_webhook_eventos.resultado` para cada evento de saída testado.
-- Classificar casos em:
-  - `inserted`,
-  - `echo_attached`,
-  - `duplicate`,
-  - `skipped_no_content`,
-  - `skipped_phone_unresolved`,
-  - `insert_failed`,
-  - `contact_failed`,
-  - `conversa_failed`.
-- Confirmar se `findOrCreateContact` e `findOrCreateConversa` conseguem localizar a conversa correta para mensagens enviadas do celular.
-- Verificar se há divergência entre número salvo no contato e número resolvido do webhook.
+## 3) Timeline Unificada do Contato
 
-Resultado esperado:
-- Saber exatamente em qual etapa o fluxo quebra quando a mensagem sai do celular.
+**O que faremos:**
 
-### 6. Verificar a exibição em `Conversas`
+1. **Função SQL `contato_timeline(p_contato_id uuid, p_limit int)` (security definer, RLS via tenant)** — retorna jsonb ordenado desc com eventos unidos:
+   - Compras (`compras`) → tipo `compra`
+   - Giftback movimentos (`giftback_movimentos`) → tipo `giftback_credito` / `giftback_debito` / `giftback_expirado`
+   - Mensagens trocadas (`mensagens` via `conversas`) → tipo `mensagem` (resumo: primeira/última do dia)
+   - Campanhas recebidas (`campanha_destinatarios` enviado) → tipo `campanha`
+   - Comunicações giftback (`giftback_comunicacao_log`) → tipo `comunicacao_giftback`
 
-- Confirmar se, quando a mensagem é gravada, ela aparece na lista e no painel sem reload.
-- Verificar se a conversa correta está sendo atualizada com `ultimo_texto` e `ultima_msg_at`.
-- Validar o realtime para `INSERT` e `UPDATE` no caso das mensagens vindas do webhook.
-- Separar problema de “não gravou” versus “gravou, mas a UI não mostrou”.
+   Cada item: `{ ts, tipo, titulo, descricao, valor, ref_id, metadata }`.
 
-Resultado esperado:
-- Eliminar falso negativo de interface quando o backend já tiver salvo a mensagem.
+2. **Novo componente `ContatoDrawer.tsx`** ou nova página `/contatos/:id`
+   - Header: nome, telefone, tags, RFV badge, saldo giftback, status opt-in/out.
+   - Tabs: **Visão Geral** | **Timeline** | **Compras** | **Giftback** | **Mensagens** | **Campos**.
+   - Tab Timeline: lista vertical estilo feed, ícone por tipo, agrupada por dia ("Hoje", "Ontem", "27/04/2026"), filtro por tipo (chips).
+   - Botão "Iniciar conversa" abre o módulo Conversas.
 
-### 7. Fortalecer diagnóstico e reprocessamento
+3. **Integração**
+   - Em `Contatos.tsx`: clicar na linha abre o drawer/página.
+   - Em `Conversas.tsx`: botão "Ver perfil" na barra do chat abre o mesmo drawer.
 
-- Melhorar a auditoria do evento bruto com motivo de descarte mais explícito.
-- Permitir reprocessar um evento específico de saída, não só pendentes genéricos.
-- Exibir no admin os campos originais e normalizados usados para roteamento.
+**Arquivos:** 1 migration (função SQL), novo `src/components/contatos/ContatoDrawer.tsx` + `Timeline.tsx`, edições em `Contatos.tsx` e `ChatPanel.tsx`.
 
-Resultado esperado:
-- Reduzir tentativas cegas e permitir correção rápida em casos reais.
+---
 
-## Entregáveis dessa rodada
+## Ordem sugerida de execução
 
-1. Diagnóstico conclusivo da causa principal.
-2. Lista das causas secundárias encontradas.
-3. Ajustes necessários no backend para suportar o payload real.
-4. Ajustes necessários na UI, se houver problema de visibilidade.
-5. Estratégia de reprocessamento confiável para novos casos.
+1. **Migration única** com todas as mudanças de schema (índice campanhas, opt_out, optout_tokens, função timeline). 1 passo, baixo risco.
+2. **Edge function `optout-publica`** + edições nos enviadores para respeitar opt-out. (LGPD não pode esperar.)
+3. **Edge function `processar-campanhas-agendadas`** + cron + UI de agendamento.
+4. **Drawer/Timeline do contato** + integrações de UI.
 
-## Prioridade de investigação
+## Estimativa
 
-1. Confirmar ausência real de callbacks `fromMe`.
-2. Validar cadastro efetivo do webhook de mensagens enviadas.
-3. Capturar um payload real de saída do celular.
-4. Corrigir parser + resolução de telefone/grupo.
-5. Validar gravação e exibição na UI.
+- Agendamento: ~2-3h
+- LGPD: ~4-5h (mais superfície)
+- Timeline: ~3-4h
 
-## Detalhes técnicos
+Total: meio dia de implementação. Posso executar tudo numa única passada.
 
-Pontos mais prováveis a serem validados primeiro:
-
-- O webhook de “mensagens enviadas (celular/WA Web)” pode não estar ativo de fato, mesmo após o cadastro.
-- A Z-API pode estar enviando o callback de saída em um tipo diferente de `ReceivedCallback`/`fromMe:true`.
-- O parser atual pode descartar a mensagem por não encontrar texto na chave esperada.
-- O helper de telefone hoje não cobre corretamente grupos no formato `...-group`.
-- O código espera `connected_phone` em `zapi_config`, mas essa coluna não existe.
-- Mesmo quando gravada, a conversa pode não ser a esperada se o telefone resolvido não bater com o contato existente.
-
-## Critério de sucesso
-
-Após a execução desse plano, ficará claro qual destes cenários é o verdadeiro:
-
-- a Z-API não envia o callback de saída;
-- o callback chega, mas o backend não interpreta;
-- o backend interpreta, mas grava na conversa errada;
-- o backend grava corretamente, mas a UI não atualiza.
-
-Com isso, a próxima etapa já entra direto na correção certa, sem tentativa e erro.
+**Posso seguir?**

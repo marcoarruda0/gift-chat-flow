@@ -14,3 +14,9 @@ verify_jwt = true
 
 [functions.zapi-webhook]
 verify_jwt = false
+
+[functions.optout-publica]
+verify_jwt = false
+
+[functions.processar-campanhas-agendadas]
+verify_jwt = false

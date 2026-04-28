@@ -505,6 +505,15 @@ export default function Campanhas() {
     fetchCampanhas();
   }
 
+  async function cancelarAgendamento(campanhaId: string) {
+    await supabase
+      .from("campanhas")
+      .update({ status: "rascunho" as any, agendada_para: null })
+      .eq("id", campanhaId);
+    toast({ title: "Agendamento cancelado", description: "Campanha voltou para rascunho." });
+    fetchCampanhas();
+  }
+
   async function atualizarGrupoCampanha(campanhaId: string, novoGrupoId: string | null) {
     const { error } = await (supabase as any)
       .from("campanhas")
@@ -741,7 +750,15 @@ export default function Campanhas() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={sc.variant}>{sc.label}</Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant={sc.variant}>{sc.label}</Badge>
+                          {c.status === "agendada" && c.agendada_para && (
+                            <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {format(new Date(c.agendada_para), "dd/MM HH:mm")}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">{c.total_destinatarios}</TableCell>
                       <TableCell className="text-center">{c.total_enviados}</TableCell>
@@ -761,8 +778,13 @@ export default function Campanhas() {
                             onChange={atualizarGrupoCampanha}
                           />
                           {(c.status === "rascunho" || c.status === "agendada") && (
-                            <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)}>
+                            <Button size="sm" variant="ghost" onClick={() => enviarCampanha(c.id, cn)} title="Enviar agora">
                               <Send className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {c.status === "agendada" && (
+                            <Button size="sm" variant="ghost" onClick={() => cancelarAgendamento(c.id)} title="Cancelar agendamento">
+                              <Ban className="h-4 w-4" />
                             </Button>
                           )}
                           {c.status === "enviando" && (

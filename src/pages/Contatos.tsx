@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import CamposDinamicos, { campoKey } from "@/components/contatos/CamposDinamicos";
 import { GENERO_OPCOES } from "@/lib/giftback-relatorio";
 import RfvBadge from "@/components/giftback/RfvBadge";
+import { ContatoDrawer } from "@/components/contatos/ContatoDrawer";
 
 interface ContatoForm {
   nome: string;
@@ -53,6 +54,7 @@ export default function Contatos() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ContatoForm>(emptyForm);
   const [camposPersonalizados, setCamposPersonalizados] = useState<Record<string, any>>({});
+  const [drawerContatoId, setDrawerContatoId] = useState<string | null>(null);
 
   const { data: camposConfig } = useQuery({
     queryKey: ["campos-config", profile?.tenant_id],
@@ -359,7 +361,14 @@ export default function Contatos() {
                 const isFornecedor = cp.fornecedor === true;
                 return (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.nome}</TableCell>
+                   <TableCell className="font-medium">
+                     <button
+                       onClick={() => setDrawerContatoId(c.id)}
+                       className="text-left hover:underline hover:text-primary transition"
+                     >
+                       {c.nome}
+                     </button>
+                   </TableCell>
                   <TableCell className="hidden sm:table-cell">{c.telefone || "—"}</TableCell>
                   <TableCell className="hidden md:table-cell">{c.cpf || "—"}</TableCell>
                   <TableCell className="hidden md:table-cell">
@@ -419,6 +428,12 @@ export default function Contatos() {
           </TableBody>
         </Table>
       </div>
+
+      <ContatoDrawer
+        contatoId={drawerContatoId}
+        open={!!drawerContatoId}
+        onOpenChange={(o) => !o && setDrawerContatoId(null)}
+      />
     </div>
   );
 }

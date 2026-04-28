@@ -102,7 +102,9 @@ export function ContatoDrawer({ contatoId, open, onOpenChange }: ContatoDrawerPr
                     )}
                   </SheetDescription>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {contato.rfv_soma != null && <RfvBadge soma={contato.rfv_soma} />}
+                    {contato.rfv_recencia != null && (
+                      <RfvBadge r={contato.rfv_recencia} f={contato.rfv_frequencia} v={contato.rfv_valor} compacto />
+                    )}
                     {Number(contato.saldo_giftback) > 0 && (
                       <Badge variant="secondary" className="text-xs">
                         <Gift className="h-3 w-3 mr-1" />

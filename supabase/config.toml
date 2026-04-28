@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.processar-campanhas-agendadas]
 verify_jwt = false
+
+[functions.analisar-satisfacao]
+verify_jwt = false

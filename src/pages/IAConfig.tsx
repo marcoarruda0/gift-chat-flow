@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2 } from "lucide-react";
+import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const CANAIS = [
@@ -54,6 +54,12 @@ export default function IAConfig() {
   // Copiloto
   const [copilotoAtivo, setCopilotoAtivo] = useState(false);
   const [copilotoCanais, setCopilotoCanais] = useState<string[]>(["whatsapp_zapi", "whatsapp_cloud"]);
+
+  // Satisfação
+  const [satisfacaoAtivo, setSatisfacaoAtivo] = useState(false);
+  const [satisfacaoCriterios, setSatisfacaoCriterios] = useState("");
+  const [satisfacaoMinMsgs, setSatisfacaoMinMsgs] = useState(2);
+  const [reanalisando, setReanalisando] = useState(false);
 
   // Análise
   const [ultimaAnaliseEm, setUltimaAnaliseEm] = useState<string | null>(null);
@@ -95,6 +101,9 @@ export default function IAConfig() {
         );
         setUltimaAnaliseEm(data.ultima_analise_em ?? null);
         if (data.ultima_analise_resumo) setResumoAnalise(data.ultima_analise_resumo);
+        setSatisfacaoAtivo((data as any).satisfacao_ativo ?? false);
+        setSatisfacaoCriterios((data as any).satisfacao_criterios ?? "");
+        setSatisfacaoMinMsgs((data as any).satisfacao_min_mensagens_cliente ?? 2);
       }
 
       const { data: analises } = await supabase
@@ -122,6 +131,9 @@ export default function IAConfig() {
         ativo,
         copiloto_ativo: copilotoAtivo,
         copiloto_canais: copilotoCanais,
+        satisfacao_ativo: satisfacaoAtivo,
+        satisfacao_criterios: satisfacaoCriterios,
+        satisfacao_min_mensagens_cliente: satisfacaoMinMsgs,
       };
 
       if (configId) {
@@ -266,6 +278,22 @@ export default function IAConfig() {
       toast.error("Erro na simulação: " + (err.message || "Erro desconhecido"));
     } finally {
       setSimulando(false);
+    }
+  };
+
+  const handleReanalisar = async () => {
+    if (!tenantId) return;
+    setReanalisando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("analisar-satisfacao", {
+        body: { reanalise_tenant_id: tenantId, dias: 30 },
+      });
+      if (error) throw error;
+      toast.success(`${data?.enfileirados ?? 0} atendimentos enfileirados para análise.`);
+    } catch (err: any) {
+      toast.error("Erro ao enfileirar: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setReanalisando(false);
     }
   };
 
@@ -415,6 +443,80 @@ export default function IAConfig() {
             }
             rows={6}
           />
+        </CardContent>
+      </Card>
+
+      {/* Análise de Satisfação */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <Smile className="h-5 w-5 text-primary" /> Análise Automática de Satisfação
+              </CardTitle>
+              <CardDescription>
+                Quando um atendimento de WhatsApp (Z-API ou Cloud Oficial) é encerrado, a IA analisa a conversa e
+                classifica a satisfação do cliente em 5 níveis. Os resultados aparecem em <strong>Relatórios → Satisfação</strong>.
+              </CardDescription>
+            </div>
+            <Switch checked={satisfacaoAtivo} onCheckedChange={setSatisfacaoAtivo} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <AlertDescription className="text-xs">
+              A IA considera o conteúdo das mensagens <strong>e</strong> métricas operacionais: tempo de primeira resposta,
+              tempo médio entre respostas, mensagens não respondidas, transferências e se o cliente foi efetivamente atendido.
+              Mensagens automáticas de fluxos e disparos não são contadas como atendimento humano.
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-2">
+            <Label>Critérios de avaliação (instruções para a IA)</Label>
+            <Textarea
+              value={satisfacaoCriterios}
+              onChange={(e) => setSatisfacaoCriterios(e.target.value)}
+              placeholder={
+                "Ex:\n• Considere insatisfeito se o cliente reclamou de demora\n• Considere muito satisfeito se elogiou o atendente\n• Cliente perguntando preço várias vezes sem resposta = negativo\n• Resolução do problema é mais importante que rapidez"
+              }
+              rows={5}
+              disabled={!satisfacaoAtivo}
+            />
+            <p className="text-xs text-muted-foreground">
+              Personalize o que importa para o seu negócio. Deixe em branco para usar critérios gerais.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Mínimo de mensagens do cliente</Label>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={satisfacaoMinMsgs}
+                onChange={(e) => setSatisfacaoMinMsgs(Number(e.target.value) || 1)}
+                disabled={!satisfacaoAtivo}
+              />
+              <p className="text-xs text-muted-foreground">
+                Conversas com menos mensagens são ignoradas (evita ruído).
+              </p>
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                onClick={handleReanalisar}
+                disabled={!satisfacaoAtivo || reanalisando}
+                className="w-full"
+              >
+                {reanalisando ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enfileirando…</>
+                ) : (
+                  <>Reanalisar últimos 30 dias</>
+                )}
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

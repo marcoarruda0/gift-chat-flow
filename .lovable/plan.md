@@ -1,107 +1,125 @@
 
-# Plano de Implementação — Agendamento + LGPD + Timeline
+# Análise Automática de Satisfação por IA
 
-Três entregas independentes, podem ser feitas na mesma onda.
+Quando um atendimento de WhatsApp (Z-API ou Cloud Oficial) é encerrado, uma IA analisa a conversa e classifica objetivamente a satisfação do cliente em uma escala de 5 níveis. Os dados ficam disponíveis em uma nova aba de Relatórios.
 
----
+## Escopo
 
-## 1) Agendamento de Campanhas (cron)
+- **Canais analisados**: apenas `zapi` e `whatsapp_cloud` (ignora outros)
+- **Conversas ignoradas**: aquelas geradas/dominadas por fluxos automáticos ou disparos de campanha (sem interação humana real do atendente)
+- **Mensagens consideradas**: do cliente + do atendente humano + sugestões de IA aceitas (rascunhos enviados). Mensagens de fluxo automático e disparo são marcadas como contexto, não pesam na avaliação.
+- **Escala**: 5 níveis (`muito_insatisfeito` a `muito_satisfeito`), score 1-5
 
-**Estado atual:** o campo `campanhas.agendada_para` já existe e a UI em `Campanhas.tsx` já permite escolher data/hora ao criar. O que falta: um worker que dispara as campanhas quando chega a hora.
+## O que a IA avalia
 
-**O que faremos:**
+Além do conteúdo (sentimento, palavras de elogio/reclamação, resolução do problema), a análise considera **métricas operacionais** calculadas no backend e injetadas no prompt:
 
-1. **Migration** — adicionar índice em `(status, agendada_para)` para varredura eficiente. Adicionar status `agendada` no enum `campanha_status` (se ainda não existir; senão usar `rascunho` + flag).
-2. **Nova edge function `processar-campanhas-agendadas`**
-   - Roda a cada 5 minutos.
-   - Busca campanhas com `status='agendada'` e `agendada_para <= now()`.
-   - Para cada uma: marca status `enviando` e invoca `enviar-campanha` ou `enviar-campanha-cloud` conforme `canal`.
-   - Logs estruturados (qtd processada, erros).
-3. **Cron job (pg_cron + pg_net)** — agendar a função a cada 5 min via `cron.schedule` (registrado como dado, não migration).
-4. **UI em Campanhas.tsx**
-   - Ao salvar com data futura → `status='agendada'` (hoje vai como rascunho).
-   - Badge "Agendada para 28/04 14:30" na lista.
-   - Botão "Cancelar agendamento" (volta para rascunho).
-   - Coluna ordenável por `agendada_para` quando filtro = agendadas.
+- Cliente foi efetivamente respondido (ratio mensagens cliente vs respostas atendente)
+- Tempo médio de primeira resposta e tempo entre respostas
+- Duração total do atendimento
+- Quantidade de mensagens não respondidas no fim
+- Se houve transferência entre atendentes
+- Se a conversa terminou com cliente perguntando algo sem resposta
 
-**Arquivos:** 1 migration, 1 nova edge function, edição em `src/pages/Campanhas.tsx`, registro do cron.
+A IA combina esses sinais com o conteúdo das mensagens para gerar:
+- Classificação (5 níveis) + score (1-5)
+- Sentimento geral (positivo/neutro/negativo)
+- Justificativa curta
+- Pontos positivos e negativos detectados
 
----
+## Banco de Dados
 
-## 2) Opt-out / LGPD
+### Estender `ia_config`
+- `satisfacao_ativo` boolean
+- `satisfacao_criterios` text — instruções livres do tenant
+- `satisfacao_min_mensagens_cliente` int default 2 — ignora conversas muito curtas
 
-**O que faremos:**
+### Nova tabela `atendimento_satisfacao`
+| Campo | Tipo |
+|---|---|
+| id, tenant_id, conversa_id (UNIQUE), contato_id, atendente_id, departamento_id | uuid |
+| canal | text |
+| classificacao | enum 5 níveis |
+| score | smallint 1-5 |
+| sentimento | enum positivo/neutro/negativo |
+| justificativa | text |
+| pontos_positivos, pontos_negativos | text[] |
+| total_mensagens_cliente, total_mensagens_atendente | int |
+| primeiro_resp_segundos, tempo_medio_resposta_segundos | int |
+| duracao_segundos | int |
+| houve_transferencia | boolean |
+| terminou_sem_resposta | boolean |
+| status | text (pendente/processando/concluido/erro/ignorado) |
+| motivo_ignorado, erro | text |
+| created_at, processado_em | timestamptz |
 
-1. **Migration**
-   - Adicionar `contatos.opt_out_whatsapp boolean default false` e `contatos.opt_out_at timestamptz`.
-   - Criar tabela `optout_tokens` (`id, tenant_id, contato_id, token uuid unique, created_at, used_at`) — token público de uso único para o link de descadastro.
-   - RLS: SELECT por tenant; INSERT por tenant; UPDATE público restrito apenas via edge function (com service role).
+RLS: SELECT por tenant; INSERT/UPDATE só via service role.
 
-2. **Nova edge function `optout-publica`** (verify_jwt = false)
-   - `GET /optout-publica?token=...` → renderiza HTML simples ("Confirmar descadastro do WhatsApp da Loja X" + botão).
-   - `POST` confirma → marca `contatos.opt_out_whatsapp=true`, `opt_out_at=now()`, registra `optout_tokens.used_at`.
-   - Página de sucesso amigável (PT-BR, branding da loja a partir de `tenants.nome`).
+### Trigger
+`AFTER UPDATE` em `conversas`: quando `atendimento_encerrado_at` passa a NOT NULL e canal ∈ (`zapi`, `whatsapp_cloud`), insere registro `pendente` (idempotente via UNIQUE em conversa_id).
 
-3. **Geração do link no envio**
-   - Em `enviar-campanha-cloud` (e `enviar-campanha` Z-API): antes de cada envio, fazer upsert de `optout_tokens` para aquele contato e gerar URL `https://<projeto>.functions.supabase.co/optout-publica?token=...`.
-   - Nova variável de template `{{opt_out_url}}` disponível em `template_variaveis`.
-   - Ao montar o mapping no `montarComponentsTemplate`, expor essa variável (ou anexar como sufixo opcional ao body em campanhas Z-API texto livre).
+### Índices
+- `(tenant_id, created_at DESC)`
+- `(status)` para o cron
+- `(atendente_id, created_at DESC)` para ranking
 
-4. **Filtro automático no envio**
-   - Em `enviar-campanha*`: quando montar a lista de destinatários, excluir `WHERE opt_out_whatsapp = false`.
-   - Em `processar-comunicacoes-giftback`: mesma exclusão.
-   - Marcar destinatário como `status='optout'` (novo enum) quando excluído por essa razão (auditável).
+## Edge Function `analisar-satisfacao`
 
-5. **UI**
-   - Campanhas: aviso ao criar, contador "X contatos opted-out serão pulados".
-   - Contato individual: badge "Descadastrado" + botão "Reativar opt-in" (admin).
-   - Página dedicada **Configurações → LGPD**: exportar CSV de opted-out, política de privacidade configurável, link manual para gerar opt-out de um contato.
-   - Variável `{{opt_out_url}}` aparece no `InsertVariableButton` ao editar campanha.
+Cron a cada 2 min (`pg_cron` + `pg_net`). Para cada `pendente` (lote de 20):
 
-**Arquivos:** 1 migration, 1 nova edge function pública, edições em `enviar-campanha`, `enviar-campanha-cloud`, `processar-comunicacoes-giftback`, `src/pages/Campanhas.tsx`, `src/pages/Contatos.tsx`, nova aba em `Configuracoes.tsx`, atualizar `giftback-comunicacao.ts` (variável).
+1. Carrega conversa + mensagens ordenadas
+2. Filtra: ignora conversas com menos de N mensagens do cliente → marca `ignorado`
+3. Calcula métricas operacionais (tempos, contagens, transferências)
+4. Monta prompt com: critérios do tenant + métricas + transcrição (mensagens humanas e rascunhos IA enviados marcados; mensagens de fluxo/disparo marcadas como `[automático]`)
+5. Chama Lovable AI Gateway com **tool calling estruturado** (`classificar_satisfacao`) — modelo padrão `google/gemini-3-flash-preview`
+6. Persiste resultado, marca `concluido`
+7. Tratamento 429/402/parse → marca `erro` com mensagem
 
----
+## UI — Configurações de IA
 
-## 3) Timeline Unificada do Contato
+Nova seção "Análise de Satisfação" em `IAConfig.tsx`:
+- Switch ativar/desativar
+- Textarea "Critérios de avaliação" com placeholder/exemplo
+- Input numérico "Mínimo de mensagens do cliente" (default 2)
+- Texto explicativo dos sinais usados (tempo de resposta, etc.)
+- Botão "Reanalisar últimos 30 dias" (admin) que enfileira conversas encerradas sem registro
 
-**O que faremos:**
+## UI — Relatórios
 
-1. **Função SQL `contato_timeline(p_contato_id uuid, p_limit int)` (security definer, RLS via tenant)** — retorna jsonb ordenado desc com eventos unidos:
-   - Compras (`compras`) → tipo `compra`
-   - Giftback movimentos (`giftback_movimentos`) → tipo `giftback_credito` / `giftback_debito` / `giftback_expirado`
-   - Mensagens trocadas (`mensagens` via `conversas`) → tipo `mensagem` (resumo: primeira/última do dia)
-   - Campanhas recebidas (`campanha_destinatarios` enviado) → tipo `campanha`
-   - Comunicações giftback (`giftback_comunicacao_log`) → tipo `comunicacao_giftback`
+Nova aba "Satisfação" em `Relatorios.tsx` → página `RelatorioSatisfacao.tsx`.
 
-   Cada item: `{ ts, tipo, titulo, descricao, valor, ref_id, metadata }`.
+**Filtros**: período, atendente, departamento, canal, classificação.
 
-2. **Novo componente `ContatoDrawer.tsx`** ou nova página `/contatos/:id`
-   - Header: nome, telefone, tags, RFV badge, saldo giftback, status opt-in/out.
-   - Tabs: **Visão Geral** | **Timeline** | **Compras** | **Giftback** | **Mensagens** | **Campos**.
-   - Tab Timeline: lista vertical estilo feed, ícone por tipo, agrupada por dia ("Hoje", "Ontem", "27/04/2026"), filtro por tipo (chips).
-   - Botão "Iniciar conversa" abre o módulo Conversas.
+**Cards**:
+- Score médio (1-5) + variação vs período anterior
+- % positivos / neutros / negativos
+- Total analisados / ignorados / com erro
+- Tempo médio de primeira resposta
 
-3. **Integração**
-   - Em `Contatos.tsx`: clicar na linha abre o drawer/página.
-   - Em `Conversas.tsx`: botão "Ver perfil" na barra do chat abre o mesmo drawer.
+**Gráficos (Recharts)**:
+- Donut: distribuição pelas 5 classificações
+- Linha: evolução do score médio por dia
+- Barras: ranking de atendentes por score médio
+- Barras horizontais: pontos negativos mais frequentes (agregados por palavra-chave)
 
-**Arquivos:** 1 migration (função SQL), novo `src/components/contatos/ContatoDrawer.tsx` + `Timeline.tsx`, edições em `Contatos.tsx` e `ChatPanel.tsx`.
+**Tabela**:
+- Data | Contato | Atendente | Canal | Classificação (badge colorido) | Score | Tempo 1ª resp. | Justificativa truncada
+- Click → abre `ContatoDrawer` com detalhes completos da análise
 
----
+**Timeline do contato**: novo evento `satisfacao` com emoji e classificação no `ContatoTimeline`.
 
-## Ordem sugerida de execução
+## Detalhes Técnicos
 
-1. **Migration única** com todas as mudanças de schema (índice campanhas, opt_out, optout_tokens, função timeline). 1 passo, baixo risco.
-2. **Edge function `optout-publica`** + edições nos enviadores para respeitar opt-out. (LGPD não pode esperar.)
-3. **Edge function `processar-campanhas-agendadas`** + cron + UI de agendamento.
-4. **Drawer/Timeline do contato** + integrações de UI.
+- Migration cria tabela, enums, índices, trigger e estende `ia_config`
+- Cron registrado via tool `supabase--insert` (não migration, pois contém URL/anon key específicos)
+- Edge function nova: `supabase/functions/analisar-satisfacao/index.ts`
+- Função SQL `relatorio_satisfacao(p_inicio, p_fim, p_atendente_id, p_departamento_id, p_canal)` para agregar dados do relatório com SECURITY DEFINER + check de tenant
+- Função SQL `contato_timeline` atualizada para incluir eventos de satisfação
+- Tipos TS regenerados automaticamente após migration
 
-## Estimativa
+## Entregáveis
 
-- Agendamento: ~2-3h
-- LGPD: ~4-5h (mais superfície)
-- Timeline: ~3-4h
-
-Total: meio dia de implementação. Posso executar tudo numa única passada.
-
-**Posso seguir?**
+1. Migration: tabela `atendimento_satisfacao`, enums, trigger, extensão `ia_config`, função `relatorio_satisfacao`, atualização `contato_timeline`
+2. Cron job via `supabase--insert`
+3. Edge Function `analisar-satisfacao`
+4. UI: seção em `IAConfig.tsx`, página `RelatorioSatisfacao.tsx`, nova aba em `Relatorios.tsx`, evento na timeline

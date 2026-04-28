@@ -428,6 +428,12 @@ export default function Contatos() {
           </TableBody>
         </Table>
       </div>
+
+      <ContatoDrawer
+        contatoId={drawerContatoId}
+        open={!!drawerContatoId}
+        onOpenChange={(o) => !o && setDrawerContatoId(null)}
+      />
     </div>
   );
 }

@@ -25,6 +25,7 @@ function resolveVariable(template: string, contato: any): string {
     email: contato?.email || "",
     cpf: contato?.cpf || "",
     endereco: contato?.endereco || "",
+    opt_out_url: contato?.opt_out_url || "",
   };
   for (const [k, v] of Object.entries(replacements)) {
     out = out.replace(new RegExp(`\\{${k}\\}`, "gi"), v);

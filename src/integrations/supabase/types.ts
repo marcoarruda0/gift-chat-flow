@@ -14,6 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      atendimento_satisfacao: {
+        Row: {
+          atendente_id: string | null
+          canal: string
+          classificacao:
+            | Database["public"]["Enums"]["satisfacao_classificacao"]
+            | null
+          contato_id: string | null
+          conversa_id: string
+          created_at: string
+          departamento_id: string | null
+          duracao_segundos: number | null
+          erro: string | null
+          houve_transferencia: boolean | null
+          id: string
+          justificativa: string | null
+          motivo_ignorado: string | null
+          pontos_negativos: string[] | null
+          pontos_positivos: string[] | null
+          primeiro_resp_segundos: number | null
+          processado_em: string | null
+          score: number | null
+          sentimento:
+            | Database["public"]["Enums"]["satisfacao_sentimento"]
+            | null
+          status: string
+          tempo_medio_resposta_segundos: number | null
+          tenant_id: string
+          terminou_sem_resposta: boolean | null
+          total_mensagens_atendente: number | null
+          total_mensagens_cliente: number | null
+        }
+        Insert: {
+          atendente_id?: string | null
+          canal: string
+          classificacao?:
+            | Database["public"]["Enums"]["satisfacao_classificacao"]
+            | null
+          contato_id?: string | null
+          conversa_id: string
+          created_at?: string
+          departamento_id?: string | null
+          duracao_segundos?: number | null
+          erro?: string | null
+          houve_transferencia?: boolean | null
+          id?: string
+          justificativa?: string | null
+          motivo_ignorado?: string | null
+          pontos_negativos?: string[] | null
+          pontos_positivos?: string[] | null
+          primeiro_resp_segundos?: number | null
+          processado_em?: string | null
+          score?: number | null
+          sentimento?:
+            | Database["public"]["Enums"]["satisfacao_sentimento"]
+            | null
+          status?: string
+          tempo_medio_resposta_segundos?: number | null
+          tenant_id: string
+          terminou_sem_resposta?: boolean | null
+          total_mensagens_atendente?: number | null
+          total_mensagens_cliente?: number | null
+        }
+        Update: {
+          atendente_id?: string | null
+          canal?: string
+          classificacao?:
+            | Database["public"]["Enums"]["satisfacao_classificacao"]
+            | null
+          contato_id?: string | null
+          conversa_id?: string
+          created_at?: string
+          departamento_id?: string | null
+          duracao_segundos?: number | null
+          erro?: string | null
+          houve_transferencia?: boolean | null
+          id?: string
+          justificativa?: string | null
+          motivo_ignorado?: string | null
+          pontos_negativos?: string[] | null
+          pontos_positivos?: string[] | null
+          primeiro_resp_segundos?: number | null
+          processado_em?: string | null
+          score?: number | null
+          sentimento?:
+            | Database["public"]["Enums"]["satisfacao_sentimento"]
+            | null
+          status?: string
+          tempo_medio_resposta_segundos?: number | null
+          tenant_id?: string
+          terminou_sem_resposta?: boolean | null
+          total_mensagens_atendente?: number | null
+          total_mensagens_cliente?: number | null
+        }
+        Relationships: []
+      }
       campanha_destinatarios: {
         Row: {
           campanha_id: string
@@ -1154,6 +1250,9 @@ export type Database = {
           id: string
           instrucoes_extras: string | null
           nome_assistente: string
+          satisfacao_ativo: boolean
+          satisfacao_criterios: string | null
+          satisfacao_min_mensagens_cliente: number
           tenant_id: string
           tom: Database["public"]["Enums"]["ia_tom"]
           ultima_analise_em: string | null
@@ -1169,6 +1268,9 @@ export type Database = {
           id?: string
           instrucoes_extras?: string | null
           nome_assistente?: string
+          satisfacao_ativo?: boolean
+          satisfacao_criterios?: string | null
+          satisfacao_min_mensagens_cliente?: number
           tenant_id: string
           tom?: Database["public"]["Enums"]["ia_tom"]
           ultima_analise_em?: string | null
@@ -1184,6 +1286,9 @@ export type Database = {
           id?: string
           instrucoes_extras?: string | null
           nome_assistente?: string
+          satisfacao_ativo?: boolean
+          satisfacao_criterios?: string | null
+          satisfacao_min_mensagens_cliente?: number
           tenant_id?: string
           tom?: Database["public"]["Enums"]["ia_tom"]
           ultima_analise_em?: string | null
@@ -1981,6 +2086,16 @@ export type Database = {
         Args: { p_atendente_id?: string; p_fim: string; p_inicio: string }
         Returns: Json
       }
+      relatorio_satisfacao: {
+        Args: {
+          p_atendente_id?: string
+          p_canal?: string
+          p_departamento_id?: string
+          p_fim: string
+          p_inicio: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin_master" | "admin_tenant" | "atendente" | "caixa"
@@ -1999,6 +2114,13 @@ export type Database = {
       ia_tom: "formal" | "amigavel" | "casual"
       mensagem_tipo: "texto" | "imagem" | "audio" | "video" | "documento"
       remetente_tipo: "contato" | "atendente" | "bot" | "sistema"
+      satisfacao_classificacao:
+        | "muito_insatisfeito"
+        | "insatisfeito"
+        | "neutro"
+        | "satisfeito"
+        | "muito_satisfeito"
+      satisfacao_sentimento: "positivo" | "neutro" | "negativo"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2143,6 +2265,14 @@ export const Constants = {
       ia_tom: ["formal", "amigavel", "casual"],
       mensagem_tipo: ["texto", "imagem", "audio", "video", "documento"],
       remetente_tipo: ["contato", "atendente", "bot", "sistema"],
+      satisfacao_classificacao: [
+        "muito_insatisfeito",
+        "insatisfeito",
+        "neutro",
+        "satisfeito",
+        "muito_satisfeito",
+      ],
+      satisfacao_sentimento: ["positivo", "neutro", "negativo"],
     },
   },
 } as const

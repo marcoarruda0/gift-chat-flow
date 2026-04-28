@@ -13,6 +13,7 @@ import GiftbackConfig from "@/pages/GiftbackConfig";
 import GiftbackCaixa from "@/pages/GiftbackCaixa";
 import Placeholder from "@/pages/Placeholder";
 import Configuracoes from "@/pages/Configuracoes";
+import ConfiguracoesLgpd from "@/pages/ConfiguracoesLgpd";
 import Campanhas from "@/pages/Campanhas";
 import Fluxos from "@/pages/Fluxos";
 import FluxoEditor from "@/pages/FluxoEditor";
@@ -59,6 +60,7 @@ function AppRoutes() {
       <Route path="/configuracoes/whatsapp-oficial" element={<ProtectedRoute><WhatsappOficialConfig /></ProtectedRoute>} />
       <Route path="/configuracoes/whatsapp-oficial/eventos" element={<ProtectedRoute><WhatsappWebhookEventos /></ProtectedRoute>} />
       <Route path="/configuracoes/ia" element={<ProtectedRoute><IAConfig /></ProtectedRoute>} />
+      <Route path="/configuracoes/lgpd" element={<ProtectedRoute><ConfiguracoesLgpd /></ProtectedRoute>} />
       <Route path="/empresa" element={<ProtectedRoute><Empresa /></ProtectedRoute>} />
       <Route path="/empresas" element={<ProtectedRoute><Empresa initialTab="empresas" /></ProtectedRoute>} />
       <Route path="/peca-rara" element={<ProtectedRoute><PecaRara /></ProtectedRoute>} />

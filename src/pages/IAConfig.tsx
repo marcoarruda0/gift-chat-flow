@@ -446,6 +446,80 @@ export default function IAConfig() {
         </CardContent>
       </Card>
 
+      {/* Análise de Satisfação */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <Smile className="h-5 w-5 text-primary" /> Análise Automática de Satisfação
+              </CardTitle>
+              <CardDescription>
+                Quando um atendimento de WhatsApp (Z-API ou Cloud Oficial) é encerrado, a IA analisa a conversa e
+                classifica a satisfação do cliente em 5 níveis. Os resultados aparecem em <strong>Relatórios → Satisfação</strong>.
+              </CardDescription>
+            </div>
+            <Switch checked={satisfacaoAtivo} onCheckedChange={setSatisfacaoAtivo} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <AlertDescription className="text-xs">
+              A IA considera o conteúdo das mensagens <strong>e</strong> métricas operacionais: tempo de primeira resposta,
+              tempo médio entre respostas, mensagens não respondidas, transferências e se o cliente foi efetivamente atendido.
+              Mensagens automáticas de fluxos e disparos não são contadas como atendimento humano.
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-2">
+            <Label>Critérios de avaliação (instruções para a IA)</Label>
+            <Textarea
+              value={satisfacaoCriterios}
+              onChange={(e) => setSatisfacaoCriterios(e.target.value)}
+              placeholder={
+                "Ex:\n• Considere insatisfeito se o cliente reclamou de demora\n• Considere muito satisfeito se elogiou o atendente\n• Cliente perguntando preço várias vezes sem resposta = negativo\n• Resolução do problema é mais importante que rapidez"
+              }
+              rows={5}
+              disabled={!satisfacaoAtivo}
+            />
+            <p className="text-xs text-muted-foreground">
+              Personalize o que importa para o seu negócio. Deixe em branco para usar critérios gerais.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Mínimo de mensagens do cliente</Label>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={satisfacaoMinMsgs}
+                onChange={(e) => setSatisfacaoMinMsgs(Number(e.target.value) || 1)}
+                disabled={!satisfacaoAtivo}
+              />
+              <p className="text-xs text-muted-foreground">
+                Conversas com menos mensagens são ignoradas (evita ruído).
+              </p>
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                onClick={handleReanalisar}
+                disabled={!satisfacaoAtivo || reanalisando}
+                className="w-full"
+              >
+                {reanalisando ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enfileirando…</>
+                ) : (
+                  <>Reanalisar últimos 30 dias</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Análise de conversas */}
       <Card>
         <CardHeader>

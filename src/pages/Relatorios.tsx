@@ -5,8 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RelatorioGiftback from "@/pages/RelatorioGiftback";
 import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import RelatorioCRM from "@/components/relatorios/RelatorioCRM";
+import RelatorioSatisfacao from "@/pages/RelatorioSatisfacao";
 
-const TABS = ["giftback", "atendimento", "crm"] as const;
+const TABS = ["giftback", "atendimento", "crm", "satisfacao"] as const;
 type TabKey = (typeof TABS)[number];
 
 const STORAGE_KEY = "relatorios_tab";
@@ -47,7 +48,7 @@ export default function Relatorios() {
       <div>
         <h1 className="text-2xl font-bold">Relatórios</h1>
         <p className="text-muted-foreground">
-          Indicadores de Giftback, Atendimentos e CRM
+          Indicadores de Giftback, Atendimentos, CRM e Satisfação
         </p>
       </div>
 
@@ -56,6 +57,7 @@ export default function Relatorios() {
           <TabsTrigger value="giftback">Giftback</TabsTrigger>
           <TabsTrigger value="atendimento">Atendimentos</TabsTrigger>
           <TabsTrigger value="crm">CRM</TabsTrigger>
+          <TabsTrigger value="satisfacao">Satisfação</TabsTrigger>
         </TabsList>
 
         <TabsContent value="giftback" className="mt-6">
@@ -66,6 +68,9 @@ export default function Relatorios() {
         </TabsContent>
         <TabsContent value="crm" className="mt-6">
           <RelatorioCRM />
+        </TabsContent>
+        <TabsContent value="satisfacao" className="mt-6">
+          <RelatorioSatisfacao embedded />
         </TabsContent>
       </Tabs>
     </div>

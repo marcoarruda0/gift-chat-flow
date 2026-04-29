@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConversaItem } from "./ConversaItem";
-import { Search, MessageSquarePlus, RefreshCw, Upload, MessageSquare, BadgeCheck } from "lucide-react";
+import { Search, MessageSquarePlus, RefreshCw, Upload, MessageSquare, BadgeCheck, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Conversa {
   id: string;
   contato_nome: string;
+  contato_telefone?: string | null;
   contato_avatar?: string | null;
   ultimo_texto: string | null;
   ultima_msg_at: string | null;
@@ -23,7 +23,9 @@ interface Conversa {
 }
 
 type CanalTab = "todos" | "zapi" | "whatsapp_cloud";
+type TipoTab = "individual" | "grupos";
 const CANAL_STORAGE_KEY = "conversas_canal_tab";
+const TIPO_STORAGE_KEY = "conversas_tipo_tab";
 
 interface ConversasListProps {
   conversas: Conversa[];
@@ -44,6 +46,10 @@ const ADMIN_FILTROS = [...BASE_FILTROS, "Sem Atendente"] as const;
 
 type Filtro = (typeof ADMIN_FILTROS)[number];
 
+const isGrupo = (c: Conversa) => (c.contato_telefone || "").includes("@g.us");
+const isCloud = (c: Conversa) => c.canal === "whatsapp_cloud";
+const isZapi = (c: Conversa) => !isCloud(c);
+
 export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, onSync, onImport, syncing, loading, currentUserId, userDepartamentoId, isAdmin }: ConversasListProps) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("Todas");
@@ -52,26 +58,66 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     const saved = window.localStorage.getItem(CANAL_STORAGE_KEY) as CanalTab | null;
     return saved === "zapi" || saved === "whatsapp_cloud" || saved === "todos" ? saved : "todos";
   });
+  const [tipoTab, setTipoTab] = useState<TipoTab>(() => {
+    if (typeof window === "undefined") return "individual";
+    const saved = window.localStorage.getItem(TIPO_STORAGE_KEY) as TipoTab | null;
+    return saved === "grupos" || saved === "individual" ? saved : "individual";
+  });
 
   useEffect(() => {
     try { window.localStorage.setItem(CANAL_STORAGE_KEY, canalTab); } catch {}
   }, [canalTab]);
+  useEffect(() => {
+    try { window.localStorage.setItem(TIPO_STORAGE_KEY, tipoTab); } catch {}
+  }, [tipoTab]);
 
   const filtros = isAdmin ? ADMIN_FILTROS : BASE_FILTROS;
 
-  const isCloud = (c: Conversa) => c.canal === "whatsapp_cloud";
-  const isZapi = (c: Conversa) => !isCloud(c); // null/legado conta como Z-API
-
-  const counts = useMemo(() => ({
-    todos: conversas.length,
-    zapi: conversas.filter(isZapi).length,
-    whatsapp_cloud: conversas.filter(isCloud).length,
+  // Contadores por tipo (sobre toda a lista)
+  const tipoCounts = useMemo(() => ({
+    individual: conversas.filter(c => !isGrupo(c)).length,
+    grupos: conversas.filter(isGrupo).length,
   }), [conversas]);
 
-  const filtered = conversas.filter(c => {
-    if (canalTab === "zapi" && isCloud(c)) return false;
-    if (canalTab === "whatsapp_cloud" && !isCloud(c)) return false;
-    if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
+  // Lista filtrada apenas por tipo (base para canal counts)
+  const porTipo = useMemo(
+    () => conversas.filter(c => tipoTab === "grupos" ? isGrupo(c) : !isGrupo(c)),
+    [conversas, tipoTab]
+  );
+
+  // Contadores por canal (dentro do tipo selecionado)
+  const counts = useMemo(() => ({
+    todos: porTipo.length,
+    zapi: porTipo.filter(isZapi).length,
+    whatsapp_cloud: porTipo.filter(isCloud).length,
+  }), [porTipo]);
+
+  // Lista filtrada por tipo + canal + busca (base para filter chip counts)
+  const baseFiltered = useMemo(() => {
+    return porTipo.filter(c => {
+      if (canalTab === "zapi" && isCloud(c)) return false;
+      if (canalTab === "whatsapp_cloud" && !isCloud(c)) return false;
+      if (busca && !c.contato_nome.toLowerCase().includes(busca.toLowerCase())) return false;
+      return true;
+    });
+  }, [porTipo, canalTab, busca]);
+
+  const filtroCounts = useMemo(() => {
+    const counts: Record<Filtro, number> = {
+      "Todas": 0, "Abertas": 0, "Minhas": 0, "Meu Depto": 0, "Fechadas": 0, "Sem Atendente": 0,
+    };
+    for (const c of baseFiltered) {
+      counts["Todas"]++;
+      if (c.status === "aberta") counts["Abertas"]++;
+      if (c.atendente_id === currentUserId) counts["Minhas"]++;
+      if (userDepartamentoId && c.departamento_id === userDepartamentoId) counts["Meu Depto"]++;
+      if (c.status === "fechada") counts["Fechadas"]++;
+      if (c.status === "aberta" && !c.atendente_id) counts["Sem Atendente"]++;
+    }
+    return counts;
+  }, [baseFiltered, currentUserId, userDepartamentoId]);
+
+  const filtered = baseFiltered.filter(c => {
     if (filtro === "Abertas") return c.status === "aberta";
     if (filtro === "Minhas") return c.atendente_id === currentUserId;
     if (filtro === "Meu Depto") return userDepartamentoId && c.departamento_id === userDepartamentoId;
@@ -88,6 +134,11 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
       return bf - af;
     });
   }, [filtered]);
+
+  const tipoTabs: { id: TipoTab; label: string; icon: typeof User; count: number }[] = [
+    { id: "individual", label: "Individual", icon: User, count: tipoCounts.individual },
+    { id: "grupos", label: "Grupos", icon: Users, count: tipoCounts.grupos },
+  ];
 
   const canalTabs: { id: CanalTab; label: string; icon: typeof MessageSquare; count: number }[] = [
     { id: "todos", label: "Todos", icon: MessageSquare, count: counts.todos },
@@ -111,6 +162,31 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               <MessageSquarePlus className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+        {/* Tabs de tipo: separa Individual e Grupos */}
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-md bg-muted">
+          {tipoTabs.map(t => {
+            const Icon = t.icon;
+            const active = tipoTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTipoTab(t.id)}
+                className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={t.label}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] px-1 rounded ${active ? "bg-muted text-muted-foreground" : "bg-background/60"}`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
         {/* Tabs de canal: separa Z-API e WhatsApp Oficial */}
         <div className="grid grid-cols-3 gap-1 p-1 rounded-md bg-muted">
@@ -147,19 +223,26 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
           />
         </div>
         <div className="flex gap-1 flex-wrap">
-          {filtros.map(f => (
-            <button
-              key={f}
-              onClick={() => setFiltro(f)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                filtro === f
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+          {filtros.map(f => {
+            const active = filtro === f;
+            const count = filtroCounts[f];
+            return (
+              <button
+                key={f}
+                onClick={() => setFiltro(f)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                }`}
+              >
+                <span>{f}</span>
+                <span className={`text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,6 +54,8 @@ const baseSchema = z.object({
   data_nascimento: z.string().optional().or(z.literal("")),
 });
 
+const emailSchema = z.string().trim().email().max(255);
+
 export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCriado }: Props) {
   const { profile } = useAuth();
   const { toast } = useToast();
@@ -63,6 +65,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
   const [cpf, setCpf] = useState(""); // valor mascarado
   const [telefone, setTelefone] = useState(""); // valor mascarado
   const [email, setEmail] = useState("");
+  const [emailDebounced, setEmailDebounced] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [erros, setErros] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState(false);
@@ -72,6 +75,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
     if (!open) return;
     setNome("");
     setEmail("");
+    setEmailDebounced("");
     setDataNascimento("");
     setErros({});
     const limpo = valorBuscado.trim();
@@ -83,6 +87,18 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
       setCpf("");
     }
   }, [open, valorBuscado]);
+
+  // Debounce do e-mail para validação em tempo real sem piscar
+  useEffect(() => {
+    const t = setTimeout(() => setEmailDebounced(email), 250);
+    return () => clearTimeout(t);
+  }, [email]);
+
+  const emailInvalido = useMemo(() => {
+    const v = emailDebounced.trim();
+    if (!v) return false;
+    return !emailSchema.safeParse(v).success;
+  }, [emailDebounced]);
 
   const handleCpfChange = (v: string) => setCpf(mascararCPF(v));
   const handleTelChange = (v: string) => setTelefone(mascararTelefoneBR(v));
@@ -124,7 +140,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
 
     setSalvando(true);
     try {
-      // Verificar duplicidade por CPF ou telefone (usando dígitos)
+      // 1ª checagem (UX rápida) — busca por CPF/telefone existentes
       const filtros: string[] = [];
       if (cpfDigitos) filtros.push(`cpf.eq.${cpfDigitos}`);
       if (telDigitos) filtros.push(`telefone.eq.${telDigitos}`);
@@ -166,12 +182,43 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
         )
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // 2ª linha de defesa: violação de unicidade (CPF ou telefone) por concorrência
+        const code = (error as { code?: string }).code;
+        if (code === "23505") {
+          const orFiltros: string[] = [];
+          if (telDigitos) orFiltros.push(`telefone.eq.${telDigitos}`);
+          if (cpfDigitos) orFiltros.push(`cpf.eq.${cpfDigitos}`);
+          if (orFiltros.length > 0) {
+            const { data: existente } = await supabase
+              .from("contatos")
+              .select(
+                "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
+              )
+              .or(orFiltros.join(","))
+              .maybeSingle();
+            if (existente) {
+              toast({
+                title: "Cliente já existente",
+                description:
+                  "Este CPF ou telefone já pertence a outro cadastro — carregando o existente.",
+              });
+              onCriado(existente as ContatoCaixa);
+              onOpenChange(false);
+              return;
+            }
+          }
+        }
+        throw error;
+      }
 
       queryClient.invalidateQueries({ queryKey: ["contatos"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-contatos"] });
 
-      toast({ title: "Cliente cadastrado!" });
+      toast({
+        title: "✓ Cliente cadastrado",
+        description: `${(criado as ContatoCaixa).nome} foi adicionado e está pronto para a venda.`,
+      });
       onCriado(criado as ContatoCaixa);
       onOpenChange(false);
     } catch (err: unknown) {
@@ -181,6 +228,8 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
       setSalvando(false);
     }
   };
+
+  const podeSalvar = !salvando && !emailInvalido;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -242,8 +291,14 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               maxLength={255}
+              aria-invalid={emailInvalido}
+              className={emailInvalido ? "border-destructive focus-visible:ring-destructive" : ""}
             />
-            {erros.email && <p className="text-xs text-destructive mt-1">{erros.email}</p>}
+            {(emailInvalido || erros.email) && (
+              <p className="text-xs text-destructive mt-1">
+                {erros.email || "E-mail inválido"}
+              </p>
+            )}
           </div>
 
           <div>
@@ -261,7 +316,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={salvando}>
             Cancelar
           </Button>
-          <Button onClick={handleSalvar} disabled={salvando}>
+          <Button onClick={handleSalvar} disabled={!podeSalvar}>
             {salvando ? "Salvando..." : "Cadastrar e continuar"}
           </Button>
         </DialogFooter>

@@ -18,7 +18,7 @@ import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "l
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
 import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
-import { apenasDigitos } from "@/lib/br-format";
+import { apenasDigitos, mascararCPF, mascararTelefoneBR } from "@/lib/br-format";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
@@ -83,12 +83,16 @@ export default function GiftbackCaixa() {
   const [buscando, setBuscando] = useState(false);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
   const [dialogNovoOpen, setDialogNovoOpen] = useState(false);
+  const [recemCarregado, setRecemCarregado] = useState(false);
   const contatoCardRef = useRef<HTMLDivElement | null>(null);
 
-  // Quando um contato entra na tela, traz o card para a viewport
+  // Quando um contato entra na tela, traz o card para a viewport e destaca por 2s
   useEffect(() => {
     if (contato && contatoCardRef.current) {
       contatoCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      setRecemCarregado(true);
+      const t = setTimeout(() => setRecemCarregado(false), 2000);
+      return () => clearTimeout(t);
     }
   }, [contato?.id]);
   const { data: configGlobal } = useQuery({
@@ -526,14 +530,20 @@ export default function GiftbackCaixa() {
       {/* Contato */}
       {contato && (
         <div ref={contatoCardRef}>
-        <Card>
+        <Card
+          className={
+            recemCarregado
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background transition-shadow duration-500"
+              : "transition-shadow duration-500"
+          }
+        >
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <CardTitle className="text-lg">{contato.nome}</CardTitle>
                 <CardDescription>
-                  {contato.cpf && `CPF: ${contato.cpf}`}
-                  {contato.telefone && ` • Tel: ${contato.telefone}`}
+                  {contato.cpf && `CPF: ${mascararCPF(contato.cpf)}`}
+                  {contato.telefone && ` • Tel: ${mascararTelefoneBR(contato.telefone)}`}
                 </CardDescription>
               </div>
               <RfvBadge

@@ -242,6 +242,11 @@ export function RegraComunicacaoDialog({ open, onOpenChange, regra }: RegraComun
                   <SelectItem value="expirado">Giftback expirado</SelectItem>
                 </SelectContent>
               </Select>
+              {tipoGatilho === "criado" && (
+                <p className="text-xs text-muted-foreground">
+                  Envia uma vez por giftback <strong>criado no dia anterior</strong>, no horário configurado.
+                </p>
+              )}
             </div>
 
             {tipoGatilho !== "criado" && (

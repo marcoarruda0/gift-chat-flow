@@ -238,6 +238,18 @@ export default function Configuracoes() {
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </CardContent>
           </Card>
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => navigate("/configuracoes/instagram")}>
+            <CardContent className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <Instagram className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-medium">Configuração Instagram</p>
+                  <p className="text-xs text-muted-foreground">Receber e responder DMs do Instagram</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
           <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => navigate("/configuracoes/ia")}>
             <CardContent className="flex items-center justify-between p-4">
               <div className="flex items-center gap-3">

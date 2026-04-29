@@ -604,6 +604,7 @@ export default function GiftbackCaixa() {
             )}
           </CardContent>
         </Card>
+        </div>
       )}
 
       {/* Registrar compra */}

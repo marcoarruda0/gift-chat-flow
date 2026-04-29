@@ -257,14 +257,28 @@ export default function GiftbackCaixa() {
         filtros.add(`cpf.eq.${termoDigitos}`);
         filtros.add(`telefone.eq.${termoDigitos}`);
       }
+      // Se o termo parece um telefone BR (mesmo se vier com DDI 55),
+      // gera todas as variantes (com/sem 55, com/sem 9 extra) e
+      // adiciona como filtros. Isso resolve o caso clássico em que o
+      // contato foi gravado como "5511..." pelo webhook do Z-API e o
+      // operador digita só "11..." no caixa.
+      const telCanon = normalizarTelefoneBR(termoDigitos);
+      if (telCanon && validarTelefoneBR(telCanon)) {
+        for (const v of gerarVariantesTelefone(termoDigitos)) {
+          filtros.add(`telefone.eq.${v}`);
+        }
+      }
 
-      const { data: cData } = await supabase
+      const { data: matches } = await supabase
         .from("contatos")
         .select(
-          "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
+          "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor, created_at",
         )
         .or(Array.from(filtros).join(","))
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      const cData = matches?.[0] ?? null;
 
       if (!cData) {
         setContato(null);

@@ -61,6 +61,11 @@ export default function IAConfig() {
   const [satisfacaoMinMsgs, setSatisfacaoMinMsgs] = useState(2);
   const [reanalisando, setReanalisando] = useState(false);
 
+  // Transcrição de áudios
+  const [transcricaoAtivo, setTranscricaoAtivo] = useState(true);
+  const [transcricaoIdioma, setTranscricaoIdioma] = useState("pt");
+  const [transcrevendoPendentes, setTranscrevendoPendentes] = useState(false);
+
   // Análise
   const [ultimaAnaliseEm, setUltimaAnaliseEm] = useState<string | null>(null);
   const [periodoInicio, setPeriodoInicio] = useState(defaultPeriodoInicio());

@@ -80,6 +80,15 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     return true;
   });
 
+  // Conversas fixadas no topo, mantendo ordem original (já vem por ultima_msg_at desc)
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const af = a.fixada ? 1 : 0;
+      const bf = b.fixada ? 1 : 0;
+      return bf - af;
+    });
+  }, [filtered]);
+
   const canalTabs: { id: CanalTab; label: string; icon: typeof MessageSquare; count: number }[] = [
     { id: "todos", label: "Todos", icon: MessageSquare, count: counts.todos },
     { id: "zapi", label: "Z-API", icon: MessageSquare, count: counts.zapi },

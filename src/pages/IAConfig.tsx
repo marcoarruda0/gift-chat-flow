@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile } from "lucide-react";
+import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile, Mic } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const CANAIS = [

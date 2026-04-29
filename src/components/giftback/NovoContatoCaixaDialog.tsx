@@ -15,6 +15,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  apenasDigitos,
+  ehProvavelCPF,
+  mascararCPF,
+  mascararTelefoneBR,
+  validarCPF,
+  validarTelefoneBR,
+} from "@/lib/br-format";
 
 export interface ContatoCaixa {
   id: string;
@@ -34,36 +42,17 @@ interface Props {
   onCriado: (contato: ContatoCaixa) => void;
 }
 
-const schema = z
-  .object({
-    nome: z.string().trim().min(1, "Nome é obrigatório").max(100, "Máx. 100 caracteres"),
-    cpf: z
-      .string()
-      .trim()
-      .max(14, "CPF inválido")
-      .optional()
-      .or(z.literal("")),
-    telefone: z
-      .string()
-      .trim()
-      .max(20, "Telefone inválido")
-      .optional()
-      .or(z.literal("")),
-    email: z
-      .string()
-      .trim()
-      .email("E-mail inválido")
-      .max(255)
-      .optional()
-      .or(z.literal("")),
-    data_nascimento: z.string().optional().or(z.literal("")),
-  })
-  .refine((d) => (d.cpf && d.cpf.length > 0) || (d.telefone && d.telefone.length > 0), {
-    message: "Informe CPF ou telefone",
-    path: ["telefone"],
-  });
-
-const ehProvavelCpf = (v: string) => /^\d{11}$/.test(v.replace(/\D/g, ""));
+const baseSchema = z.object({
+  nome: z.string().trim().min(1, "Nome é obrigatório").max(100, "Máx. 100 caracteres"),
+  email: z
+    .string()
+    .trim()
+    .email("E-mail inválido")
+    .max(255)
+    .optional()
+    .or(z.literal("")),
+  data_nascimento: z.string().optional().or(z.literal("")),
+});
 
 export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCriado }: Props) {
   const { profile } = useAuth();
@@ -71,14 +60,14 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
   const queryClient = useQueryClient();
 
   const [nome, setNome] = useState("");
-  const [cpf, setCpf] = useState("");
-  const [telefone, setTelefone] = useState("");
+  const [cpf, setCpf] = useState(""); // valor mascarado
+  const [telefone, setTelefone] = useState(""); // valor mascarado
   const [email, setEmail] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [erros, setErros] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState(false);
 
-  // Pré-preenche CPF ou telefone com base no que foi digitado na busca
+  // Pré-preenche CPF (se for CPF válido) ou telefone, já aplicando máscara
   useEffect(() => {
     if (!open) return;
     setNome("");
@@ -86,23 +75,43 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
     setDataNascimento("");
     setErros({});
     const limpo = valorBuscado.trim();
-    if (ehProvavelCpf(limpo)) {
-      setCpf(limpo);
+    if (ehProvavelCPF(limpo)) {
+      setCpf(mascararCPF(limpo));
       setTelefone("");
     } else {
-      setTelefone(limpo);
+      setTelefone(mascararTelefoneBR(limpo));
       setCpf("");
     }
   }, [open, valorBuscado]);
 
+  const handleCpfChange = (v: string) => setCpf(mascararCPF(v));
+  const handleTelChange = (v: string) => setTelefone(mascararTelefoneBR(v));
+
   const handleSalvar = async () => {
-    const parsed = schema.safeParse({ nome, cpf, telefone, email, data_nascimento: dataNascimento });
-    if (!parsed.success) {
-      const novosErros: Record<string, string> = {};
-      parsed.error.errors.forEach((e) => {
+    const novosErros: Record<string, string> = {};
+
+    const baseParsed = baseSchema.safeParse({ nome, email, data_nascimento: dataNascimento });
+    if (!baseParsed.success) {
+      baseParsed.error.errors.forEach((e) => {
         const k = e.path[0] as string;
         if (k && !novosErros[k]) novosErros[k] = e.message;
       });
+    }
+
+    const cpfDigitos = apenasDigitos(cpf);
+    const telDigitos = apenasDigitos(telefone);
+
+    if (!cpfDigitos && !telDigitos) {
+      novosErros.telefone = "Informe CPF ou telefone";
+    }
+    if (cpfDigitos && !validarCPF(cpfDigitos)) {
+      novosErros.cpf = "CPF inválido";
+    }
+    if (telDigitos && !validarTelefoneBR(telDigitos)) {
+      novosErros.telefone = "Telefone inválido (use DDD + número)";
+    }
+
+    if (Object.keys(novosErros).length > 0) {
       setErros(novosErros);
       return;
     }
@@ -115,10 +124,10 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
 
     setSalvando(true);
     try {
-      // Verificar duplicidade por CPF ou telefone
+      // Verificar duplicidade por CPF ou telefone (usando dígitos)
       const filtros: string[] = [];
-      if (cpf) filtros.push(`cpf.eq.${cpf}`);
-      if (telefone) filtros.push(`telefone.eq.${telefone}`);
+      if (cpfDigitos) filtros.push(`cpf.eq.${cpfDigitos}`);
+      if (telDigitos) filtros.push(`telefone.eq.${telDigitos}`);
 
       if (filtros.length > 0) {
         const { data: existente } = await supabase
@@ -140,8 +149,8 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
       const payload = {
         tenant_id: profile.tenant_id,
         nome: nome.trim(),
-        telefone: telefone.trim() || null,
-        cpf: cpf.trim() || null,
+        telefone: telDigitos || null,
+        cpf: cpfDigitos || null,
         email: email.trim() || null,
         data_nascimento: dataNascimento || null,
         campos_personalizados: {},
@@ -202,8 +211,9 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
               <Input
                 id="nc-cpf"
                 value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
-                placeholder="Somente números"
+                onChange={(e) => handleCpfChange(e.target.value)}
+                placeholder="000.000.000-00"
+                inputMode="numeric"
                 maxLength={14}
               />
               {erros.cpf && <p className="text-xs text-destructive mt-1">{erros.cpf}</p>}
@@ -213,9 +223,10 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
               <Input
                 id="nc-tel"
                 value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
-                placeholder="DDD + número"
-                maxLength={20}
+                onChange={(e) => handleTelChange(e.target.value)}
+                placeholder="(00) 00000-0000"
+                inputMode="numeric"
+                maxLength={16}
               />
               {erros.telefone && (
                 <p className="text-xs text-destructive mt-1">{erros.telefone}</p>

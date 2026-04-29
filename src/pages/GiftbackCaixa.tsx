@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +18,7 @@ import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "l
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
 import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
+import { apenasDigitos } from "@/lib/br-format";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
@@ -82,6 +83,14 @@ export default function GiftbackCaixa() {
   const [buscando, setBuscando] = useState(false);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
   const [dialogNovoOpen, setDialogNovoOpen] = useState(false);
+  const contatoCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Quando um contato entra na tela, traz o card para a viewport
+  useEffect(() => {
+    if (contato && contatoCardRef.current) {
+      contatoCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [contato?.id]);
   const { data: configGlobal } = useQuery({
     queryKey: ["giftback-config"],
     queryFn: async () => {
@@ -219,16 +228,30 @@ export default function GiftbackCaixa() {
    * Busca contato por CPF/telefone e delega o carregamento.
    */
   const buscarContato = async () => {
-    if (!busca.trim()) return;
+    const termoBruto = busca.trim();
+    if (!termoBruto) return;
     setBuscando(true);
     setNaoEncontrado(false);
     try {
+      const termoDigitos = apenasDigitos(termoBruto);
+      // Aceita match em qualquer formato (com máscara ou só dígitos),
+      // já que a base pode ter contatos antigos não normalizados.
+      const filtros = new Set<string>();
+      if (termoBruto) {
+        filtros.add(`cpf.eq.${termoBruto}`);
+        filtros.add(`telefone.eq.${termoBruto}`);
+      }
+      if (termoDigitos && termoDigitos !== termoBruto) {
+        filtros.add(`cpf.eq.${termoDigitos}`);
+        filtros.add(`telefone.eq.${termoDigitos}`);
+      }
+
       const { data: cData } = await supabase
         .from("contatos")
         .select(
           "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
         )
-        .or(`cpf.eq.${busca},telefone.eq.${busca}`)
+        .or(Array.from(filtros).join(","))
         .maybeSingle();
 
       if (!cData) {
@@ -502,6 +525,7 @@ export default function GiftbackCaixa() {
 
       {/* Contato */}
       {contato && (
+        <div ref={contatoCardRef}>
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-2">
@@ -580,6 +604,7 @@ export default function GiftbackCaixa() {
             )}
           </CardContent>
         </Card>
+        </div>
       )}
 
       {/* Registrar compra */}

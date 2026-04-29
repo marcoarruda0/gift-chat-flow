@@ -125,7 +125,7 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
         ) : (
           mensagens.map(m => (
             <MessageBubble
-              key={m.id}
+              id={m.id}
               conteudo={m.conteudo}
               remetente={m.remetente}
               tipo={m.tipo}

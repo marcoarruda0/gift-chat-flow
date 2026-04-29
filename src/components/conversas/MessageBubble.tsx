@@ -39,7 +39,8 @@ function isPlaceholderMedia(conteudo: string): boolean {
   return /^\[(Imagem|Áudio|Vídeo|Documento)\]$/.test(conteudo);
 }
 
-export function MessageBubble({ conteudo, remetente, tipo, createdAt, senderName, senderAvatar, metadata, statusEntrega, canal }: MessageBubbleProps) {
+export function MessageBubble({ id, conteudo, remetente, tipo, createdAt, senderName, senderAvatar, metadata, statusEntrega, canal }: MessageBubbleProps) {
+  const [transcrevendo, setTranscrevendo] = useState(false);
   const isOutgoing = remetente === "atendente" || remetente === "bot";
   const showSenderIncoming = !isOutgoing && !!senderName;
   const showSenderOutgoing = isOutgoing && remetente === "atendente" && !!senderName;

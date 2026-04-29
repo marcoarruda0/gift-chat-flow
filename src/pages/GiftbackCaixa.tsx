@@ -512,7 +512,30 @@ export default function GiftbackCaixa() {
             <Input
               placeholder="CPF ou telefone do cliente"
               value={busca}
-              onChange={(e) => setBusca(e.target.value)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const d = apenasDigitos(raw);
+                // Só aplica máscara se o usuário está digitando essencialmente números
+                // (permite buscar por nome/parcial digitando letras).
+                const sohDigitosOuMascara = /^[\d().\-\s/]*$/.test(raw);
+                if (!sohDigitosOuMascara) {
+                  setBusca(raw);
+                  return;
+                }
+                if (d.length === 11 && ehProvavelCPF(d)) {
+                  setBusca(mascararCPF(d));
+                  return;
+                }
+                // Telefone BR: 10 ou 11 dígitos puros, ou 12/13 com DDI 55.
+                if (d.length >= 10 && d.length <= 13) {
+                  const canon = normalizarTelefoneBR(d);
+                  if (canon.length === 10 || canon.length === 11) {
+                    setBusca(mascararTelefoneBR(canon));
+                    return;
+                  }
+                }
+                setBusca(raw);
+              }}
               onKeyDown={(e) => e.key === "Enter" && buscarContato()}
             />
             <Button onClick={buscarContato} disabled={buscando}>

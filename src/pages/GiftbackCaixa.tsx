@@ -228,16 +228,30 @@ export default function GiftbackCaixa() {
    * Busca contato por CPF/telefone e delega o carregamento.
    */
   const buscarContato = async () => {
-    if (!busca.trim()) return;
+    const termoBruto = busca.trim();
+    if (!termoBruto) return;
     setBuscando(true);
     setNaoEncontrado(false);
     try {
+      const termoDigitos = apenasDigitos(termoBruto);
+      // Aceita match em qualquer formato (com máscara ou só dígitos),
+      // já que a base pode ter contatos antigos não normalizados.
+      const filtros = new Set<string>();
+      if (termoBruto) {
+        filtros.add(`cpf.eq.${termoBruto}`);
+        filtros.add(`telefone.eq.${termoBruto}`);
+      }
+      if (termoDigitos && termoDigitos !== termoBruto) {
+        filtros.add(`cpf.eq.${termoDigitos}`);
+        filtros.add(`telefone.eq.${termoDigitos}`);
+      }
+
       const { data: cData } = await supabase
         .from("contatos")
         .select(
           "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
         )
-        .or(`cpf.eq.${busca},telefone.eq.${busca}`)
+        .or(Array.from(filtros).join(","))
         .maybeSingle();
 
       if (!cData) {

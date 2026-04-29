@@ -165,12 +165,12 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Nenhuma conversa encontrada
           </div>
         ) : (
-          filtered.map(c => (
+          sorted.map(c => (
             <ConversaItem
               key={c.id}
               id={c.id}
@@ -184,6 +184,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               marcadaNaoLida={c.marcada_nao_lida}
               atendenteId={c.atendente_id}
               createdAt={c.created_at}
+              fixada={c.fixada}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

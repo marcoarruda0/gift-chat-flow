@@ -11,7 +11,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, MessageSquare, Settings, Brain, ChevronRight, Zap, Building2, Trash2, Loader2, Shield } from "lucide-react";
+import { Bot, MessageSquare, Settings, Brain, ChevronRight, Zap, Building2, Trash2, Loader2, Shield, Instagram } from "lucide-react";
 
 interface Fluxo {
   id: string;
@@ -233,6 +233,18 @@ export default function Configuracoes() {
                 <div>
                   <p className="font-medium">Configuração Z-API</p>
                   <p className="text-xs text-muted-foreground">Conexão com WhatsApp</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => navigate("/configuracoes/instagram")}>
+            <CardContent className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <Instagram className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-medium">Configuração Instagram</p>
+                  <p className="text-xs text-muted-foreground">Receber e responder DMs do Instagram</p>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />

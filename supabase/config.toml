@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.transcrever-audio]
 verify_jwt = false
+
+[functions.instagram-webhook]
+verify_jwt = false
+
+[functions.instagram-refresh-token]
+verify_jwt = false

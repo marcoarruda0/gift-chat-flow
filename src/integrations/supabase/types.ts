@@ -444,6 +444,8 @@ export type Database = {
           endereco: string | null
           genero: string | null
           id: string
+          instagram_id: string | null
+          instagram_username: string | null
           nome: string
           notas: string | null
           opt_out_at: string | null
@@ -469,6 +471,8 @@ export type Database = {
           endereco?: string | null
           genero?: string | null
           id?: string
+          instagram_id?: string | null
+          instagram_username?: string | null
           nome: string
           notas?: string | null
           opt_out_at?: string | null
@@ -494,6 +498,8 @@ export type Database = {
           endereco?: string | null
           genero?: string | null
           id?: string
+          instagram_id?: string | null
+          instagram_username?: string | null
           nome?: string
           notas?: string | null
           opt_out_at?: string | null
@@ -604,6 +610,7 @@ export type Database = {
           created_at: string
           departamento_id: string | null
           id: string
+          instagram_thread_id: string | null
           marcada_nao_lida: boolean
           nao_lidas: number
           status: string
@@ -622,6 +629,7 @@ export type Database = {
           created_at?: string
           departamento_id?: string | null
           id?: string
+          instagram_thread_id?: string | null
           marcada_nao_lida?: boolean
           nao_lidas?: number
           status?: string
@@ -640,6 +648,7 @@ export type Database = {
           created_at?: string
           departamento_id?: string | null
           id?: string
+          instagram_thread_id?: string | null
           marcada_nao_lida?: boolean
           nao_lidas?: number
           status?: string
@@ -1382,6 +1391,68 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      instagram_config: {
+        Row: {
+          created_at: string
+          id: string
+          ig_user_id: string
+          ig_username: string | null
+          page_access_token: string
+          page_id: string
+          status: string
+          tenant_id: string
+          token_expires_at: string | null
+          ultima_mensagem_at: string | null
+          ultima_verificacao_at: string | null
+          ultimo_erro: string | null
+          updated_at: string
+          user_access_token: string | null
+          verify_token: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ig_user_id: string
+          ig_username?: string | null
+          page_access_token: string
+          page_id: string
+          status?: string
+          tenant_id: string
+          token_expires_at?: string | null
+          ultima_mensagem_at?: string | null
+          ultima_verificacao_at?: string | null
+          ultimo_erro?: string | null
+          updated_at?: string
+          user_access_token?: string | null
+          verify_token?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ig_user_id?: string
+          ig_username?: string | null
+          page_access_token?: string
+          page_id?: string
+          status?: string
+          tenant_id?: string
+          token_expires_at?: string | null
+          ultima_mensagem_at?: string | null
+          ultima_verificacao_at?: string | null
+          ultimo_erro?: string | null
+          updated_at?: string
+          user_access_token?: string | null
+          verify_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lgpd_config: {
         Row: {

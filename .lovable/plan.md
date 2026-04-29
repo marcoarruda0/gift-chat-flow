@@ -1,73 +1,58 @@
-# Fixar conversas no painel de Conversas
+## Cadastro rápido de cliente no Painel do Caixa (Giftback)
 
-Permitir que o atendente "fixe" suas conversas no topo da lista, com regras alinhadas ao WhatsApp.
+Hoje, em **Giftback → Painel do Caixa**, ao buscar um CPF/telefone que não existe, aparece apenas um toast "Contato não encontrado" e o operador precisa sair do fluxo, ir até o módulo Contatos e cadastrar. O objetivo é permitir o cadastro **na hora**, sem sair do caixa.
 
-## Regras de negócio
+### Comportamento proposto
 
-- Só pode fixar quem é o **atendente da conversa** (`atendente_id = auth.uid()`). Se a conversa não tem atendente ou pertence a outro, o botão não aparece.
-- Cada usuário fixa para si mesmo (fixação por usuário, não global no tenant).
-- Ao **encerrar a conversa** (status vira `fechada`), a fixação é removida automaticamente.
-- Ao **transferir** para outro atendente, a fixação do antigo atendente também é removida (mantém consistência da regra "só fixa quem está com a conversa").
-- Conversas fixadas aparecem no **topo** da lista, ordenadas entre si por `ultima_msg_at desc`. Demais conversas seguem a ordem atual.
-- Ícone usado: `Pin` do `lucide-react` (mesmo formato do alfinete do WhatsApp). Quando fixada, usa `PinOff` no botão (toggle) e mostra um pequeno `Pin` ao lado do horário no `ConversaItem`.
+1. Operador digita CPF ou telefone em `GiftbackCaixa` e clica em buscar.
+2. Se a busca retornar nada:
+   - Substituir o toast atual por um **bloco inline** abaixo da busca: "Cliente não encontrado. Deseja cadastrar agora?" + botão **"Cadastrar novo cliente"**.
+   - O termo digitado é preservado (não é apagado).
+3. Ao clicar no botão, abre um **dialog** ("Novo cliente") com formulário enxuto:
+   - **Nome** (obrigatório)
+   - **CPF** e **Telefone** (pelo menos um obrigatório; o que foi digitado na busca já vem pré-preenchido — detecta se é CPF apenas-dígitos com 11 chars vs telefone)
+   - **E-mail** (opcional)
+   - **Data de nascimento** (opcional)
+4. Ao salvar:
+   - Insere em `contatos` com `tenant_id` do operador (mesmo padrão usado em `src/pages/Contatos.tsx`, com `saldo_giftback = 0`, `campos_personalizados = {}`, `tags = []`).
+   - Fecha o dialog, **carrega automaticamente o contato recém-criado** no painel (mesma estrutura que `buscarContato` usa) e segue o fluxo normal de registrar a compra.
+   - Como a inserção usa `tenant_id` correto, o contato já aparece em **Contatos** sem nenhuma ação adicional (RLS por tenant garante isso).
+5. Validações:
+   - Antes de inserir, conferir duplicidade por CPF ou telefone (`select id from contatos where cpf = ? or telefone = ?`) — se já existir, carrega o existente em vez de duplicar.
+   - Validação client-side com zod (nome ≤100, e-mail válido se preenchido, CPF/telefone só dígitos).
 
-## Banco de dados
+### Mudanças técnicas
 
-Nova tabela `conversa_fixacoes` (fixação por usuário):
+- **Novo componente**: `src/components/giftback/NovoContatoCaixaDialog.tsx`
+  - Props: `open`, `onOpenChange`, `valorBuscado` (string), `onCriado(contato)`.
+  - Usa `Dialog`, `Input`, `Label`, `Button` do shadcn + `react-hook-form` + `zod`.
+  - Faz o insert e devolve o objeto `Contato` no shape esperado pelo caixa.
+- **`src/pages/GiftbackCaixa.tsx`**:
+  - Adicionar estado `naoEncontrado: boolean` e `dialogNovoOpen: boolean`.
+  - Em `buscarContato`, quando `!cData`, em vez do toast destrutivo, setar `naoEncontrado=true` e limpar `contato`.
+  - Renderizar bloco inline com `AlertTriangle` + botão "Cadastrar novo cliente" logo abaixo do `Card` de busca.
+  - Callback `onCriado` carrega o contato (reaproveitar lógica de busca já existente) e zera `naoEncontrado`.
+  - Invalidar `queryClient.invalidateQueries({ queryKey: ["contatos"] })` para refletir no módulo Contatos.
 
-```sql
-create table public.conversa_fixacoes (
-  conversa_id uuid not null references public.conversas(id) on delete cascade,
-  user_id uuid not null,
-  tenant_id uuid not null,
-  fixada_at timestamptz not null default now(),
-  primary key (conversa_id, user_id)
-);
+### Sem mudanças necessárias
+
+- Banco/RLS: a tabela `contatos` já permite insert por tenant (`tenant_insert_contacts`).
+- Módulo Contatos: o novo registro aparece automaticamente porque compartilha `tenant_id`.
+
+### Diagrama do fluxo
+
+```text
+[Buscar CPF/tel] -> encontrou? --sim--> fluxo atual (registrar compra)
+                          \
+                           --não--> [Aviso inline + botão "Cadastrar"]
+                                          |
+                                     [Dialog Novo Cliente]
+                                          |
+                                     [Salvar -> contatos]
+                                          |
+                                  [Carrega contato no caixa]
+                                          |
+                                     fluxo atual
 ```
 
-- RLS: SELECT/INSERT/DELETE somente quando `user_id = auth.uid()` e `tenant_id` pertence ao usuário (mesmo padrão das demais tabelas do projeto).
-- Índice em `(user_id, tenant_id)` para o join na listagem.
-
-Trigger / lógica para limpar fixação:
-
-- Trigger `AFTER UPDATE` em `conversas` que, quando `status` muda para `fechada` OU `atendente_id` muda, executa `DELETE FROM conversa_fixacoes WHERE conversa_id = NEW.id` (no caso de troca de atendente, apaga a fixação do atendente antigo).
-
-## Backend / dados na listagem
-
-`fetchConversas` em `src/pages/Conversas.tsx`:
-
-- Após carregar `conversas`, buscar `conversa_fixacoes` do usuário atual:
-  `select conversa_id from conversa_fixacoes where user_id = auth.uid()`.
-- Marcar `fixada: true` nas conversas correspondentes.
-- Ordenar: `fixada desc, ultima_msg_at desc`.
-
-## UI
-
-### `src/components/conversas/ChatPanel.tsx`
-
-Adicionar botão Pin/PinOff entre "Marcar como não lida" e "Encerrar conversa":
-
-- Props novas: `isPinned?: boolean`, `onTogglePin?: () => void`.
-- Renderizar somente quando `isAssignedToMe` for `true` (espelhando a regra do botão de encerrar).
-- Ícone `Pin` quando não fixada (title "Fixar conversa"), `PinOff` quando fixada (title "Desafixar conversa").
-
-### `src/components/conversas/ConversaItem.tsx`
-
-- Nova prop `fixada?: boolean`.
-- Quando `fixada`, mostrar um `<Pin className="h-3 w-3 text-muted-foreground" />` rotacionado 45° à direita do horário (igual WhatsApp).
-
-### `src/components/conversas/ConversasList.tsx` e `Conversas.tsx`
-
-- Propagar `fixada` no tipo `Conversa`.
-- `Conversas.tsx`: novo handler `handleTogglePin` — insere/deleta em `conversa_fixacoes`, atualiza estado local e re-ordena.
-- Ajustar ordenação local (sort estável) para respeitar `fixada` no topo.
-- Em `handleClose` e `handleTransfer`/`handleTransferDepartamento`, atualizar estado local removendo `fixada` (o trigger já cuida do banco).
-
-## Arquivos afetados
-
-- `supabase/migrations/<novo>.sql` — tabela, RLS, trigger.
-- `src/pages/Conversas.tsx` — fetch fixações, handler, propagação.
-- `src/components/conversas/ConversasList.tsx` — tipo + ordenação + prop.
-- `src/components/conversas/ConversaItem.tsx` — ícone de pin no item.
-- `src/components/conversas/ChatPanel.tsx` — botão pin/unpin no header.
-- `src/integrations/supabase/types.ts` — atualizado automaticamente pela migração.
+Posso seguir com a implementação?

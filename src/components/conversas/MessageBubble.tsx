@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { FileDown, Image, Mic, Video, Check, CheckCheck, AlertCircle } from "lucide-react";
+import { FileDown, Image, Mic, Video, Check, CheckCheck, AlertCircle, Loader2, Copy, RefreshCw, Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface MessageBubbleProps {
   conteudo: string;

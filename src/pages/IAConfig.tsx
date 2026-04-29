@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile } from "lucide-react";
+import { Bot, Save, Send, Loader2, Sparkles, ScanSearch, Copy, AlertTriangle, Wand2, Smile, Mic } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const CANAIS = [
@@ -60,6 +60,11 @@ export default function IAConfig() {
   const [satisfacaoCriterios, setSatisfacaoCriterios] = useState("");
   const [satisfacaoMinMsgs, setSatisfacaoMinMsgs] = useState(2);
   const [reanalisando, setReanalisando] = useState(false);
+
+  // Transcrição de áudios
+  const [transcricaoAtivo, setTranscricaoAtivo] = useState(true);
+  const [transcricaoIdioma, setTranscricaoIdioma] = useState("pt");
+  const [transcrevendoPendentes, setTranscrevendoPendentes] = useState(false);
 
   // Análise
   const [ultimaAnaliseEm, setUltimaAnaliseEm] = useState<string | null>(null);
@@ -104,6 +109,8 @@ export default function IAConfig() {
         setSatisfacaoAtivo((data as any).satisfacao_ativo ?? false);
         setSatisfacaoCriterios((data as any).satisfacao_criterios ?? "");
         setSatisfacaoMinMsgs((data as any).satisfacao_min_mensagens_cliente ?? 2);
+        setTranscricaoAtivo((data as any).transcricao_audio_ativo ?? true);
+        setTranscricaoIdioma((data as any).transcricao_audio_idioma ?? "pt");
       }
 
       const { data: analises } = await supabase
@@ -134,6 +141,8 @@ export default function IAConfig() {
         satisfacao_ativo: satisfacaoAtivo,
         satisfacao_criterios: satisfacaoCriterios,
         satisfacao_min_mensagens_cliente: satisfacaoMinMsgs,
+        transcricao_audio_ativo: transcricaoAtivo,
+        transcricao_audio_idioma: transcricaoIdioma,
       };
 
       if (configId) {
@@ -294,6 +303,45 @@ export default function IAConfig() {
       toast.error("Erro ao enfileirar: " + (err.message || "Erro desconhecido"));
     } finally {
       setReanalisando(false);
+    }
+  };
+
+  const handleTranscreverPendentes = async () => {
+    if (!tenantId) return;
+    setTranscrevendoPendentes(true);
+    try {
+      // Busca até 100 mensagens de áudio sem transcrição
+      const { data: msgs, error } = await supabase
+        .from("mensagens")
+        .select("id, metadata")
+        .eq("tenant_id", tenantId)
+        .eq("tipo", "audio")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      const pendentes = (msgs || []).filter((m: any) => {
+        const s = m.metadata?.transcricao_status;
+        return !s || s === "erro";
+      }).slice(0, 100);
+
+      if (pendentes.length === 0) {
+        toast.info("Nenhum áudio pendente para transcrever.");
+        return;
+      }
+
+      // Marca como pendente em lote
+      for (const m of pendentes) {
+        await supabase.from("mensagens").update({
+          metadata: { ...((m.metadata as Record<string, any>) || {}), transcricao_status: "pendente", transcricao_tentativas: 0, transcricao_erro: null },
+        }).eq("id", m.id);
+      }
+      // Dispara processamento imediato
+      await supabase.functions.invoke("transcrever-audio", { body: { mode: "batch" } });
+      toast.success(`${pendentes.length} áudios enfileirados para transcrição.`);
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "desconhecido"));
+    } finally {
+      setTranscrevendoPendentes(false);
     }
   };
 
@@ -517,6 +565,62 @@ export default function IAConfig() {
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Transcrição de áudios */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <Mic className="h-5 w-5 text-primary" /> Transcrição automática de áudios
+              </CardTitle>
+              <CardDescription>
+                Toda mensagem de áudio recebida ou enviada é convertida em texto pela IA, exibido abaixo do player no chat.
+                Útil para atendentes que não usam fone de ouvido.
+              </CardDescription>
+            </div>
+            <Switch checked={transcricaoAtivo} onCheckedChange={setTranscricaoAtivo} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Idioma do áudio</Label>
+              <Select value={transcricaoIdioma} onValueChange={setTranscricaoIdioma} disabled={!transcricaoAtivo}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pt">Português</SelectItem>
+                  <SelectItem value="es">Espanhol</SelectItem>
+                  <SelectItem value="en">Inglês</SelectItem>
+                  <SelectItem value="auto">Auto-detectar</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Idioma esperado dos áudios. Use auto-detectar em caso de mistura.
+              </p>
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                onClick={handleTranscreverPendentes}
+                disabled={!transcricaoAtivo || transcrevendoPendentes}
+                className="w-full"
+              >
+                {transcrevendoPendentes ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enfileirando…</>
+                ) : (
+                  <>Transcrever áudios pendentes</>
+                )}
+              </Button>
+            </div>
+          </div>
+          <Alert>
+            <AlertDescription className="text-xs">
+              Áudios maiores que 10 MB são ignorados. Áudios antigos podem ser transcritos clicando em "Transcrever áudio" no balão da conversa.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
 

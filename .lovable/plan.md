@@ -1,125 +1,115 @@
+## Transcrição automática de áudios em conversas
 
-# Análise Automática de Satisfação por IA
+Adicionar transcrição automática (texto) sob cada mensagem de áudio nas conversas, para que atendentes em PCs sem fone consigam ler o que o cliente disse. A transcrição roda no backend via Lovable AI (Gemini multimodal), é armazenada na própria mensagem e renderizada no balão do chat com opção de copiar.
 
-Quando um atendimento de WhatsApp (Z-API ou Cloud Oficial) é encerrado, uma IA analisa a conversa e classifica objetivamente a satisfação do cliente em uma escala de 5 níveis. Os dados ficam disponíveis em uma nova aba de Relatórios.
+---
 
-## Escopo
+### 1. Comportamento esperado (UX)
 
-- **Canais analisados**: apenas `zapi` e `whatsapp_cloud` (ignora outros)
-- **Conversas ignoradas**: aquelas geradas/dominadas por fluxos automáticos ou disparos de campanha (sem interação humana real do atendente)
-- **Mensagens consideradas**: do cliente + do atendente humano + sugestões de IA aceitas (rascunhos enviados). Mensagens de fluxo automático e disparo são marcadas como contexto, não pesam na avaliação.
-- **Escala**: 5 níveis (`muito_insatisfeito` a `muito_satisfeito`), score 1-5
+- Toda nova mensagem de áudio recebida (Z-API ou WhatsApp Cloud) é enfileirada para transcrição automaticamente.
+- No balão de áudio (`MessageBubble`) aparece, abaixo do player:
+  - Estado "Transcrevendo..." (com spinner) enquanto pendente.
+  - Texto transcrito quando concluído, com botão "Copiar" e selo discreto "Transcrição IA".
+  - Em caso de falha: link "Tentar novamente" (apenas para atendentes).
+- Áudios enviados pelo próprio atendente também são transcritos (útil para histórico/buscas).
+- Áudios antigos (já existentes): botão manual "Transcrever" no balão para gerar sob demanda (sem reprocessar 307 áudios automaticamente).
+- Toggle global em **Configurações de IA** para ligar/desligar a feature por tenant.
 
-## O que a IA avalia
+---
 
-Além do conteúdo (sentimento, palavras de elogio/reclamação, resolução do problema), a análise considera **métricas operacionais** calculadas no backend e injetadas no prompt:
+### 2. Banco de dados (migration)
 
-- Cliente foi efetivamente respondido (ratio mensagens cliente vs respostas atendente)
-- Tempo médio de primeira resposta e tempo entre respostas
-- Duração total do atendimento
-- Quantidade de mensagens não respondidas no fim
-- Se houve transferência entre atendentes
-- Se a conversa terminou com cliente perguntando algo sem resposta
+**Em `mensagens.metadata` (jsonb já existente)** — sem nova coluna, padronizamos as chaves:
+- `transcricao_status`: `pendente | processando | concluido | erro | desativado`
+- `transcricao_texto`: string
+- `transcricao_idioma`: string (ex: `pt`)
+- `transcricao_modelo`: string
+- `transcricao_processado_em`: ISO timestamp
+- `transcricao_erro`: string
 
-A IA combina esses sinais com o conteúdo das mensagens para gerar:
-- Classificação (5 níveis) + score (1-5)
-- Sentimento geral (positivo/neutro/negativo)
-- Justificativa curta
-- Pontos positivos e negativos detectados
+**Em `ia_config`** — adicionar:
+- `transcricao_audio_ativo boolean not null default true`
+- `transcricao_audio_idioma text default 'pt'` (auto-detect quando vazio)
 
-## Banco de Dados
+**Trigger `enfileirar_transcricao_audio`** em `AFTER INSERT ON mensagens`:
+- Se `tipo = 'audio'`, se `ia_config.transcricao_audio_ativo = true` para o tenant, e se `metadata->>'transcricao_status'` é nulo → setar `metadata.transcricao_status = 'pendente'`.
+- Não chama edge function diretamente (cron faz polling).
 
-### Estender `ia_config`
-- `satisfacao_ativo` boolean
-- `satisfacao_criterios` text — instruções livres do tenant
-- `satisfacao_min_mensagens_cliente` int default 2 — ignora conversas muito curtas
+**Índice parcial** para o worker:
+```sql
+CREATE INDEX idx_mensagens_transc_pendente
+ON public.mensagens ((metadata->>'transcricao_status'))
+WHERE tipo = 'audio' AND metadata->>'transcricao_status' IN ('pendente','processando');
+```
 
-### Nova tabela `atendimento_satisfacao`
-| Campo | Tipo |
-|---|---|
-| id, tenant_id, conversa_id (UNIQUE), contato_id, atendente_id, departamento_id | uuid |
-| canal | text |
-| classificacao | enum 5 níveis |
-| score | smallint 1-5 |
-| sentimento | enum positivo/neutro/negativo |
-| justificativa | text |
-| pontos_positivos, pontos_negativos | text[] |
-| total_mensagens_cliente, total_mensagens_atendente | int |
-| primeiro_resp_segundos, tempo_medio_resposta_segundos | int |
-| duracao_segundos | int |
-| houve_transferencia | boolean |
-| terminou_sem_resposta | boolean |
-| status | text (pendente/processando/concluido/erro/ignorado) |
-| motivo_ignorado, erro | text |
-| created_at, processado_em | timestamptz |
+---
 
-RLS: SELECT por tenant; INSERT/UPDATE só via service role.
+### 3. Edge Function `transcrever-audio`
 
-### Trigger
-`AFTER UPDATE` em `conversas`: quando `atendimento_encerrado_at` passa a NOT NULL e canal ∈ (`zapi`, `whatsapp_cloud`), insere registro `pendente` (idempotente via UNIQUE em conversa_id).
+`supabase/functions/transcrever-audio/index.ts` (`verify_jwt = false`, chamada por cron e por usuário autenticado para retry manual).
 
-### Índices
-- `(tenant_id, created_at DESC)`
-- `(status)` para o cron
-- `(atendente_id, created_at DESC)` para ranking
+Fluxo:
+1. **Modo batch (cron)**: busca até 10 mensagens com `transcricao_status = 'pendente'`, marca como `processando`.
+2. **Modo manual**: recebe `{ mensagem_id }` no body, valida JWT do usuário e tenant antes de processar.
+3. Para cada mensagem:
+   - Baixa o áudio do `conteudo` (URL pública — Z-API/Cloud/Storage).
+   - Converte para base64 e envia ao **Lovable AI Gateway** com `google/gemini-2.5-flash` (suporta áudio inline) usando prompt:
+     > "Transcreva este áudio fielmente em {idioma}. Retorne apenas o texto, sem comentários. Se houver múltiplos falantes, ignore separação."
+   - Atualiza `metadata` com `transcricao_status='concluido'`, texto e timestamp.
+   - Em erro: `transcricao_status='erro'`, `transcricao_erro=msg`, com retry máx. 3.
+4. Trata 429 (rate limit → reagenda) e 402 (créditos esgotados → marca `erro` e loga).
 
-## Edge Function `analisar-satisfacao`
+**Cron**: `pg_cron` a cada 1 minuto chamando a função (insert via tool, não migration, pois usa URL e anon key específicos do projeto).
 
-Cron a cada 2 min (`pg_cron` + `pg_net`). Para cada `pendente` (lote de 20):
+---
 
-1. Carrega conversa + mensagens ordenadas
-2. Filtra: ignora conversas com menos de N mensagens do cliente → marca `ignorado`
-3. Calcula métricas operacionais (tempos, contagens, transferências)
-4. Monta prompt com: critérios do tenant + métricas + transcrição (mensagens humanas e rascunhos IA enviados marcados; mensagens de fluxo/disparo marcadas como `[automático]`)
-5. Chama Lovable AI Gateway com **tool calling estruturado** (`classificar_satisfacao`) — modelo padrão `google/gemini-3-flash-preview`
-6. Persiste resultado, marca `concluido`
-7. Tratamento 429/402/parse → marca `erro` com mensagem
+### 4. Frontend
 
-## UI — Configurações de IA
+**`MessageBubble.tsx`** — quando `tipo === 'audio'`, abaixo do `<audio>` renderizar bloco condicional:
 
-Nova seção "Análise de Satisfação" em `IAConfig.tsx`:
+```text
+[player de áudio]
+─────────────────
+[ícone] Transcrição IA
+"Olá, gostaria de saber sobre o pedido..."
+[Copiar]  [Tentar novamente — se erro]
+```
+
+Estados visuais:
+- `pendente`/`processando`: texto cinza com spinner pequeno "Transcrevendo áudio…"
+- `concluido`: texto normal, botão copiar
+- `erro`: texto vermelho discreto + botão retry (chama edge function com `mensagem_id`)
+- `desativado` ou ausente em áudio antigo: botão "Transcrever" sob demanda
+
+Realtime: a página `Conversas.tsx` já assina `postgres_changes` em `mensagens` — precisa também escutar `UPDATE` para refletir mudança de `metadata` quando a transcrição conclui.
+
+**`IAConfig.tsx`** — novo card "Transcrição de áudios":
 - Switch ativar/desativar
-- Textarea "Critérios de avaliação" com placeholder/exemplo
-- Input numérico "Mínimo de mensagens do cliente" (default 2)
-- Texto explicativo dos sinais usados (tempo de resposta, etc.)
-- Botão "Reanalisar últimos 30 dias" (admin) que enfileira conversas encerradas sem registro
+- Select de idioma (Português, Espanhol, Inglês, Auto-detectar)
+- Botão "Transcrever áudios pendentes" (lista os sem `transcricao_status` e enfileira em lote — limite 100 por clique).
 
-## UI — Relatórios
+---
 
-Nova aba "Satisfação" em `Relatorios.tsx` → página `RelatorioSatisfacao.tsx`.
+### 5. Custos e proteções
 
-**Filtros**: período, atendente, departamento, canal, classificação.
+- Áudios > 10 MB: rejeitados com `transcricao_status='erro'` e mensagem clara (limite do gateway).
+- Áudios > 5 minutos: aviso no log (não bloqueia).
+- Não transcreve áudios enviados por bots/fluxos automatizados (`remetente='bot'` skip opcional — incluído como flag na config; default: transcreve tudo).
+- Não há reprocessamento automático dos 307 áudios existentes — usuário escolhe via botão "Transcrever pendentes" ou clicando em cada áudio antigo.
 
-**Cards**:
-- Score médio (1-5) + variação vs período anterior
-- % positivos / neutros / negativos
-- Total analisados / ignorados / com erro
-- Tempo médio de primeira resposta
+---
 
-**Gráficos (Recharts)**:
-- Donut: distribuição pelas 5 classificações
-- Linha: evolução do score médio por dia
-- Barras: ranking de atendentes por score médio
-- Barras horizontais: pontos negativos mais frequentes (agregados por palavra-chave)
+### Resumo técnico
 
-**Tabela**:
-- Data | Contato | Atendente | Canal | Classificação (badge colorido) | Score | Tempo 1ª resp. | Justificativa truncada
-- Click → abre `ContatoDrawer` com detalhes completos da análise
+| Camada | Arquivo | Mudança |
+|---|---|---|
+| Migration | nova | colunas em `ia_config`, trigger `enfileirar_transcricao_audio`, índice parcial |
+| Cron | insert SQL | job `pg_cron` a cada 1min → `transcrever-audio` |
+| Edge Function | `supabase/functions/transcrever-audio/index.ts` | nova — batch + manual |
+| Config | `supabase/config.toml` | registrar função com `verify_jwt = false` |
+| UI | `src/components/conversas/MessageBubble.tsx` | bloco de transcrição sob player |
+| UI | `src/pages/Conversas.tsx` | escutar UPDATE em mensagens (realtime) |
+| UI | `src/pages/IAConfig.tsx` | card de configuração |
+| Types | `src/integrations/supabase/types.ts` | regenerado automaticamente |
 
-**Timeline do contato**: novo evento `satisfacao` com emoji e classificação no `ContatoTimeline`.
-
-## Detalhes Técnicos
-
-- Migration cria tabela, enums, índices, trigger e estende `ia_config`
-- Cron registrado via tool `supabase--insert` (não migration, pois contém URL/anon key específicos)
-- Edge function nova: `supabase/functions/analisar-satisfacao/index.ts`
-- Função SQL `relatorio_satisfacao(p_inicio, p_fim, p_atendente_id, p_departamento_id, p_canal)` para agregar dados do relatório com SECURITY DEFINER + check de tenant
-- Função SQL `contato_timeline` atualizada para incluir eventos de satisfação
-- Tipos TS regenerados automaticamente após migration
-
-## Entregáveis
-
-1. Migration: tabela `atendimento_satisfacao`, enums, trigger, extensão `ia_config`, função `relatorio_satisfacao`, atualização `contato_timeline`
-2. Cron job via `supabase--insert`
-3. Edge Function `analisar-satisfacao`
-4. UI: seção em `IAConfig.tsx`, página `RelatorioSatisfacao.tsx`, nova aba em `Relatorios.tsx`, evento na timeline
+Posso seguir com a implementação?

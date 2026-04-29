@@ -1255,6 +1255,8 @@ export type Database = {
           satisfacao_min_mensagens_cliente: number
           tenant_id: string
           tom: Database["public"]["Enums"]["ia_tom"]
+          transcricao_audio_ativo: boolean
+          transcricao_audio_idioma: string
           ultima_analise_em: string | null
           ultima_analise_resumo: string | null
           updated_at: string
@@ -1273,6 +1275,8 @@ export type Database = {
           satisfacao_min_mensagens_cliente?: number
           tenant_id: string
           tom?: Database["public"]["Enums"]["ia_tom"]
+          transcricao_audio_ativo?: boolean
+          transcricao_audio_idioma?: string
           ultima_analise_em?: string | null
           ultima_analise_resumo?: string | null
           updated_at?: string
@@ -1291,6 +1295,8 @@ export type Database = {
           satisfacao_min_mensagens_cliente?: number
           tenant_id?: string
           tom?: Database["public"]["Enums"]["ia_tom"]
+          transcricao_audio_ativo?: boolean
+          transcricao_audio_idioma?: string
           ultima_analise_em?: string | null
           ultima_analise_resumo?: string | null
           updated_at?: string

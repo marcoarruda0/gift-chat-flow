@@ -19,6 +19,7 @@ interface Conversa {
   departamento_id?: string | null;
   created_at?: string | null;
   canal?: string | null;
+  fixada?: boolean;
 }
 
 type CanalTab = "todos" | "zapi" | "whatsapp_cloud";

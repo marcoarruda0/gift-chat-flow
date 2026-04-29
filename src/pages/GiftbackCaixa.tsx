@@ -14,9 +14,10 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
+import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
@@ -79,7 +80,8 @@ export default function GiftbackCaixa() {
   const [aplicarGiftback, setAplicarGiftback] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [buscando, setBuscando] = useState(false);
-
+  const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [dialogNovoOpen, setDialogNovoOpen] = useState(false);
   const { data: configGlobal } = useQuery({
     queryKey: ["giftback-config"],
     queryFn: async () => {
@@ -146,12 +148,80 @@ export default function GiftbackCaixa() {
   const regrasOk = regrasInvalidas.length === 0;
 
   /**
-   * Busca contato + giftback ativo. Faz lazy-expire: se o ativo
-   * já passou da validade, marca como `expirado` e zera o saldo.
+   * Carrega um contato (já buscado) no painel: faz lazy-expire do giftback
+   * ativo e sincroniza saldo. Reutilizado pela busca e pelo cadastro novo.
+   */
+  const carregarContato = async (cData: Contato) => {
+    // Buscar único movimento ativo de crédito
+    const { data: mov } = await supabase
+      .from("giftback_movimentos")
+      .select("id, valor, validade, created_at")
+      .eq("contato_id", cData.id)
+      .eq("tipo", "credito")
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let ativo: GiftbackAtivo | null = mov
+      ? {
+          id: mov.id,
+          valor: Number(mov.valor),
+          validade: mov.validade,
+          created_at: mov.created_at,
+        }
+      : null;
+
+    // Lazy expire
+    if (ativo?.validade) {
+      const hoje = new Date().toISOString().split("T")[0];
+      if (ativo.validade < hoje) {
+        await supabase
+          .from("giftback_movimentos")
+          .update({
+            status: "expirado",
+            motivo_inativacao: "expirado",
+          })
+          .eq("id", ativo.id);
+        await supabase
+          .from("contatos")
+          .update({ saldo_giftback: 0 })
+          .eq("id", cData.id);
+        toast({
+          title: "Giftback expirado",
+          description: `O giftback de R$ ${ativo.valor.toFixed(
+            2,
+          )} venceu em ${ativo.validade.split("-").reverse().join("/")} e foi marcado como expirado.`,
+        });
+        ativo = null;
+        cData.saldo_giftback = 0;
+      }
+    }
+
+    // Sincronizar saldo do contato com o ativo (defesa contra dessync)
+    const saldoEsperado = ativo ? ativo.valor : 0;
+    if (Number(cData.saldo_giftback || 0) !== saldoEsperado) {
+      await supabase
+        .from("contatos")
+        .update({ saldo_giftback: saldoEsperado })
+        .eq("id", cData.id);
+      cData.saldo_giftback = saldoEsperado;
+    }
+
+    setContato(cData);
+    setGiftbackAtivo(ativo);
+    setAplicarGiftback(false);
+    setResumo(null);
+    setNaoEncontrado(false);
+  };
+
+  /**
+   * Busca contato por CPF/telefone e delega o carregamento.
    */
   const buscarContato = async () => {
     if (!busca.trim()) return;
     setBuscando(true);
+    setNaoEncontrado(false);
     try {
       const { data: cData } = await supabase
         .from("contatos")
@@ -159,75 +229,16 @@ export default function GiftbackCaixa() {
           "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
         )
         .or(`cpf.eq.${busca},telefone.eq.${busca}`)
-        .single();
+        .maybeSingle();
 
       if (!cData) {
-        toast({ title: "Contato não encontrado", variant: "destructive" });
         setContato(null);
         setGiftbackAtivo(null);
+        setNaoEncontrado(true);
         return;
       }
 
-      // Buscar único movimento ativo de crédito
-      const { data: mov } = await supabase
-        .from("giftback_movimentos")
-        .select("id, valor, validade, created_at")
-        .eq("contato_id", cData.id)
-        .eq("tipo", "credito")
-        .eq("status", "ativo")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      let ativo: GiftbackAtivo | null = mov
-        ? {
-            id: mov.id,
-            valor: Number(mov.valor),
-            validade: mov.validade,
-            created_at: mov.created_at,
-          }
-        : null;
-
-      // Lazy expire
-      if (ativo?.validade) {
-        const hoje = new Date().toISOString().split("T")[0];
-        if (ativo.validade < hoje) {
-          await supabase
-            .from("giftback_movimentos")
-            .update({
-              status: "expirado",
-              motivo_inativacao: "expirado",
-            })
-            .eq("id", ativo.id);
-          await supabase
-            .from("contatos")
-            .update({ saldo_giftback: 0 })
-            .eq("id", cData.id);
-          toast({
-            title: "Giftback expirado",
-            description: `O giftback de R$ ${ativo.valor.toFixed(
-              2,
-            )} venceu em ${ativo.validade.split("-").reverse().join("/")} e foi marcado como expirado.`,
-          });
-          ativo = null;
-          cData.saldo_giftback = 0;
-        }
-      }
-
-      // Sincronizar saldo do contato com o ativo (defesa contra dessync)
-      const saldoEsperado = ativo ? ativo.valor : 0;
-      if (Number(cData.saldo_giftback || 0) !== saldoEsperado) {
-        await supabase
-          .from("contatos")
-          .update({ saldo_giftback: saldoEsperado })
-          .eq("id", cData.id);
-        cData.saldo_giftback = saldoEsperado;
-      }
-
-      setContato(cData);
-      setGiftbackAtivo(ativo);
-      setAplicarGiftback(false);
-      setResumo(null);
+      await carregarContato(cData);
     } finally {
       setBuscando(false);
     }
@@ -461,6 +472,33 @@ export default function GiftbackCaixa() {
           </div>
         </CardContent>
       </Card>
+
+      {naoEncontrado && !contato && (
+        <Card className="border-amber-200 bg-amber-50/60 dark:bg-amber-950/20">
+          <CardContent className="pt-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Cliente não encontrado</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Nenhum cadastro com esse CPF/telefone. Cadastre agora para registrar a compra.
+              </p>
+              <Button size="sm" className="mt-3" onClick={() => setDialogNovoOpen(true)}>
+                <UserPlus className="h-4 w-4 mr-1" />
+                Cadastrar novo cliente
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <NovoContatoCaixaDialog
+        open={dialogNovoOpen}
+        onOpenChange={setDialogNovoOpen}
+        valorBuscado={busca}
+        onCriado={(novo) => {
+          void carregarContato(novo as Contato);
+        }}
+      />
 
       {/* Contato */}
       {contato && (

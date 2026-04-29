@@ -77,3 +77,46 @@ export function mascararTelefoneBR(value: string): string {
 /** Heurística: o termo digitado parece um CPF válido (11 dígitos + DV). */
 export const ehProvavelCPF = (value: string): boolean =>
   apenasDigitos(value).length === 11 && validarCPF(value);
+
+/**
+ * Normaliza telefone BR para a forma canônica (sem DDI), 10 ou 11 dígitos.
+ * - Remove DDI 55 quando presente (13 ou 12 dígitos começando com 55).
+ * - Mantém o que vier se não bater num padrão BR conhecido.
+ */
+export function normalizarTelefoneBR(value: string): string {
+  const d = apenasDigitos(value);
+  if ((d.length === 12 || d.length === 13) && d.startsWith("55")) {
+    return d.slice(2);
+  }
+  return d;
+}
+
+/**
+ * Gera variantes do telefone para casar com registros gravados em formatos diferentes
+ * (ex.: caixa grava sem DDI, webhook do Z-API grava com 55). Sempre retorna ao menos
+ * a forma original (apenas dígitos) e a normalizada.
+ */
+export function gerarVariantesTelefone(value: string): string[] {
+  const original = apenasDigitos(value);
+  if (!original) return [];
+  const canon = normalizarTelefoneBR(original);
+  const variantes = new Set<string>();
+  variantes.add(original);
+  if (canon) {
+    variantes.add(canon);
+    variantes.add(`55${canon}`);
+  }
+  // Variante "9 extra" para celulares de 10 dígitos antigos (DDD + 9 + número)
+  if (canon.length === 10) {
+    const com9 = `${canon.slice(0, 2)}9${canon.slice(2)}`;
+    variantes.add(com9);
+    variantes.add(`55${com9}`);
+  }
+  // Variante "sem 9 extra" para celulares de 11 dígitos
+  if (canon.length === 11 && canon[2] === "9") {
+    const sem9 = `${canon.slice(0, 2)}${canon.slice(3)}`;
+    variantes.add(sem9);
+    variantes.add(`55${sem9}`);
+  }
+  return Array.from(variantes);
+}

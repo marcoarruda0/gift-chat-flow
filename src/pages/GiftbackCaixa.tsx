@@ -148,12 +148,80 @@ export default function GiftbackCaixa() {
   const regrasOk = regrasInvalidas.length === 0;
 
   /**
-   * Busca contato + giftback ativo. Faz lazy-expire: se o ativo
-   * já passou da validade, marca como `expirado` e zera o saldo.
+   * Carrega um contato (já buscado) no painel: faz lazy-expire do giftback
+   * ativo e sincroniza saldo. Reutilizado pela busca e pelo cadastro novo.
+   */
+  const carregarContato = async (cData: Contato) => {
+    // Buscar único movimento ativo de crédito
+    const { data: mov } = await supabase
+      .from("giftback_movimentos")
+      .select("id, valor, validade, created_at")
+      .eq("contato_id", cData.id)
+      .eq("tipo", "credito")
+      .eq("status", "ativo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let ativo: GiftbackAtivo | null = mov
+      ? {
+          id: mov.id,
+          valor: Number(mov.valor),
+          validade: mov.validade,
+          created_at: mov.created_at,
+        }
+      : null;
+
+    // Lazy expire
+    if (ativo?.validade) {
+      const hoje = new Date().toISOString().split("T")[0];
+      if (ativo.validade < hoje) {
+        await supabase
+          .from("giftback_movimentos")
+          .update({
+            status: "expirado",
+            motivo_inativacao: "expirado",
+          })
+          .eq("id", ativo.id);
+        await supabase
+          .from("contatos")
+          .update({ saldo_giftback: 0 })
+          .eq("id", cData.id);
+        toast({
+          title: "Giftback expirado",
+          description: `O giftback de R$ ${ativo.valor.toFixed(
+            2,
+          )} venceu em ${ativo.validade.split("-").reverse().join("/")} e foi marcado como expirado.`,
+        });
+        ativo = null;
+        cData.saldo_giftback = 0;
+      }
+    }
+
+    // Sincronizar saldo do contato com o ativo (defesa contra dessync)
+    const saldoEsperado = ativo ? ativo.valor : 0;
+    if (Number(cData.saldo_giftback || 0) !== saldoEsperado) {
+      await supabase
+        .from("contatos")
+        .update({ saldo_giftback: saldoEsperado })
+        .eq("id", cData.id);
+      cData.saldo_giftback = saldoEsperado;
+    }
+
+    setContato(cData);
+    setGiftbackAtivo(ativo);
+    setAplicarGiftback(false);
+    setResumo(null);
+    setNaoEncontrado(false);
+  };
+
+  /**
+   * Busca contato por CPF/telefone e delega o carregamento.
    */
   const buscarContato = async () => {
     if (!busca.trim()) return;
     setBuscando(true);
+    setNaoEncontrado(false);
     try {
       const { data: cData } = await supabase
         .from("contatos")
@@ -161,75 +229,16 @@ export default function GiftbackCaixa() {
           "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
         )
         .or(`cpf.eq.${busca},telefone.eq.${busca}`)
-        .single();
+        .maybeSingle();
 
       if (!cData) {
-        toast({ title: "Contato não encontrado", variant: "destructive" });
         setContato(null);
         setGiftbackAtivo(null);
+        setNaoEncontrado(true);
         return;
       }
 
-      // Buscar único movimento ativo de crédito
-      const { data: mov } = await supabase
-        .from("giftback_movimentos")
-        .select("id, valor, validade, created_at")
-        .eq("contato_id", cData.id)
-        .eq("tipo", "credito")
-        .eq("status", "ativo")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      let ativo: GiftbackAtivo | null = mov
-        ? {
-            id: mov.id,
-            valor: Number(mov.valor),
-            validade: mov.validade,
-            created_at: mov.created_at,
-          }
-        : null;
-
-      // Lazy expire
-      if (ativo?.validade) {
-        const hoje = new Date().toISOString().split("T")[0];
-        if (ativo.validade < hoje) {
-          await supabase
-            .from("giftback_movimentos")
-            .update({
-              status: "expirado",
-              motivo_inativacao: "expirado",
-            })
-            .eq("id", ativo.id);
-          await supabase
-            .from("contatos")
-            .update({ saldo_giftback: 0 })
-            .eq("id", cData.id);
-          toast({
-            title: "Giftback expirado",
-            description: `O giftback de R$ ${ativo.valor.toFixed(
-              2,
-            )} venceu em ${ativo.validade.split("-").reverse().join("/")} e foi marcado como expirado.`,
-          });
-          ativo = null;
-          cData.saldo_giftback = 0;
-        }
-      }
-
-      // Sincronizar saldo do contato com o ativo (defesa contra dessync)
-      const saldoEsperado = ativo ? ativo.valor : 0;
-      if (Number(cData.saldo_giftback || 0) !== saldoEsperado) {
-        await supabase
-          .from("contatos")
-          .update({ saldo_giftback: saldoEsperado })
-          .eq("id", cData.id);
-        cData.saldo_giftback = saldoEsperado;
-      }
-
-      setContato(cData);
-      setGiftbackAtivo(ativo);
-      setAplicarGiftback(false);
-      setResumo(null);
+      await carregarContato(cData);
     } finally {
       setBuscando(false);
     }

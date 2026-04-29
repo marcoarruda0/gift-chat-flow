@@ -568,6 +568,62 @@ export default function IAConfig() {
         </CardContent>
       </Card>
 
+      {/* Transcrição de áudios */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                <Mic className="h-5 w-5 text-primary" /> Transcrição automática de áudios
+              </CardTitle>
+              <CardDescription>
+                Toda mensagem de áudio recebida ou enviada é convertida em texto pela IA, exibido abaixo do player no chat.
+                Útil para atendentes que não usam fone de ouvido.
+              </CardDescription>
+            </div>
+            <Switch checked={transcricaoAtivo} onCheckedChange={setTranscricaoAtivo} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Idioma do áudio</Label>
+              <Select value={transcricaoIdioma} onValueChange={setTranscricaoIdioma} disabled={!transcricaoAtivo}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pt">Português</SelectItem>
+                  <SelectItem value="es">Espanhol</SelectItem>
+                  <SelectItem value="en">Inglês</SelectItem>
+                  <SelectItem value="auto">Auto-detectar</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Idioma esperado dos áudios. Use auto-detectar em caso de mistura.
+              </p>
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                onClick={handleTranscreverPendentes}
+                disabled={!transcricaoAtivo || transcrevendoPendentes}
+                className="w-full"
+              >
+                {transcrevendoPendentes ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enfileirando…</>
+                ) : (
+                  <>Transcrever áudios pendentes</>
+                )}
+              </Button>
+            </div>
+          </div>
+          <Alert>
+            <AlertDescription className="text-xs">
+              Áudios maiores que 10 MB são ignorados. Áudios antigos podem ser transcritos clicando em "Transcrever áudio" no balão da conversa.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
       {/* Análise de conversas */}
       <Card>
         <CardHeader>

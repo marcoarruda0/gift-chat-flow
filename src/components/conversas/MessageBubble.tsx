@@ -79,6 +79,92 @@ export function MessageBubble({ id, conteudo, remetente, tipo, createdAt, sender
     return null;
   };
 
+  const transcStatus = metadata?.transcricao_status as string | undefined;
+  const transcTexto = metadata?.transcricao_texto as string | undefined;
+  const transcErro = metadata?.transcricao_erro as string | undefined;
+
+  const handleTranscrever = async () => {
+    if (!id) return;
+    setTranscrevendo(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("transcrever-audio", {
+        body: { mode: "manual", mensagem_id: id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      // Realtime atualiza o card
+    } catch (e: any) {
+      toast.error(e?.message || "Falha ao transcrever áudio");
+    } finally {
+      setTranscrevendo(false);
+    }
+  };
+
+  const handleCopiar = () => {
+    if (!transcTexto) return;
+    navigator.clipboard.writeText(transcTexto);
+    toast.success("Transcrição copiada");
+  };
+
+  const renderTranscricao = () => {
+    const inflightStatus = transcrevendo ? "processando" : transcStatus;
+    if (inflightStatus === "pendente" || inflightStatus === "processando") {
+      return (
+        <div className="flex items-center gap-1.5 text-[11px] opacity-70 italic">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>Transcrevendo áudio…</span>
+        </div>
+      );
+    }
+    if (inflightStatus === "concluido" && transcTexto) {
+      return (
+        <div className={cn(
+          "rounded-md px-2 py-1.5 text-[12px] leading-snug border max-w-[260px]",
+          isOutgoing ? "bg-primary-foreground/10 border-primary-foreground/15" : "bg-background/50 border-border"
+        )}>
+          <div className="flex items-center gap-1 mb-1 opacity-70 text-[10px]">
+            <Sparkles className="h-3 w-3" />
+            <span>Transcrição IA</span>
+          </div>
+          <p className="whitespace-pre-wrap break-words">{transcTexto}</p>
+          <button
+            type="button"
+            onClick={handleCopiar}
+            className="mt-1 inline-flex items-center gap-1 text-[10px] opacity-70 hover:opacity-100"
+          >
+            <Copy className="h-3 w-3" /> Copiar
+          </button>
+        </div>
+      );
+    }
+    if (inflightStatus === "erro") {
+      return (
+        <div className="flex items-center gap-1.5 text-[11px] opacity-80">
+          <AlertCircle className="h-3 w-3 text-destructive" />
+          <span className="opacity-70">Falha na transcrição{transcErro ? `: ${transcErro.slice(0, 60)}` : ""}</span>
+          {id && (
+            <button type="button" onClick={handleTranscrever} className="inline-flex items-center gap-1 underline">
+              <RefreshCw className="h-3 w-3" /> Tentar novamente
+            </button>
+          )}
+        </div>
+      );
+    }
+    // sem status (áudio antigo) → botão sob demanda
+    if (id && !inflightStatus) {
+      return (
+        <button
+          type="button"
+          onClick={handleTranscrever}
+          className="inline-flex items-center gap-1 text-[11px] opacity-70 hover:opacity-100 underline"
+        >
+          <Sparkles className="h-3 w-3" /> Transcrever áudio
+        </button>
+      );
+    }
+    return null;
+  };
+
   const renderContent = () => {
     // Pending media placeholder
     if (isPending && isPlaceholderMedia(conteudo)) {

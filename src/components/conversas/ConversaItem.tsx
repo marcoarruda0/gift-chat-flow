@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { UserRound, MessageCircle, CheckCircle2, UserCheck } from "lucide-react";
+import { UserRound, MessageCircle, CheckCircle2, UserCheck, Pin } from "lucide-react";
 
 interface ConversaItemProps {
   id: string;
@@ -16,6 +16,7 @@ interface ConversaItemProps {
   marcadaNaoLida?: boolean;
   atendenteId?: string | null;
   createdAt?: string | null;
+  fixada?: boolean;
   selected: boolean;
   onClick: () => void;
 }
@@ -28,7 +29,7 @@ function formatTime(dateStr: string | null) {
   return format(d, "dd/MM", { locale: ptBR });
 }
 
-export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, atendenteId, createdAt, selected, onClick }: ConversaItemProps) {
+export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt, naoLidas, status, aguardandoHumano, marcadaNaoLida, atendenteId, createdAt, fixada, selected, onClick }: ConversaItemProps) {
   const initials = nomeContato.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const hasUnread = naoLidas > 0;
   const isWaiting = status === "aberta" && !atendenteId && createdAt;
@@ -77,6 +78,8 @@ export function ConversaItem({ nomeContato, avatarUrl, ultimoTexto, ultimaMsgAt,
             </span>
           ) : marcadaNaoLida ? (
             <span className="shrink-0 h-[10px] w-[10px] rounded-full bg-[#25D366]" />
+          ) : fixada ? (
+            <Pin className="h-3.5 w-3.5 shrink-0 text-muted-foreground rotate-45" />
           ) : null}
         </div>
       </div>

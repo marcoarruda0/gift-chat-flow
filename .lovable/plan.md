@@ -1,58 +1,57 @@
-## Cadastro rápido de cliente no Painel do Caixa (Giftback)
+## Validação/máscara de CPF e telefone + cadastro contínuo no caixa
 
-Hoje, em **Giftback → Painel do Caixa**, ao buscar um CPF/telefone que não existe, aparece apenas um toast "Contato não encontrado" e o operador precisa sair do fluxo, ir até o módulo Contatos e cadastrar. O objetivo é permitir o cadastro **na hora**, sem sair do caixa.
+Hoje o `NovoContatoCaixaDialog` aceita qualquer texto em CPF/telefone e o painel busca usando o valor cru. O fluxo de carregar o contato recém-criado já existe (`onCriado` chama `carregarContato`), mas precisa ser blindado para o caso em que o usuário digitou um valor formatado/parcial.
 
-### Comportamento proposto
+### O que muda
 
-1. Operador digita CPF ou telefone em `GiftbackCaixa` e clica em buscar.
-2. Se a busca retornar nada:
-   - Substituir o toast atual por um **bloco inline** abaixo da busca: "Cliente não encontrado. Deseja cadastrar agora?" + botão **"Cadastrar novo cliente"**.
-   - O termo digitado é preservado (não é apagado).
-3. Ao clicar no botão, abre um **dialog** ("Novo cliente") com formulário enxuto:
-   - **Nome** (obrigatório)
-   - **CPF** e **Telefone** (pelo menos um obrigatório; o que foi digitado na busca já vem pré-preenchido — detecta se é CPF apenas-dígitos com 11 chars vs telefone)
-   - **E-mail** (opcional)
-   - **Data de nascimento** (opcional)
-4. Ao salvar:
-   - Insere em `contatos` com `tenant_id` do operador (mesmo padrão usado em `src/pages/Contatos.tsx`, com `saldo_giftback = 0`, `campos_personalizados = {}`, `tags = []`).
-   - Fecha o dialog, **carrega automaticamente o contato recém-criado** no painel (mesma estrutura que `buscarContato` usa) e segue o fluxo normal de registrar a compra.
-   - Como a inserção usa `tenant_id` correto, o contato já aparece em **Contatos** sem nenhuma ação adicional (RLS por tenant garante isso).
-5. Validações:
-   - Antes de inserir, conferir duplicidade por CPF ou telefone (`select id from contatos where cpf = ? or telefone = ?`) — se já existir, carrega o existente em vez de duplicar.
-   - Validação client-side com zod (nome ≤100, e-mail válido se preenchido, CPF/telefone só dígitos).
+1. **Novo util `src/lib/br-format.ts`** com:
+   - `apenasDigitos(v)` — strip de não-dígitos.
+   - `validarCPF(v)` — verifica 11 dígitos + dígitos verificadores + rejeita sequências repetidas.
+   - `mascararCPF(v)` — aplica `000.000.000-00` progressivo.
+   - `validarTelefoneBR(v)` — exige 10 (fixo) ou 11 (celular com `9` após DDD) dígitos e DDD da Anatel.
+   - `mascararTelefoneBR(v)` — `(00) 0000-0000` ou `(00) 00000-0000`.
+   - `ehProvavelCPF(v)` — substitui a heurística atual do dialog.
 
-### Mudanças técnicas
+2. **`src/components/giftback/NovoContatoCaixaDialog.tsx`**
+   - Inputs CPF e telefone passam a chamar a máscara no `onChange`, mantendo o estado já formatado.
+   - Validação client-side (sem zod para esses dois campos — usar os utils, mensagens claras):
+     - CPF, se preenchido, precisa passar em `validarCPF`. Erro: "CPF inválido".
+     - Telefone, se preenchido, precisa passar em `validarTelefoneBR`. Erro: "Telefone inválido (use DDD + número)".
+     - Pelo menos um dos dois precisa estar preenchido (regra atual mantida).
+   - Pré-preenchimento: usar `ehProvavelCPF(valorBuscado)` para escolher entre CPF/telefone e já aplicar a máscara correspondente. Se o termo não for CPF válido nem telefone válido, ainda assim coloca no campo telefone (e a validação do form impedirá o submit até corrigir).
+   - Antes de inserir/checar duplicidade, **persistir apenas dígitos** (`apenasDigitos`) em `contatos.cpf` e `contatos.telefone` — assim a busca por igualdade funciona consistentemente, igual ao formato usado pelo Z-API/Cloud webhook.
+   - Checagem de duplicidade passa a usar os valores normalizados (dígitos).
 
-- **Novo componente**: `src/components/giftback/NovoContatoCaixaDialog.tsx`
-  - Props: `open`, `onOpenChange`, `valorBuscado` (string), `onCriado(contato)`.
-  - Usa `Dialog`, `Input`, `Label`, `Button` do shadcn + `react-hook-form` + `zod`.
-  - Faz o insert e devolve o objeto `Contato` no shape esperado pelo caixa.
-- **`src/pages/GiftbackCaixa.tsx`**:
-  - Adicionar estado `naoEncontrado: boolean` e `dialogNovoOpen: boolean`.
-  - Em `buscarContato`, quando `!cData`, em vez do toast destrutivo, setar `naoEncontrado=true` e limpar `contato`.
-  - Renderizar bloco inline com `AlertTriangle` + botão "Cadastrar novo cliente" logo abaixo do `Card` de busca.
-  - Callback `onCriado` carrega o contato (reaproveitar lógica de busca já existente) e zera `naoEncontrado`.
-  - Invalidar `queryClient.invalidateQueries({ queryKey: ["contatos"] })` para refletir no módulo Contatos.
+3. **`src/pages/GiftbackCaixa.tsx`**
+   - O input "CPF ou telefone do cliente" também passa pela normalização antes da consulta:
+     - `const termo = apenasDigitos(busca)` → `.or(\`cpf.eq.${termo},telefone.eq.${termo}\`)`.
+     - Se `termo.length` não bate com CPF (11) nem telefone (10/11), ainda tenta a busca; se nada encontrar, `naoEncontrado = true` (fluxo atual) — o dialog abrirá com o valor já normalizado e aplicará a máscara correta.
+   - **Cadastro contínuo**: o `onCriado` já chama `carregarContato(novo)`, que seta `contato`, zera `naoEncontrado` e libera os controles de "Valor da compra"/"Aplicar giftback". Vou garantir que o foco/scroll vá para o card do contato (scrollIntoView no card) para o operador continuar sem cliques extras. Nada a fazer no banco — só ajuste de UX.
 
-### Sem mudanças necessárias
+### Por que não migração de dados antigos?
 
-- Banco/RLS: a tabela `contatos` já permite insert por tenant (`tenant_insert_contacts`).
-- Módulo Contatos: o novo registro aparece automaticamente porque compartilha `tenant_id`.
+Contatos já gravados podem estar em formatos mistos (com ou sem máscara). Como a busca atual já é exata, isso não muda o comportamento existente: a partir de agora **novos cadastros do caixa** entram normalizados (dígitos), e a busca pelo termo do operador também é normalizada antes de consultar — então casa quando o registro existe em qualquer formato? Não totalmente: só casa se os dois lados estão em dígitos. Para evitar surpresa, o util é exposto e podemos numa próxima migração normalizar a base inteira; mas isso fica fora deste passo (sem perda de dados, comportamento atual preservado para registros legados).
 
-### Diagrama do fluxo
+### Diagrama do fluxo após o ajuste
 
 ```text
-[Buscar CPF/tel] -> encontrou? --sim--> fluxo atual (registrar compra)
-                          \
-                           --não--> [Aviso inline + botão "Cadastrar"]
-                                          |
-                                     [Dialog Novo Cliente]
-                                          |
-                                     [Salvar -> contatos]
-                                          |
-                                  [Carrega contato no caixa]
-                                          |
-                                     fluxo atual
+[busca CPF/tel] -> normaliza dígitos -> SELECT contatos
+       |
+       +-- achou ----> carregarContato (fluxo atual)
+       |
+       +-- não achou -> aviso inline + botão
+                              |
+                       [Dialog Novo Cliente]
+                       máscara + validação
+                              |
+                  insert(dígitos puros) → contato criado
+                              |
+              onCriado(novo) → carregarContato(novo)
+                              |
+                  card do cliente entra na tela
+                  (scrollIntoView automático)
+                              |
+                     fluxo de Giftback continua
 ```
 
-Posso seguir com a implementação?
+Posso aplicar?

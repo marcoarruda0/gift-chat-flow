@@ -73,13 +73,15 @@ const emailSchema = z.string().trim().email().max(255);
 const SELECT_CONTATO_COMPLETO =
   "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor, email, data_nascimento, created_at";
 
-type CampoFaltante = "cpf" | "telefone";
-
-interface PropostaJuncao {
-  contato: ContatoCaixa;
-  campo: CampoFaltante; // campo a preencher no contato existente
-  valorNovo: string;    // dígitos a serem gravados
-  valorMatch: string;   // dígitos do campo que casou (ex: telefone existente)
+interface MergeState {
+  /** Cadastro existente A (geralmente match por CPF) */
+  contatoA: ContatoCompleto | null;
+  /** Cadastro existente B (match por telefone) ou null se for "complementar" */
+  contatoB: ContatoCompleto | null;
+  /** Quando true, contatoB é virtual (apenas dados novos do form) — fluxo de complementação */
+  ladoBVirtual: boolean;
+  /** Valores forçados a aplicar no contato resultante */
+  forcar?: { cpf?: string | null; telefone?: string | null };
 }
 
 export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCriado }: Props) {
@@ -95,8 +97,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
   const [dataNascimento, setDataNascimento] = useState("");
   const [erros, setErros] = useState<Record<string, string>>({});
   const [salvando, setSalvando] = useState(false);
-  const [proposta, setProposta] = useState<PropostaJuncao | null>(null);
-  const [aplicandoJuncao, setAplicandoJuncao] = useState(false);
+  const [merge, setMerge] = useState<MergeState | null>(null);
 
   // Pré-preenche CPF (se for CPF válido) ou telefone, já aplicando máscara
   useEffect(() => {
@@ -106,7 +107,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
     setEmailDebounced("");
     setDataNascimento("");
     setErros({});
-    setProposta(null);
+    setMerge(null);
     const limpo = valorBuscado.trim();
     if (ehProvavelCPF(limpo)) {
       setCpf(mascararCPF(limpo));
@@ -133,155 +134,129 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
   const handleTelChange = (v: string) => setTelefone(mascararTelefoneBR(v));
 
   /**
-   * Busca contatos por CPF e por telefone separadamente, retornando o que encontrou de cada lado.
+   * Busca contatos por CPF e por telefone. Para telefone usa as variantes
+   * (com/sem DDI 55, com/sem 9 extra) para casar com registros gravados em formatos diferentes.
+   * Retorna contatos completos para alimentar o modal de comparação.
    */
   const buscarMatches = async (cpfDigitos: string, telDigitos: string) => {
-    let porCpf: ContatoCaixa | null = null;
-    let porTel: ContatoCaixa | null = null;
+    let porCpf: ContatoCompleto | null = null;
+    let porTel: ContatoCompleto | null = null;
 
     if (cpfDigitos) {
       const { data } = await supabase
         .from("contatos")
-        .select(SELECT_CONTATO)
+        .select(SELECT_CONTATO_COMPLETO)
         .eq("cpf", cpfDigitos)
         .maybeSingle();
-      porCpf = (data as ContatoCaixa | null) ?? null;
+      porCpf = (data as ContatoCompleto | null) ?? null;
     }
     if (telDigitos) {
-      const { data } = await supabase
-        .from("contatos")
-        .select(SELECT_CONTATO)
-        .eq("telefone", telDigitos)
-        .maybeSingle();
-      porTel = (data as ContatoCaixa | null) ?? null;
+      const variantes = gerarVariantesTelefone(telDigitos);
+      if (variantes.length > 0) {
+        const { data } = await supabase
+          .from("contatos")
+          .select(SELECT_CONTATO_COMPLETO)
+          .in("telefone", variantes)
+          .order("created_at", { ascending: true })
+          .limit(1);
+        porTel = ((data?.[0] as ContatoCompleto | undefined) ?? null);
+      }
     }
     return { porCpf, porTel };
   };
 
   /**
-   * Decide o que fazer baseado nos matches. Retorna:
+   * Decide o que fazer baseado nos matches.
    *  - "carregar": já existe contato consistente, usar direto.
-   *  - "conflito": CPF e telefone pertencem a contatos diferentes.
-   *  - "juntar": existe um contato em que falta um dos campos — propõe complementar.
+   *  - "merge": os dois lados existem mas em contatos distintos — abrir modal de comparação.
+   *  - "complementar": só um lado existe e o outro campo do contato existente está vazio — abrir modal (lado B virtual).
    *  - "novo": pode seguir e criar.
    */
   const decidirAcao = (
     cpfDigitos: string,
     telDigitos: string,
-    porCpf: ContatoCaixa | null,
-    porTel: ContatoCaixa | null,
+    porCpf: ContatoCompleto | null,
+    porTel: ContatoCompleto | null,
   ):
-    | { tipo: "carregar"; contato: ContatoCaixa }
-    | { tipo: "conflito"; cpfNome: string; telNome: string }
-    | { tipo: "juntar"; proposta: PropostaJuncao }
+    | { tipo: "carregar"; contato: ContatoCompleto }
+    | { tipo: "merge"; a: ContatoCompleto; b: ContatoCompleto; forcar?: { cpf?: string | null; telefone?: string | null } }
+    | { tipo: "complementar"; existente: ContatoCompleto; campo: "cpf" | "telefone"; valorNovo: string }
     | { tipo: "novo" } => {
     // Mesmo contato em ambos os lados
     if (porCpf && porTel && porCpf.id === porTel.id) {
       return { tipo: "carregar", contato: porCpf };
     }
 
-    // CPF e telefone pertencem a contatos diferentes — não podemos decidir automaticamente
+    // CPF e telefone pertencem a contatos diferentes — propor merge
     if (porCpf && porTel && porCpf.id !== porTel.id) {
-      return { tipo: "conflito", cpfNome: porCpf.nome, telNome: porTel.nome };
+      return {
+        tipo: "merge",
+        a: porCpf,
+        b: porTel,
+        // Mantém o CPF e o telefone digitados no resultante
+        forcar: {
+          cpf: cpfDigitos || null,
+          telefone: telDigitos ? normalizarTelefoneBR(telDigitos) : null,
+        },
+      };
     }
 
     // Match só por telefone
     if (!porCpf && porTel) {
-      // Se o operador informou CPF e o contato existente não tem CPF → propor juntar
       if (cpfDigitos && !porTel.cpf) {
+        return { tipo: "complementar", existente: porTel, campo: "cpf", valorNovo: cpfDigitos };
+      }
+      if (cpfDigitos && porTel.cpf && porTel.cpf !== cpfDigitos) {
+        // Telefone do contato existente com CPF diferente do digitado — provavelmente cadastros distintos
+        // Tratamos como "merge" virtual: lado A é o "novo" representado pelo form
         return {
-          tipo: "juntar",
-          proposta: {
-            contato: porTel,
-            campo: "cpf",
-            valorNovo: cpfDigitos,
-            valorMatch: telDigitos,
-          },
+          tipo: "complementar",
+          existente: porTel,
+          campo: "cpf",
+          valorNovo: cpfDigitos,
         };
       }
-      // Sem CPF novo (ou contato já tem CPF diferente) → apenas carregar
-      if (!cpfDigitos) {
-        return { tipo: "carregar", contato: porTel };
-      }
-      // Operador informou CPF mas o contato já tem outro CPF → tratar como conflito
-      return { tipo: "conflito", cpfNome: "outro cliente", telNome: porTel.nome };
+      return { tipo: "carregar", contato: porTel };
     }
 
     // Match só por CPF
     if (porCpf && !porTel) {
       if (telDigitos && !porCpf.telefone) {
         return {
-          tipo: "juntar",
-          proposta: {
-            contato: porCpf,
-            campo: "telefone",
-            valorNovo: telDigitos,
-            valorMatch: cpfDigitos,
-          },
+          tipo: "complementar",
+          existente: porCpf,
+          campo: "telefone",
+          valorNovo: normalizarTelefoneBR(telDigitos),
         };
       }
-      if (!telDigitos) {
-        return { tipo: "carregar", contato: porCpf };
+      if (telDigitos && porCpf.telefone && normalizarTelefoneBR(porCpf.telefone) !== normalizarTelefoneBR(telDigitos)) {
+        return {
+          tipo: "complementar",
+          existente: porCpf,
+          campo: "telefone",
+          valorNovo: normalizarTelefoneBR(telDigitos),
+        };
       }
-      return { tipo: "conflito", cpfNome: porCpf.nome, telNome: "outro cliente" };
+      return { tipo: "carregar", contato: porCpf };
     }
 
     return { tipo: "novo" };
   };
 
-  const aplicarJuncao = async () => {
-    if (!proposta || !profile?.tenant_id) return;
-    setAplicandoJuncao(true);
-    try {
-      const update: { cpf?: string; telefone?: string } =
-        proposta.campo === "cpf"
-          ? { cpf: proposta.valorNovo }
-          : { telefone: proposta.valorNovo };
-
-      const { data: atualizado, error } = await supabase
-        .from("contatos")
-        .update(update)
-        .eq("id", proposta.contato.id)
-        .eq("tenant_id", profile.tenant_id)
-        .select(SELECT_CONTATO)
-        .single();
-
-      if (error) {
-        // Se houve violação de unicidade no UPDATE (telefone já existe em outro contato),
-        // mostra erro claro e mantém modal aberto para correção.
-        const code = (error as { code?: string }).code;
-        if (code === "23505") {
-          toast({
-            title: "Não foi possível juntar",
-            description:
-              "Esse dado já pertence a outro cliente. Verifique antes de complementar o cadastro.",
-            variant: "destructive",
-          });
-          setProposta(null);
-          return;
-        }
-        throw error;
-      }
-
-      queryClient.invalidateQueries({ queryKey: ["contatos"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-contatos"] });
-
-      toast({
-        title: "✓ Cadastro complementado",
-        description: `${(atualizado as ContatoCaixa).nome} agora tem ${
-          proposta.campo === "cpf" ? "CPF" : "telefone"
-        } cadastrado.`,
-      });
-      onCriado(atualizado as ContatoCaixa);
-      setProposta(null);
-      onOpenChange(false);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao complementar";
-      toast({ title: "Erro", description: msg, variant: "destructive" });
-    } finally {
-      setAplicandoJuncao(false);
-    }
-  };
+  /** Constrói um contato "virtual" representando os dados digitados agora no formulário. */
+  const construirContatoVirtual = (cpfDigitos: string, telDigitos: string): ContatoCompleto => ({
+    id: "novo",
+    nome: nome.trim() || "(novo cadastro)",
+    cpf: cpfDigitos || null,
+    telefone: telDigitos ? normalizarTelefoneBR(telDigitos) : null,
+    email: email.trim() || null,
+    data_nascimento: dataNascimento || null,
+    saldo_giftback: 0,
+    rfv_recencia: null,
+    rfv_frequencia: null,
+    rfv_valor: null,
+    created_at: null,
+  });
 
   const handleSalvar = async () => {
     const novosErros: Record<string, string> = {};
@@ -328,34 +303,39 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
           title: "Cliente já cadastrado",
           description: "Carregando o cadastro existente.",
         });
-        onCriado(decisao.contato);
+        onCriado(decisao.contato as ContatoCaixa);
         onOpenChange(false);
         return;
       }
 
-      if (decisao.tipo === "conflito") {
-        setErros({
-          cpf: "CPF e telefone pertencem a clientes diferentes",
-          telefone: "Corrija um dos campos antes de continuar",
-        });
-        toast({
-          title: "Dados de clientes diferentes",
-          description: `O CPF é de "${decisao.cpfNome}" e o telefone é de "${decisao.telNome}". Ajuste um dos campos.`,
-          variant: "destructive",
+      if (decisao.tipo === "merge") {
+        setMerge({
+          contatoA: decisao.a,
+          contatoB: decisao.b,
+          ladoBVirtual: false,
+          forcar: decisao.forcar,
         });
         return;
       }
 
-      if (decisao.tipo === "juntar") {
-        setProposta(decisao.proposta);
+      if (decisao.tipo === "complementar") {
+        const virtual = construirContatoVirtual(cpfDigitos, telDigitos);
+        setMerge({
+          contatoA: decisao.existente,
+          contatoB: virtual,
+          ladoBVirtual: true,
+          forcar: decisao.campo === "cpf"
+            ? { cpf: decisao.valorNovo }
+            : { telefone: decisao.valorNovo },
+        });
         return;
       }
 
-      // novo → INSERT
+      // novo → INSERT (telefone gravado em forma canônica sem DDI)
       const payload = {
         tenant_id: profile.tenant_id,
         nome: nome.trim(),
-        telefone: telDigitos || null,
+        telefone: telDigitos ? normalizarTelefoneBR(telDigitos) : null,
         cpf: cpfDigitos || null,
         email: email.trim() || null,
         data_nascimento: dataNascimento || null,
@@ -367,7 +347,7 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
       const { data: criado, error } = await supabase
         .from("contatos")
         .insert(payload)
-        .select(SELECT_CONTATO)
+        .select(SELECT_CONTATO_COMPLETO)
         .single();
 
       if (error) {
@@ -381,20 +361,24 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
               title: "Cliente já existente",
               description: "Carregando o cadastro existente.",
             });
-            onCriado(dec2.contato);
+            onCriado(dec2.contato as ContatoCaixa);
             onOpenChange(false);
             return;
           }
-          if (dec2.tipo === "juntar") {
-            setProposta(dec2.proposta);
+          if (dec2.tipo === "complementar") {
+            const virtual = construirContatoVirtual(cpfDigitos, telDigitos);
+            setMerge({
+              contatoA: dec2.existente,
+              contatoB: virtual,
+              ladoBVirtual: true,
+              forcar: dec2.campo === "cpf"
+                ? { cpf: dec2.valorNovo }
+                : { telefone: dec2.valorNovo },
+            });
             return;
           }
-          if (dec2.tipo === "conflito") {
-            toast({
-              title: "Conflito de cadastro",
-              description: "CPF e telefone pertencem a clientes diferentes.",
-              variant: "destructive",
-            });
+          if (dec2.tipo === "merge") {
+            setMerge({ contatoA: dec2.a, contatoB: dec2.b, ladoBVirtual: false, forcar: dec2.forcar });
             return;
           }
         }
@@ -420,21 +404,6 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
 
   const podeSalvar = !salvando && !emailInvalido;
 
-  // Strings amigáveis para o AlertDialog de junção
-  const propostaTexto = useMemo(() => {
-    if (!proposta) return null;
-    const campoMatch = proposta.campo === "cpf" ? "telefone" : "CPF";
-    const valorMatchFmt =
-      proposta.campo === "cpf"
-        ? mascararTelefoneBR(proposta.valorMatch)
-        : mascararCPF(proposta.valorMatch);
-    const campoFalta = proposta.campo === "cpf" ? "CPF" : "telefone";
-    const valorFaltaFmt =
-      proposta.campo === "cpf"
-        ? mascararCPF(proposta.valorNovo)
-        : mascararTelefoneBR(proposta.valorNovo);
-    return { campoMatch, valorMatchFmt, campoFalta, valorFaltaFmt };
-  }, [proposta]);
 
   return (
     <>

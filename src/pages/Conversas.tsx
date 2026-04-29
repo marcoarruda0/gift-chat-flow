@@ -11,9 +11,11 @@ import { SincronizarWhatsappDialog } from "@/components/conversas/SincronizarWha
 import { EnviarTemplateDialog } from "@/components/conversas/EnviarTemplateDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
+import { ContatoDrawer } from "@/components/contatos/ContatoDrawer";
 
 interface ConversaRow {
   id: string;
+  contato_id: string;
   contato_nome: string;
   contato_telefone: string | null;
   contato_avatar: string | null;
@@ -54,6 +56,7 @@ export default function Conversas() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [perfilContatoId, setPerfilContatoId] = useState<string | null>(null);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});
@@ -97,6 +100,7 @@ export default function Conversas() {
 
     const mapped: ConversaRow[] = (data || []).map((c: any) => ({
       id: c.id,
+      contato_id: c.contato_id,
       contato_nome: c.contatos?.nome || "Sem nome",
       contato_telefone: c.contatos?.telefone || null,
       contato_avatar: c.contatos?.avatar_url || null,
@@ -774,9 +778,11 @@ export default function Conversas() {
       {showChat && (
         selected ? (
           <ChatPanel
+            contatoId={selected.contato_id}
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
             contatoAvatar={selected.contato_avatar}
+            onAbrirPerfil={(id) => setPerfilContatoId(id)}
             departamentoNome={selected.departamento_id ? departamentos[selected.departamento_id] || null : null}
             atendenteNome={selected.atendente_id ? membros[selected.atendente_id] || null : null}
             mensagens={mensagens}
@@ -829,6 +835,11 @@ export default function Conversas() {
         open={templateDialogOpen}
         onOpenChange={setTemplateDialogOpen}
         onSend={handleSendTemplate}
+      />
+      <ContatoDrawer
+        contatoId={perfilContatoId}
+        open={!!perfilContatoId}
+        onOpenChange={(o) => { if (!o) setPerfilContatoId(null); }}
       />
     </div>
   );

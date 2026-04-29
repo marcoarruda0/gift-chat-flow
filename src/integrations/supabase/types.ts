@@ -2071,6 +2071,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      contato_resumo: { Args: { p_contato_id: string }; Returns: Json }
       contato_timeline: {
         Args: { p_contato_id: string; p_limit?: number }
         Returns: Json

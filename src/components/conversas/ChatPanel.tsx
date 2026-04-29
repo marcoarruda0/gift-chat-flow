@@ -19,9 +19,11 @@ interface Mensagem {
 }
 
 interface ChatPanelProps {
+  contatoId?: string | null;
   contatoNome: string;
   contatoTelefone: string | null;
   contatoAvatar?: string | null;
+  onAbrirPerfil?: (contatoId: string) => void;
   departamentoNome?: string | null;
   atendenteNome?: string | null;
   mensagens: Mensagem[];
@@ -57,7 +59,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate, rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading, onEnviarRascunho }: ChatPanelProps) {
+export function ChatPanel({ contatoId, contatoNome, contatoTelefone, contatoAvatar, onAbrirPerfil, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate, rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading, onEnviarRascunho }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -73,14 +75,22 @@ export function ChatPanel({ contatoNome, contatoTelefone, contatoAvatar, departa
             <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
-        <Avatar className="h-9 w-9">
-          {contatoAvatar && <AvatarImage src={contatoAvatar} alt={contatoNome} />}
-          <AvatarFallback className="bg-primary/10 text-primary text-xs">{initials}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{contatoNome}</p>
-          {contatoTelefone && <p className="text-xs text-muted-foreground">{contatoTelefone}</p>}
-        </div>
+        <button
+          type="button"
+          onClick={() => contatoId && onAbrirPerfil?.(contatoId)}
+          disabled={!contatoId || !onAbrirPerfil}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-accent/60 transition disabled:hover:bg-transparent disabled:cursor-default"
+          title={contatoId && onAbrirPerfil ? "Ver perfil completo" : undefined}
+        >
+          <Avatar className="h-9 w-9">
+            {contatoAvatar && <AvatarImage src={contatoAvatar} alt={contatoNome} />}
+            <AvatarFallback className="bg-primary/10 text-primary text-xs">{initials}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">{contatoNome}</p>
+            {contatoTelefone && <p className="text-xs text-muted-foreground">{contatoTelefone}</p>}
+          </div>
+        </button>
         <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           {canal === "whatsapp_cloud" && (
             <Badge variant="default" className="text-xs gap-1 font-normal">

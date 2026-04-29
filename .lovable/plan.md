@@ -1,64 +1,60 @@
 ## Objetivo
 
-Reforçar o cadastro rápido de cliente no Painel do Caixa com validação de e-mail em tempo real, feedback visual de sucesso, máscaras na exibição do contato e proteção contra duplicidade concorrente (CPF/telefone).
+No cadastro rápido do Caixa, quando um dos identificadores informados (CPF **ou** telefone) já pertencer a um contato existente — mas o outro estiver vazio nesse cadastro — propor a **junção/complemento** ao operador, ao invés de simplesmente carregar o contato como está hoje.
 
-## 1. Validação de e-mail em tempo real (`NovoContatoCaixaDialog.tsx`)
+Cenário-alvo (ex.: Marco Arruda):
+- Operador busca por CPF, não encontra, abre o modal "Novo cliente".
+- Preenche **CPF + telefone**.
+- O telefone já existe num cadastro sem CPF.
+- Hoje: bloqueia ou apenas carrega o contato existente sem complementar.
+- Desejado: perguntar "Encontramos um cliente com esse telefone (Marco Arruda). Deseja **adicionar o CPF** a esse cadastro?" — e ao confirmar, atualizar o contato existente e carregá-lo.
 
-- Validar o e-mail no `onChange` (não só no submit) usando o mesmo schema `zod`.
-- Mostrar mensagem "E-mail inválido" abaixo do campo enquanto o usuário digita (após o primeiro blur ou quando há conteúdo).
-- Adicionar borda destrutiva (`aria-invalid`) quando inválido.
-- O botão **Cadastrar e continuar** fica desabilitado enquanto o e-mail estiver preenchido e inválido (campo permanece opcional quando vazio).
-- Pequeno debounce visual (~250 ms) para não piscar erro a cada tecla.
+## Comportamento
 
-## 2. Feedback de sucesso e destaque do card (`NovoContatoCaixaDialog.tsx` + `GiftbackCaixa.tsx`)
+A pré-checagem do dialog passa a buscar **separadamente** por CPF e por telefone para conseguir distinguir os casos:
 
-- Trocar o toast genérico "Cliente cadastrado!" por um toast `success` com nome do cliente: "Cliente {nome} cadastrado com sucesso".
-- Em `GiftbackCaixa.tsx`, adicionar estado `recemCarregado: boolean` ativado por 2 s sempre que `carregarContato` for chamado.
-- Aplicar uma classe de destaque (`ring-2 ring-primary ring-offset-2 transition-shadow`) no `Card` do contato enquanto `recemCarregado` for `true`, com fade-out suave.
-- Manter o `scrollIntoView` já existente.
+| CPF informado | Tel. informado | Match por CPF | Match por Tel. | Ação |
+|---|---|---|---|---|
+| sim | sim | mesmo contato | mesmo contato | carrega existente (igual hoje) |
+| sim | sim | A | B (≠ A) | erro: "CPF e telefone pertencem a clientes diferentes — corrija um dos campos" |
+| — | sim | — | A sem CPF | (não muda nada, segue fluxo normal de carregar) |
+| sim | sim | nenhum | A sem CPF | **propõe juntar**: "Este telefone já é do cliente A. Adicionar o CPF informado a esse cadastro?" |
+| sim | sim | A sem tel. | nenhum | **propõe juntar**: "Este CPF já é do cliente A. Adicionar o telefone informado a esse cadastro?" |
+| sim | sim | A com CPF | nenhum | carrega existente (CPF já confere, ignora telefone novo — alerta opcional) |
+| sim | sim | nenhum | A com tel. divergente do informado | situação acima já tratada |
 
-## 3. Máscaras na exibição do card (`GiftbackCaixa.tsx`)
+Regras de juntar:
+- Apenas preenche **campos vazios** no contato existente (CPF se vazio, telefone se vazio). Nunca sobrescreve dado já existente.
+- Nome/email/data_nascimento informados no modal **não** são aplicados ao contato existente (evita sobrescrever dados reais sem intenção). O operador continua o fluxo no Caixa normalmente; ajustes finos de cadastro ficam no módulo Contatos.
+- Após o update, invalida queries `contatos` e `dashboard-contatos`, mostra toast de sucesso e chama `onCriado(contatoAtualizado)` para o caixa carregar o cliente.
 
-- Importar `mascararCPF` e `mascararTelefoneBR` de `@/lib/br-format`.
-- No `CardDescription` do contato, exibir:
-  - `CPF: {mascararCPF(contato.cpf)}` quando houver CPF
-  - `Tel: {mascararTelefoneBR(contato.telefone)}` quando houver telefone
-- A persistência continua somente com dígitos no banco (sem mudanças de schema).
-- Boa-prática: como a base pode ter contatos antigos com máscara, as funções já são idempotentes (`apenasDigitos` interno) — exibição fica consistente em ambos os casos.
+## UI da proposta de junção
 
-## 4. Checagem de duplicidade extra no salvar (`NovoContatoCaixaDialog.tsx`)
+- Reaproveitar o componente `AlertDialog` (shadcn) dentro do `NovoContatoCaixaDialog`.
+- Conteúdo:
+  - Título: "Cliente existente encontrado"
+  - Descrição: "Encontramos **{nome}** com {campo correspondente}: {valor mascarado}. Deseja adicionar o {campo a complementar} ({valor mascarado}) a esse cadastro?"
+  - Botões: **Cancelar** (volta ao formulário) · **Sim, juntar e continuar** (executa update + carrega).
+- Os valores no diálogo são exibidos com `mascararCPF` / `mascararTelefoneBR`.
 
-A pré-checagem atual tem janela de corrida. Reforço:
+## Tratamento do erro `23505` na inserção
 
-- Manter o `SELECT` prévio como UX rápida.
-- Após o `INSERT`, tratar o erro Postgres `23505` (unique violation) — a tabela já tem `UNIQUE (tenant_id, telefone)`. Quando ocorrer:
-  - Buscar o contato existente pelo telefone normalizado.
-  - Mostrar toast: "Este telefone já pertence a outro cliente — carregando o cadastro existente."
-  - Chamar `onCriado(existente)` e fechar o modal.
-- Para CPF: como **não há** unique constraint hoje, fazer um `SELECT ... FOR UPDATE` lógico não é possível pelo client. Vamos:
-  - Repetir a verificação por CPF imediatamente antes do `INSERT` (segunda checagem, em transação curta com o insert).
-  - Sugerir (parte técnica abaixo) adicionar `UNIQUE (tenant_id, cpf)` via migração para garantia definitiva.
+Mantém-se como rede de segurança, mas agora com mais informação:
+- Se houve violação de unicidade após a pré-checagem (corrida), refazer a busca separada e:
+  - Se cair num caso "complementável", abrir o mesmo `AlertDialog` de junção.
+  - Caso contrário, manter o comportamento atual (toast + carregar existente).
 
-## 5. Migração de banco
+## Arquivos alterados
 
-Adicionar índice único parcial para CPF por tenant, alinhando à proteção já existente para telefone:
+- `src/components/giftback/NovoContatoCaixaDialog.tsx`
+  - Substitui o `or(...)` único por duas consultas (`cpf.eq.X` e `telefone.eq.Y`).
+  - Lógica de decisão acima.
+  - Novo `AlertDialog` controlado por estado local `propostaJuncao`.
+  - Função `aplicarJuncao()` que faz o `UPDATE` no contato existente (apenas no campo vazio) e chama `onCriado`.
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS contatos_tenant_cpf_unique
-  ON public.contatos (tenant_id, cpf)
-  WHERE cpf IS NOT NULL;
-```
-
-Parcial (`WHERE cpf IS NOT NULL`) para não bloquear múltiplos contatos sem CPF informado.
-
-## Detalhes técnicos
-
-- Arquivos alterados: `src/components/giftback/NovoContatoCaixaDialog.tsx`, `src/pages/GiftbackCaixa.tsx`.
-- Migração nova em `supabase/migrations/`.
-- Sem mudanças em RLS, edge functions ou tipos compartilhados além do que o Supabase regenera.
-- Tratamento de erro `23505`: detectar via `error.code === '23505'` retornado pelo PostgREST.
+Sem mudanças de schema, RLS ou edge functions. As policies atuais já permitem `UPDATE` em `contatos` pelo mesmo tenant.
 
 ## Fora do escopo
 
-- Normalizar retroativamente CPFs/telefones antigos no banco (pode ser feito em uma tarefa de manutenção separada se desejado).
-- Mudanças no fluxo de busca/Caixa que não sejam exibição mascarada e destaque.
+- Mesclar dois contatos distintos (com históricos diferentes). Isso é uma fusão real e fica para uma ferramenta dedicada em Contatos.
+- Editar nome/email/nascimento do contato existente a partir do modal do caixa.

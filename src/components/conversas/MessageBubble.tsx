@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface MessageBubbleProps {
+  id?: string;
   conteudo: string;
   remetente: string;
   tipo: string;

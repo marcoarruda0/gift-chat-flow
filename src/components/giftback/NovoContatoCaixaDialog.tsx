@@ -28,11 +28,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   apenasDigitos,
   ehProvavelCPF,
+  gerarVariantesTelefone,
   mascararCPF,
   mascararTelefoneBR,
+  normalizarTelefoneBR,
   validarCPF,
   validarTelefoneBR,
 } from "@/lib/br-format";
+import { MesclarContatosDialog, type ContatoCompleto } from "./MesclarContatosDialog";
 
 export interface ContatoCaixa {
   id: string;
@@ -66,8 +69,9 @@ const baseSchema = z.object({
 
 const emailSchema = z.string().trim().email().max(255);
 
-const SELECT_CONTATO =
-  "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor";
+// Versão completa para alimentar o modal de comparação
+const SELECT_CONTATO_COMPLETO =
+  "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor, email, data_nascimento, created_at";
 
 type CampoFaltante = "cpf" | "telefone";
 

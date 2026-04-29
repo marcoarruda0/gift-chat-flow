@@ -498,42 +498,21 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={!!proposta}
+      <MesclarContatosDialog
+        open={!!merge}
         onOpenChange={(o) => {
-          if (!o && !aplicandoJuncao) setProposta(null);
+          if (!o) setMerge(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cliente existente encontrado</AlertDialogTitle>
-            <AlertDialogDescription>
-              {proposta && propostaTexto && (
-                <>
-                  Encontramos <strong>{proposta.contato.nome}</strong> com{" "}
-                  {propostaTexto.campoMatch}{" "}
-                  <strong>{propostaTexto.valorMatchFmt}</strong>.
-                  <br />
-                  Deseja adicionar o {propostaTexto.campoFalta}{" "}
-                  <strong>{propostaTexto.valorFaltaFmt}</strong> a esse cadastro?
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={aplicandoJuncao}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void aplicarJuncao();
-              }}
-              disabled={aplicandoJuncao}
-            >
-              {aplicandoJuncao ? "Juntando..." : "Sim, juntar e continuar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        contatoA={merge?.contatoA ?? null}
+        contatoB={merge?.contatoB ?? null}
+        ladoBVirtual={merge?.ladoBVirtual ?? false}
+        forcar={merge?.forcar}
+        onMesclado={(c) => {
+          setMerge(null);
+          onCriado(c);
+          onOpenChange(false);
+        }}
+      />
     </>
   );
 }

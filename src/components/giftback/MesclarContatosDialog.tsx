@@ -91,7 +91,7 @@ export function MesclarContatosDialog({
     if (ladoBVirtual) {
       setMesclando(true);
       try {
-        const update: Record<string, string | null> = {};
+        const update: { cpf?: string; telefone?: string } = {};
         if (forcar?.cpf) update.cpf = forcar.cpf;
         if (forcar?.telefone) update.telefone = forcar.telefone;
 

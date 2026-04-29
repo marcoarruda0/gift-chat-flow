@@ -71,7 +71,7 @@ export default function InstagramConfig() {
         tenant_id: tenantId,
         ig_user_id: config.ig_user_id.trim(),
         page_id: config.page_id.trim(),
-        page_access_token: config.page_access_token.trim(),
+        page_access_token: config.page_access_token.replace(/\s+/g, "").trim(),
       };
       if (config.id) {
         const { error } = await supabase.from("instagram_config").update(payload).eq("id", config.id);

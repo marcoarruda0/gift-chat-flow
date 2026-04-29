@@ -594,8 +594,45 @@ export default function Conversas() {
       status: "fechada",
       atendimento_encerrado_at: new Date().toISOString(),
     } as any).eq("id", selectedId);
+    // O trigger no banco já remove a fixação; limpa estado local também
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: false } : c));
     setSelectedId(null);
     fetchConversas();
+  };
+
+  const handleTogglePin = async () => {
+    if (!selectedId || !user?.id || !tenantId) return;
+    const conv = conversas.find(c => c.id === selectedId);
+    if (!conv) return;
+    if (conv.atendente_id !== user.id) {
+      toast.error("Só é possível fixar conversas que estão com você");
+      return;
+    }
+    const novoFixado = !conv.fixada;
+    // Atualiza otimisticamente
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: novoFixado } : c));
+    try {
+      if (novoFixado) {
+        const { error } = await supabase
+          .from("conversa_fixacoes" as any)
+          .insert({ conversa_id: selectedId, user_id: user.id, tenant_id: tenantId } as any);
+        if (error) throw error;
+        toast.success("Conversa fixada");
+      } else {
+        const { error } = await supabase
+          .from("conversa_fixacoes" as any)
+          .delete()
+          .eq("conversa_id", selectedId)
+          .eq("user_id", user.id);
+        if (error) throw error;
+        toast.success("Conversa desafixada");
+      }
+    } catch (e: any) {
+      console.error(e);
+      // Reverte
+      setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: !novoFixado } : c));
+      toast.error("Erro ao atualizar fixação");
+    }
   };
 
   // Copiloto: gerar rascunho

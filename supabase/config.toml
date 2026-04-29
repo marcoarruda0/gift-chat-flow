@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.analisar-satisfacao]
 verify_jwt = false
+
+[functions.transcrever-audio]
+verify_jwt = false

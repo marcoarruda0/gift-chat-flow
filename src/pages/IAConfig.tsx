@@ -332,7 +332,7 @@ export default function IAConfig() {
       // Marca como pendente em lote
       for (const m of pendentes) {
         await supabase.from("mensagens").update({
-          metadata: { ...(m.metadata || {}), transcricao_status: "pendente", transcricao_tentativas: 0, transcricao_erro: null },
+          metadata: { ...((m.metadata as Record<string, any>) || {}), transcricao_status: "pendente", transcricao_tentativas: 0, transcricao_erro: null },
         }).eq("id", m.id);
       }
       // Dispara processamento imediato

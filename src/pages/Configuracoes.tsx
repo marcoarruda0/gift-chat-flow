@@ -11,7 +11,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Bot, MessageSquare, Settings, Brain, ChevronRight, Zap, Building2, Trash2, Loader2, Shield } from "lucide-react";
+import { Bot, MessageSquare, Settings, Brain, ChevronRight, Zap, Building2, Trash2, Loader2, Shield, Instagram } from "lucide-react";
 
 interface Fluxo {
   id: string;

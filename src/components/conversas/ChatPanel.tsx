@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
-import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User, HandMetal, FileText } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, ArrowRightLeft, MailOpen, Building2, User, HandMetal, FileText, Pin, PinOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface Mensagem {
@@ -34,6 +34,8 @@ interface ChatPanelProps {
   onBack?: () => void;
   onTransfer?: () => void;
   onMarkUnread?: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
   loading: boolean;
   isAssignedToMe?: boolean;
   onPull?: () => void;
@@ -59,7 +61,7 @@ export function ChatPanelEmpty() {
   );
 }
 
-export function ChatPanel({ contatoId, contatoNome, contatoTelefone, contatoAvatar, onAbrirPerfil, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate, rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading, onEnviarRascunho }: ChatPanelProps) {
+export function ChatPanel({ contatoId, contatoNome, contatoTelefone, contatoAvatar, onAbrirPerfil, departamentoNome, atendenteNome, mensagens, onSend, onSendAudio, onSendAttachment, onClose, onBack, onTransfer, onMarkUnread, isPinned, onTogglePin, loading, isAssignedToMe, onPull, canal, cloudWindowBlocked, onSendTemplate, rascunho, copilotoAtivo, onDescartarRascunho, onSugerirRascunho, rascunhoLoading, onEnviarRascunho }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const initials = contatoNome.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -118,6 +120,17 @@ export function ChatPanel({ contatoId, contatoNome, contatoTelefone, contatoAvat
         {onMarkUnread && (
           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onMarkUnread} title="Marcar como não lida">
             <MailOpen className="h-4 w-4" />
+          </Button>
+        )}
+        {isAssignedToMe && onTogglePin && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            onClick={onTogglePin}
+            title={isPinned ? "Desafixar conversa" : "Fixar conversa"}
+          >
+            {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
           </Button>
         )}
         {isAssignedToMe && (

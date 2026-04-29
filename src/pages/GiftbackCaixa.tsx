@@ -83,6 +83,14 @@ export default function GiftbackCaixa() {
   const [buscando, setBuscando] = useState(false);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
   const [dialogNovoOpen, setDialogNovoOpen] = useState(false);
+  const contatoCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Quando um contato entra na tela, traz o card para a viewport
+  useEffect(() => {
+    if (contato && contatoCardRef.current) {
+      contatoCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [contato?.id]);
   const { data: configGlobal } = useQuery({
     queryKey: ["giftback-config"],
     queryFn: async () => {

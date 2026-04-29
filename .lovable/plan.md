@@ -1,47 +1,50 @@
-# Distinção Individual × Grupos + contadores nos filtros
+## Problema
 
-## Visão geral
-Na lista de conversas (`ConversasList`), adicionar uma nova faixa de tabs **Individual / Grupos** logo abaixo do título "Conversas" (acima das tabs de canal Z-API/Oficial), e exibir um **contador** ao lado de cada filtro (Todas, Abertas, Minhas, Meu Depto, Fechadas, Sem Atendente).
+O gatilho `criado` em **Comunicações de Giftback** (`supabase/functions/processar-comunicacoes-giftback/index.ts`) hoje busca movimentos com `created_at` entre **00:00 de hoje** e **00:00 de amanhã** (BRT). Como o disparo costuma rodar às 9h, isso:
 
-## Como identificar grupos
-Hoje não existe coluna `is_group` em `conversas`. O telefone do contato dos grupos vem do Z-API com sufixo `@g.us` (ex.: `120363...@g.us`), gravado em `contatos.telefone`. Usaremos esse marcador na UI — **sem migração de banco**:
+- Pega só o que foi criado entre 00h–09h de hoje (perde a maior parte do dia anterior).
+- Não cobre o dia útil completo do cliente.
+- Pode sobrepor com uma execução anterior se o tenant tiver horário próximo da virada do dia.
 
-```ts
-const isGrupo = (c) => (c.contato_telefone || "").includes("@g.us");
-```
+## Objetivo
 
-Para isso precisamos que `contato_telefone` chegue até a `ConversasList` (hoje só vai até a página `Conversas.tsx`). Vamos passar esse campo no array enviado para o componente.
+Para o gatilho `criado`, considerar **todos os giftbacks criados no dia anterior completo** (00:00:00 a 23:59:59.999 BRT do dia D-1), independente do horário em que o tenant configurou o disparo.
 
 ## Mudanças
 
-### 1. `src/pages/Conversas.tsx`
-- Incluir `contato_telefone` no objeto passado para `<ConversasList conversas={...} />` (já existe no estado, basta repassar).
+### 1. `supabase/functions/processar-comunicacoes-giftback/index.ts`
 
-### 2. `src/components/conversas/ConversasList.tsx`
-- Estender a interface `Conversa` com `contato_telefone?: string | null`.
-- Novo estado `tipoTab: "individual" | "grupos"` persistido em `localStorage` (chave `conversas_tipo_tab`), default `"individual"`.
-- Renderizar **dois grupos de tabs** abaixo do título:
-  - **Tipo**: Individual / Grupos (com contadores)
-  - **Canal** (existente): Todos / Z-API / Oficial
-- Aplicar o filtro de tipo **antes** do filtro de canal e do filtro de status, para que os contadores dos demais filtros reflitam apenas o tipo selecionado.
-- Calcular contadores por filtro de status sobre a lista já filtrada por tipo + canal + busca:
-  - Todas, Abertas, Minhas, Meu Depto, Fechadas, Sem Atendente (admin)
-- Renderizar cada chip de filtro com sufixo numérico, ex.: `Abertas 10`, `Minhas 34`. Quando o contador for 0 manter o número visível em estilo discreto.
+Substituir a janela do bloco `if (regra.tipo_gatilho === "criado")`:
 
-### 3. UX / responsividade
-- Layout das tabs Individual/Grupos idêntico ao bloco existente de canal (`grid grid-cols-2`, mesma classe visual), para consistência.
-- No viewport mobile (375px) os chips de filtro continuam em `flex-wrap`; o número fica como `<span>` em fonte um pouco menor ao lado do label.
+- Calcular `ontemISO = addDaysISO(hojeISO, -1)`.
+- Filtrar:
+  - `created_at >= ontemISO + "T00:00:00.000-03:00"` (início do dia anterior em BRT, convertido para UTC)
+  - `created_at < hojeISO + "T00:00:00.000-03:00"` (início de hoje em BRT)
+- Manter `status = 'ativo'` e `tipo = 'credito'`.
 
-## Diagrama
-```text
-┌─ Conversas ───────────────── [↻] [⇪] [+] ─┐
-│  [ Individual 42 ] [ Grupos 7 ]            │  ← novo
-│  [ Todos 49 ] [ Z-API 40 ] [ Oficial 9 ]   │
-│  🔍 Buscar conversa...                      │
-│  (Todas 42) (Abertas 10) (Minhas 34) ...    │  ← contadores
-└─────────────────────────────────────────────┘
-```
+Como o restante do código já trabalha com BRT via `hojeISO` e `inicioDia`, a derivação será feita reutilizando o mesmo helper de fuso já usado no arquivo (timezone fixo BRT, sem horário de verão — alinhado ao restante do scheduler).
+
+### 2. Idempotência (já existe, só validar)
+
+A tabela `giftback_comunicacao_envios` (chave por `regra_id + movimento_id`) já evita reenvio. Com a janela passando para o dia anterior, se um tenant rodar duas vezes (ex.: por reentrega do cron), o dedupe continua valendo — não precisa mexer.
+
+### 3. Documentação na UI (opcional, leve)
+
+Em `src/components/giftback/RegraComunicacaoDialog.tsx`, ajustar o helper-text do gatilho "criado" para deixar claro:
+
+> "Envia uma vez por giftback **criado no dia anterior**, no horário configurado."
+
+(Pequeno texto, sem mudança de comportamento.)
 
 ## Fora de escopo
-- Migração para coluna `is_group` em `conversas` (não necessário; detecção por sufixo `@g.us` no telefone é suficiente e barata).
-- Mudanças no painel de chat / envio para grupos.
+
+- Gatilhos `vencendo` e `expirado` continuam como estão (operam por data de `validade`, não por `created_at`).
+- Modal de teste (`TestarRegraDialog`) não filtra por janela — sem alteração.
+- Sem migração de banco.
+
+## Resumo do impacto
+
+```text
+ANTES:  created_at ∈ [hoje 00:00 BRT, amanhã 00:00 BRT)   ← janela "andando" durante o dia
+DEPOIS: created_at ∈ [ontem 00:00 BRT, hoje 00:00 BRT)    ← dia anterior fechado
+```

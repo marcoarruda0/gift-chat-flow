@@ -29,6 +29,7 @@ interface ConversaRow {
   marcada_nao_lida: boolean;
   created_at: string | null;
   canal: string;
+  fixada: boolean;
 }
 
 interface MensagemRow {
@@ -98,6 +99,16 @@ export default function Conversas() {
 
     if (error) { console.error(error); return; }
 
+    // Buscar fixações do usuário atual
+    let fixadasSet = new Set<string>();
+    if (user?.id) {
+      const { data: fixData } = await supabase
+        .from("conversa_fixacoes" as any)
+        .select("conversa_id")
+        .eq("user_id", user.id);
+      if (fixData) fixadasSet = new Set((fixData as any[]).map(f => f.conversa_id));
+    }
+
     const mapped: ConversaRow[] = (data || []).map((c: any) => ({
       id: c.id,
       contato_id: c.contato_id,
@@ -114,10 +125,11 @@ export default function Conversas() {
       marcada_nao_lida: c.marcada_nao_lida ?? false,
       created_at: c.created_at || null,
       canal: c.canal || "zapi",
+      fixada: fixadasSet.has(c.id),
     }));
     setConversas(mapped);
     setLoadingConversas(false);
-  }, [tenantId]);
+  }, [tenantId, user?.id]);
 
   useEffect(() => { fetchConversas(); }, [fetchConversas]);
 
@@ -582,8 +594,45 @@ export default function Conversas() {
       status: "fechada",
       atendimento_encerrado_at: new Date().toISOString(),
     } as any).eq("id", selectedId);
+    // O trigger no banco já remove a fixação; limpa estado local também
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: false } : c));
     setSelectedId(null);
     fetchConversas();
+  };
+
+  const handleTogglePin = async () => {
+    if (!selectedId || !user?.id || !tenantId) return;
+    const conv = conversas.find(c => c.id === selectedId);
+    if (!conv) return;
+    if (conv.atendente_id !== user.id) {
+      toast.error("Só é possível fixar conversas que estão com você");
+      return;
+    }
+    const novoFixado = !conv.fixada;
+    // Atualiza otimisticamente
+    setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: novoFixado } : c));
+    try {
+      if (novoFixado) {
+        const { error } = await supabase
+          .from("conversa_fixacoes" as any)
+          .insert({ conversa_id: selectedId, user_id: user.id, tenant_id: tenantId } as any);
+        if (error) throw error;
+        toast.success("Conversa fixada");
+      } else {
+        const { error } = await supabase
+          .from("conversa_fixacoes" as any)
+          .delete()
+          .eq("conversa_id", selectedId)
+          .eq("user_id", user.id);
+        if (error) throw error;
+        toast.success("Conversa desafixada");
+      }
+    } catch (e: any) {
+      console.error(e);
+      // Reverte
+      setConversas(prev => prev.map(c => c.id === selectedId ? { ...c, fixada: !novoFixado } : c));
+      toast.error("Erro ao atualizar fixação");
+    }
   };
 
   // Copiloto: gerar rascunho
@@ -793,6 +842,8 @@ export default function Conversas() {
             onBack={isMobile ? () => setSelectedId(null) : undefined}
             onTransfer={() => setTransferDialogOpen(true)}
             onMarkUnread={handleMarkUnread}
+            isPinned={selected.fixada}
+            onTogglePin={handleTogglePin}
             loading={loadingMsgs}
             isAssignedToMe={selected.atendente_id === user?.id}
             canal={selected.canal || "zapi"}

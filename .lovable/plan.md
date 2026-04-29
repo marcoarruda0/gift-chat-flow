@@ -1,81 +1,73 @@
-## Painel lateral do contato no estilo Zoppy
+# Fixar conversas no painel de Conversas
 
-Hoje já existe um `ContatoDrawer` rudimentar acionado a partir da lista de **Contatos**, mas:
-- Ele NÃO abre ao clicar no avatar dentro de **Conversas** (requisito do usuário).
-- Não tem a estética da inspiração Zoppy: KPIs no topo, perfil lateral fixo (Sobre, RFM, Vendedor principal), timeline central tipo "Registro de atividades" com cards coloridos, ícones de ações rápidas (WhatsApp, Giftback, Compras, Campanha) e filtros.
-- Faltam eventos importantes como **fluxos** (entrou em fluxo X) e **giftback com detalhes** (código, validade, valor mínimo, se foi usado/expirou).
+Permitir que o atendente "fixe" suas conversas no topo da lista, com regras alinhadas ao WhatsApp.
 
-A função `contato_timeline` já cobre compras, giftback (crédito/débito/expirado), conversas, campanhas e satisfação — mas **não cobre fluxos**, e os payloads dos eventos de giftback/campanha estão pobres em detalhes.
+## Regras de negócio
 
-### O que será feito
+- Só pode fixar quem é o **atendente da conversa** (`atendente_id = auth.uid()`). Se a conversa não tem atendente ou pertence a outro, o botão não aparece.
+- Cada usuário fixa para si mesmo (fixação por usuário, não global no tenant).
+- Ao **encerrar a conversa** (status vira `fechada`), a fixação é removida automaticamente.
+- Ao **transferir** para outro atendente, a fixação do antigo atendente também é removida (mantém consistência da regra "só fixa quem está com a conversa").
+- Conversas fixadas aparecem no **topo** da lista, ordenadas entre si por `ultima_msg_at desc`. Demais conversas seguem a ordem atual.
+- Ícone usado: `Pin` do `lucide-react` (mesmo formato do alfinete do WhatsApp). Quando fixada, usa `PinOff` no botão (toggle) e mostra um pequeno `Pin` ao lado do horário no `ConversaItem`.
 
-#### 1. Banco — enriquecer `contato_timeline`
-Atualizar a função RPC `public.contato_timeline` para:
-- Adicionar evento `fluxo` (a partir de `fluxo_sessoes` + `conversas`, com nome do fluxo via `fluxos.nome`).
-- Enriquecer evento `giftback_credito` com `codigo`, `validade`, `valor_minimo`, `usado` (boolean), `expirado` (boolean) — checando se já existe débito/expiração com mesmo `compra_id` ou `referencia`.
-- Enriquecer evento `campanha` com nome da campanha e canal (já tem) + assunto/template.
-- Enriquecer eventos de compra com `forma_pagamento` se disponível.
-- Adicionar agregados de KPIs no retorno (`kpis`): `valor_gasto_total`, `giftback_gerado_total`, `ticket_medio`, `num_compras`.
+## Banco de dados
 
-Também adicionar uma RPC complementar `contato_resumo(p_contato_id)` que retorna apenas os KPIs e o RFV (para carregamento rápido independente da timeline).
+Nova tabela `conversa_fixacoes` (fixação por usuário):
 
-#### 2. Frontend — redesenho do `ContatoDrawer` no estilo Zoppy
-Reescrever `src/components/contatos/ContatoDrawer.tsx` para usar um **Sheet largo** (`sm:max-w-5xl`) com layout em duas colunas:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ ← Perfil do Cliente                                         │
-├──────────────────┬──────────────────────────────────────────┤
-│  Adna Soares     │  [KPI] [KPI] [KPI] [KPI]                 │
-│  ✉ email         │  ┌─────────────────────────────────────┐ │
-│  ☎ telefone      │  │ ▼ Filtrar                            │ │
-│  [Campeão RFM]   │  └─────────────────────────────────────┘ │
-│  ● aceita msgs   │                                          │
-│  [💬][✓][🛒][💸]│  Registro de atividades                  │
-│                  │  Qui, 09/04                              │
-│  ── Sobre ──     │  ┃ 📢 Impactado pela campanha 11:57      │
-│  Endereço:       │  ┃ Recebeu "TAT - INVERNO..."           │
-│  Aniversário:    │                                          │
-│  Gênero:         │  Sex, 03/04                              │
-│  Perfil RFM:     │  ┃ 💰 Giftback Gerado          00:42    │
-│  Vendedor:       │  ┃ Valor: R$ 54,20  Código: pecagomj4   │
-│                  │  ┃ Validade: 18/05/2026  Mínimo: R$...  │
-└──────────────────┴──────────────────────────────────────────┘
+```sql
+create table public.conversa_fixacoes (
+  conversa_id uuid not null references public.conversas(id) on delete cascade,
+  user_id uuid not null,
+  tenant_id uuid not null,
+  fixada_at timestamptz not null default now(),
+  primary key (conversa_id, user_id)
+);
 ```
 
-Componentes:
-- **Coluna esquerda (perfil)** — `ContatoPerfilLateral.tsx` (novo): avatar grande, nome em destaque, email/telefone/endereço com ícones, badge RFV, status opt-in, 4 botões rápidos (Conversar, Marcar como cliente, Ver compras, Ver giftbacks), seção colapsável "Sobre" com aniversário/gênero/vendedor principal (`vendedor principal` = `operador_id` mais frequente em compras).
-- **Coluna direita (timeline)** — `ContatoAtividades.tsx` (novo): 4 KPI cards no topo (Valor gasto, Giftback gerado, Ticket médio, N° compras), botão **Filtrar** com popover multi-select por tipo, lista agrupada por dia com cards coloridos por categoria (barra lateral colorida + ícone + título + detalhes específicos por tipo).
+- RLS: SELECT/INSERT/DELETE somente quando `user_id = auth.uid()` e `tenant_id` pertence ao usuário (mesmo padrão das demais tabelas do projeto).
+- Índice em `(user_id, tenant_id)` para o join na listagem.
 
-Cada tipo de evento tem renderização própria com os campos relevantes (giftback mostra código/validade/valor mínimo em colunas; campanha mostra nome entre aspas; fluxo mostra "Cliente entrou no fluxo X"; compra mostra valor/itens; satisfação mostra score e classificação).
+Trigger / lógica para limpar fixação:
 
-Estética: cards brancos com sombra leve, barra lateral colorida de 4px à esquerda por tipo (verde=compra, azul=giftback, roxo=campanha, ciano=fluxo, violeta=conversa, amarelo=satisfação), tipografia hierárquica.
+- Trigger `AFTER UPDATE` em `conversas` que, quando `status` muda para `fechada` OU `atendente_id` muda, executa `DELETE FROM conversa_fixacoes WHERE conversa_id = NEW.id` (no caso de troca de atendente, apaga a fixação do atendente antigo).
 
-#### 3. Integração no painel de Conversas
-- Em `src/components/conversas/ChatPanel.tsx`: tornar o avatar+nome do header **clicável** (cursor-pointer + hover), adicionar prop `onAbrirPerfil?: (contatoId) => void` e novo prop `contatoId`.
-- Em `src/pages/Conversas.tsx`: passar `contato_id` para o `ChatPanel` e gerenciar estado `perfilContatoId`, renderizando `<ContatoDrawer contatoId={perfilContatoId} ... />` no nível da página.
+## Backend / dados na listagem
 
-#### 4. Pequenos ajustes
-- Tooltip "Ver perfil completo" no avatar do `ChatPanel`.
-- Manter o uso atual em `Contatos.tsx` funcionando (mesmo componente, agora mais rico).
-- Remover a aba "Campos personalizados" duplicada — mover para dentro de "Sobre" como seção colapsável (consistente com Zoppy).
+`fetchConversas` em `src/pages/Conversas.tsx`:
 
-### Detalhes técnicos
+- Após carregar `conversas`, buscar `conversa_fixacoes` do usuário atual:
+  `select conversa_id from conversa_fixacoes where user_id = auth.uid()`.
+- Marcar `fixada: true` nas conversas correspondentes.
+- Ordenar: `fixada desc, ultima_msg_at desc`.
 
-**Migração SQL** (`supabase/migrations/<ts>_contato_timeline_enriquecida.sql`):
-- `CREATE OR REPLACE FUNCTION public.contato_timeline(...)` adicionando o UNION com `fluxo_sessoes` e enriquecendo metadata de giftback/campanha.
-- `CREATE OR REPLACE FUNCTION public.contato_resumo(p_contato_id uuid) RETURNS jsonb` — KPIs agregados.
+## UI
 
-**Arquivos a criar:**
-- `src/components/contatos/ContatoPerfilLateral.tsx`
-- `src/components/contatos/ContatoAtividades.tsx`
-- `src/components/contatos/ContatoKpiCard.tsx` (pequeno, reutilizável)
-- `src/components/contatos/EventoCard.tsx` (renderização polimórfica por `tipo`)
+### `src/components/conversas/ChatPanel.tsx`
 
-**Arquivos a editar:**
-- `src/components/contatos/ContatoDrawer.tsx` — reestruturado para 2 colunas, Sheet `sm:max-w-5xl`.
-- `src/components/contatos/ContatoTimeline.tsx` — passa a usar `EventoCard` e suporta novos tipos (`fluxo`).
-- `src/components/conversas/ChatPanel.tsx` — avatar/nome clicáveis, novas props.
-- `src/pages/Conversas.tsx` — estado e renderização do drawer.
+Adicionar botão Pin/PinOff entre "Marcar como não lida" e "Encerrar conversa":
 
-Sem novas dependências. Recharts não é necessário (apenas KPI cards numéricos).
+- Props novas: `isPinned?: boolean`, `onTogglePin?: () => void`.
+- Renderizar somente quando `isAssignedToMe` for `true` (espelhando a regra do botão de encerrar).
+- Ícone `Pin` quando não fixada (title "Fixar conversa"), `PinOff` quando fixada (title "Desafixar conversa").
+
+### `src/components/conversas/ConversaItem.tsx`
+
+- Nova prop `fixada?: boolean`.
+- Quando `fixada`, mostrar um `<Pin className="h-3 w-3 text-muted-foreground" />` rotacionado 45° à direita do horário (igual WhatsApp).
+
+### `src/components/conversas/ConversasList.tsx` e `Conversas.tsx`
+
+- Propagar `fixada` no tipo `Conversa`.
+- `Conversas.tsx`: novo handler `handleTogglePin` — insere/deleta em `conversa_fixacoes`, atualiza estado local e re-ordena.
+- Ajustar ordenação local (sort estável) para respeitar `fixada` no topo.
+- Em `handleClose` e `handleTransfer`/`handleTransferDepartamento`, atualizar estado local removendo `fixada` (o trigger já cuida do banco).
+
+## Arquivos afetados
+
+- `supabase/migrations/<novo>.sql` — tabela, RLS, trigger.
+- `src/pages/Conversas.tsx` — fetch fixações, handler, propagação.
+- `src/components/conversas/ConversasList.tsx` — tipo + ordenação + prop.
+- `src/components/conversas/ConversaItem.tsx` — ícone de pin no item.
+- `src/components/conversas/ChatPanel.tsx` — botão pin/unpin no header.
+- `src/integrations/supabase/types.ts` — atualizado automaticamente pela migração.

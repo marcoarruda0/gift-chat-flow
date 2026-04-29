@@ -19,6 +19,7 @@ interface Conversa {
   departamento_id?: string | null;
   created_at?: string | null;
   canal?: string | null;
+  fixada?: boolean;
 }
 
 type CanalTab = "todos" | "zapi" | "whatsapp_cloud";
@@ -78,6 +79,15 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
     if (filtro === "Sem Atendente") return c.status === "aberta" && !c.atendente_id;
     return true;
   });
+
+  // Conversas fixadas no topo, mantendo ordem original (já vem por ultima_msg_at desc)
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const af = a.fixada ? 1 : 0;
+      const bf = b.fixada ? 1 : 0;
+      return bf - af;
+    });
+  }, [filtered]);
 
   const canalTabs: { id: CanalTab; label: string; icon: typeof MessageSquare; count: number }[] = [
     { id: "todos", label: "Todos", icon: MessageSquare, count: counts.todos },
@@ -155,12 +165,12 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Nenhuma conversa encontrada
           </div>
         ) : (
-          filtered.map(c => (
+          sorted.map(c => (
             <ConversaItem
               key={c.id}
               id={c.id}
@@ -174,6 +184,7 @@ export function ConversasList({ conversas, selectedId, onSelect, onNewConversa, 
               marcadaNaoLida={c.marcada_nao_lida}
               atendenteId={c.atendente_id}
               createdAt={c.created_at}
+              fixada={c.fixada}
               selected={selectedId === c.id}
               onClick={() => onSelect(c.id)}
             />

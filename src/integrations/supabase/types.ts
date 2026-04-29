@@ -519,6 +519,35 @@ export type Database = {
           },
         ]
       }
+      conversa_fixacoes: {
+        Row: {
+          conversa_id: string
+          fixada_at: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          conversa_id: string
+          fixada_at?: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          conversa_id?: string
+          fixada_at?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversa_fixacoes_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversa_transferencias: {
         Row: {
           conversa_id: string

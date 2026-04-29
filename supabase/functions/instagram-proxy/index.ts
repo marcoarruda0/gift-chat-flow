@@ -77,8 +77,25 @@ Deno.serve(async (req) => {
 
     const httpMethod = action === "subscribe_webhook" || action === "send_message" ? "POST" : method;
 
+    // Sanitize token: remove whitespace/newlines that may have been pasted by mistake
+    const token = (cfg.page_access_token || "").replace(/\s+/g, "").trim();
+    if (!token || token.length < 50 || !/^[A-Za-z0-9_\-]+$/.test(token)) {
+      const prefix = token.slice(0, 6);
+      const suffix = token.slice(-4);
+      console.error(`Token inválido. len=${token.length} prefix=${prefix} suffix=${suffix}`);
+      await serviceClient.from("instagram_config").update({
+        status: "erro",
+        ultimo_erro: `Token mal formatado (len=${token.length}). Cole novamente o Page Access Token de longa duração, sem espaços/quebras de linha.`,
+      }).eq("tenant_id", profile.tenant_id);
+      return new Response(JSON.stringify({
+        error: "Token inválido ou mal formatado. Cole novamente o Page Access Token (sem espaços, quebras de linha ou aspas).",
+        hint: "Use um Page Access Token de longa duração (60d) gerado no Graph API Explorer com permissões instagram_basic, instagram_manage_messages, pages_manage_metadata.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const sep = url.includes("?") ? "&" : "?";
-    const fullUrl = `${url}${sep}access_token=${encodeURIComponent(cfg.page_access_token)}`;
+    const fullUrl = `${url}${sep}access_token=${encodeURIComponent(token)}`;
+    console.log(`IG proxy → ${action || endpoint} | token prefix=${token.slice(0,6)} len=${token.length}`);
 
     const opts: RequestInit = {
       method: httpMethod,

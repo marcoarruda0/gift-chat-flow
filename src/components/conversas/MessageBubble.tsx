@@ -96,7 +96,12 @@ export function MessageBubble({ id, conteudo, remetente, tipo, createdAt, sender
 
     switch (tipo) {
       case "audio":
-        return <audio controls src={conteudo} className="max-w-[240px]" />;
+        return (
+          <div className="flex flex-col gap-1.5">
+            <audio controls src={conteudo} className="max-w-[240px]" />
+            {renderTranscricao()}
+          </div>
+        );
       case "imagem":
         return (
           <a href={conteudo} target="_blank" rel="noopener noreferrer">

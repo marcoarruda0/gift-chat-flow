@@ -473,6 +473,33 @@ export default function GiftbackCaixa() {
         </CardContent>
       </Card>
 
+      {naoEncontrado && !contato && (
+        <Card className="border-amber-200 bg-amber-50/60 dark:bg-amber-950/20">
+          <CardContent className="pt-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Cliente não encontrado</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Nenhum cadastro com esse CPF/telefone. Cadastre agora para registrar a compra.
+              </p>
+              <Button size="sm" className="mt-3" onClick={() => setDialogNovoOpen(true)}>
+                <UserPlus className="h-4 w-4 mr-1" />
+                Cadastrar novo cliente
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <NovoContatoCaixaDialog
+        open={dialogNovoOpen}
+        onOpenChange={setDialogNovoOpen}
+        valorBuscado={busca}
+        onCriado={(novo) => {
+          void carregarContato(novo as Contato);
+        }}
+      />
+
       {/* Contato */}
       {contato && (
         <Card>

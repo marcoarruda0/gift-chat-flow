@@ -18,6 +18,7 @@ import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "l
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
 import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
+import { apenasDigitos } from "@/lib/br-format";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,

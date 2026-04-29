@@ -80,7 +80,8 @@ export default function GiftbackCaixa() {
   const [aplicarGiftback, setAplicarGiftback] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [buscando, setBuscando] = useState(false);
-
+  const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [dialogNovoOpen, setDialogNovoOpen] = useState(false);
   const { data: configGlobal } = useQuery({
     queryKey: ["giftback-config"],
     queryFn: async () => {

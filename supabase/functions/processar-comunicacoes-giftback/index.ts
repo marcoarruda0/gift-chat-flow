@@ -264,11 +264,15 @@ Deno.serve(async (req) => {
           .eq("tipo", "credito");
 
         if (regra.tipo_gatilho === "criado") {
-          // Criados hoje
+          // Criados no DIA ANTERIOR completo (00:00:00 a 23:59:59.999 BRT)
+          // Assim, mesmo rodando às 9h, cobrimos todos os giftbacks de ontem.
+          const ontemISO = addDaysISO(hojeISO, -1);
+          const inicioOntemBRT = `${ontemISO}T00:00:00.000-03:00`;
+          const inicioHojeBRT = `${hojeISO}T00:00:00.000-03:00`;
           query = query
             .eq("status", "ativo")
-            .gte("created_at", inicioDia)
-            .lt("created_at", `${addDaysISO(hojeISO, 1)}T00:00:00.000Z`);
+            .gte("created_at", inicioOntemBRT)
+            .lt("created_at", inicioHojeBRT);
         } else if (regra.tipo_gatilho === "vencendo") {
           const alvo = addDaysISO(hojeISO, regra.dias_offset || 0);
           query = query.eq("status", "ativo").eq("validade", alvo);

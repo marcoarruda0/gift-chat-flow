@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 interface ConversaRow {
   id: string;
+  contato_id: string;
   contato_nome: string;
   contato_telefone: string | null;
   contato_avatar: string | null;
@@ -97,6 +98,7 @@ export default function Conversas() {
 
     const mapped: ConversaRow[] = (data || []).map((c: any) => ({
       id: c.id,
+      contato_id: c.contato_id,
       contato_nome: c.contatos?.nome || "Sem nome",
       contato_telefone: c.contatos?.telefone || null,
       contato_avatar: c.contatos?.avatar_url || null,

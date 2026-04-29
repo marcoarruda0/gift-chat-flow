@@ -229,8 +229,10 @@ export function NovoContatoCaixaDialog({ open, onOpenChange, valorBuscado, onCri
     if (!proposta || !profile?.tenant_id) return;
     setAplicandoJuncao(true);
     try {
-      const update: Record<string, string> = {};
-      update[proposta.campo] = proposta.valorNovo;
+      const update: { cpf?: string; telefone?: string } =
+        proposta.campo === "cpf"
+          ? { cpf: proposta.valorNovo }
+          : { telefone: proposta.valorNovo };
 
       const { data: atualizado, error } = await supabase
         .from("contatos")

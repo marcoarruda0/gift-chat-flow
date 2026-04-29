@@ -11,6 +11,7 @@ import { SincronizarWhatsappDialog } from "@/components/conversas/SincronizarWha
 import { EnviarTemplateDialog } from "@/components/conversas/EnviarTemplateDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
+import { ContatoDrawer } from "@/components/contatos/ContatoDrawer";
 
 interface ConversaRow {
   id: string;
@@ -55,6 +56,7 @@ export default function Conversas() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [perfilContatoId, setPerfilContatoId] = useState<string | null>(null);
 
   const [departamentos, setDepartamentos] = useState<Record<string, string>>({});
   const [membros, setMembros] = useState<Record<string, string>>({});
@@ -776,9 +778,11 @@ export default function Conversas() {
       {showChat && (
         selected ? (
           <ChatPanel
+            contatoId={selected.contato_id}
             contatoNome={selected.contato_nome}
             contatoTelefone={selected.contato_telefone}
             contatoAvatar={selected.contato_avatar}
+            onAbrirPerfil={(id) => setPerfilContatoId(id)}
             departamentoNome={selected.departamento_id ? departamentos[selected.departamento_id] || null : null}
             atendenteNome={selected.atendente_id ? membros[selected.atendente_id] || null : null}
             mensagens={mensagens}
@@ -831,6 +835,11 @@ export default function Conversas() {
         open={templateDialogOpen}
         onOpenChange={setTemplateDialogOpen}
         onSend={handleSendTemplate}
+      />
+      <ContatoDrawer
+        contatoId={perfilContatoId}
+        open={!!perfilContatoId}
+        onOpenChange={(o) => { if (!o) setPerfilContatoId(null); }}
       />
     </div>
   );

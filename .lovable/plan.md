@@ -1,57 +1,64 @@
-## Validação/máscara de CPF e telefone + cadastro contínuo no caixa
+## Objetivo
 
-Hoje o `NovoContatoCaixaDialog` aceita qualquer texto em CPF/telefone e o painel busca usando o valor cru. O fluxo de carregar o contato recém-criado já existe (`onCriado` chama `carregarContato`), mas precisa ser blindado para o caso em que o usuário digitou um valor formatado/parcial.
+Reforçar o cadastro rápido de cliente no Painel do Caixa com validação de e-mail em tempo real, feedback visual de sucesso, máscaras na exibição do contato e proteção contra duplicidade concorrente (CPF/telefone).
 
-### O que muda
+## 1. Validação de e-mail em tempo real (`NovoContatoCaixaDialog.tsx`)
 
-1. **Novo util `src/lib/br-format.ts`** com:
-   - `apenasDigitos(v)` — strip de não-dígitos.
-   - `validarCPF(v)` — verifica 11 dígitos + dígitos verificadores + rejeita sequências repetidas.
-   - `mascararCPF(v)` — aplica `000.000.000-00` progressivo.
-   - `validarTelefoneBR(v)` — exige 10 (fixo) ou 11 (celular com `9` após DDD) dígitos e DDD da Anatel.
-   - `mascararTelefoneBR(v)` — `(00) 0000-0000` ou `(00) 00000-0000`.
-   - `ehProvavelCPF(v)` — substitui a heurística atual do dialog.
+- Validar o e-mail no `onChange` (não só no submit) usando o mesmo schema `zod`.
+- Mostrar mensagem "E-mail inválido" abaixo do campo enquanto o usuário digita (após o primeiro blur ou quando há conteúdo).
+- Adicionar borda destrutiva (`aria-invalid`) quando inválido.
+- O botão **Cadastrar e continuar** fica desabilitado enquanto o e-mail estiver preenchido e inválido (campo permanece opcional quando vazio).
+- Pequeno debounce visual (~250 ms) para não piscar erro a cada tecla.
 
-2. **`src/components/giftback/NovoContatoCaixaDialog.tsx`**
-   - Inputs CPF e telefone passam a chamar a máscara no `onChange`, mantendo o estado já formatado.
-   - Validação client-side (sem zod para esses dois campos — usar os utils, mensagens claras):
-     - CPF, se preenchido, precisa passar em `validarCPF`. Erro: "CPF inválido".
-     - Telefone, se preenchido, precisa passar em `validarTelefoneBR`. Erro: "Telefone inválido (use DDD + número)".
-     - Pelo menos um dos dois precisa estar preenchido (regra atual mantida).
-   - Pré-preenchimento: usar `ehProvavelCPF(valorBuscado)` para escolher entre CPF/telefone e já aplicar a máscara correspondente. Se o termo não for CPF válido nem telefone válido, ainda assim coloca no campo telefone (e a validação do form impedirá o submit até corrigir).
-   - Antes de inserir/checar duplicidade, **persistir apenas dígitos** (`apenasDigitos`) em `contatos.cpf` e `contatos.telefone` — assim a busca por igualdade funciona consistentemente, igual ao formato usado pelo Z-API/Cloud webhook.
-   - Checagem de duplicidade passa a usar os valores normalizados (dígitos).
+## 2. Feedback de sucesso e destaque do card (`NovoContatoCaixaDialog.tsx` + `GiftbackCaixa.tsx`)
 
-3. **`src/pages/GiftbackCaixa.tsx`**
-   - O input "CPF ou telefone do cliente" também passa pela normalização antes da consulta:
-     - `const termo = apenasDigitos(busca)` → `.or(\`cpf.eq.${termo},telefone.eq.${termo}\`)`.
-     - Se `termo.length` não bate com CPF (11) nem telefone (10/11), ainda tenta a busca; se nada encontrar, `naoEncontrado = true` (fluxo atual) — o dialog abrirá com o valor já normalizado e aplicará a máscara correta.
-   - **Cadastro contínuo**: o `onCriado` já chama `carregarContato(novo)`, que seta `contato`, zera `naoEncontrado` e libera os controles de "Valor da compra"/"Aplicar giftback". Vou garantir que o foco/scroll vá para o card do contato (scrollIntoView no card) para o operador continuar sem cliques extras. Nada a fazer no banco — só ajuste de UX.
+- Trocar o toast genérico "Cliente cadastrado!" por um toast `success` com nome do cliente: "Cliente {nome} cadastrado com sucesso".
+- Em `GiftbackCaixa.tsx`, adicionar estado `recemCarregado: boolean` ativado por 2 s sempre que `carregarContato` for chamado.
+- Aplicar uma classe de destaque (`ring-2 ring-primary ring-offset-2 transition-shadow`) no `Card` do contato enquanto `recemCarregado` for `true`, com fade-out suave.
+- Manter o `scrollIntoView` já existente.
 
-### Por que não migração de dados antigos?
+## 3. Máscaras na exibição do card (`GiftbackCaixa.tsx`)
 
-Contatos já gravados podem estar em formatos mistos (com ou sem máscara). Como a busca atual já é exata, isso não muda o comportamento existente: a partir de agora **novos cadastros do caixa** entram normalizados (dígitos), e a busca pelo termo do operador também é normalizada antes de consultar — então casa quando o registro existe em qualquer formato? Não totalmente: só casa se os dois lados estão em dígitos. Para evitar surpresa, o util é exposto e podemos numa próxima migração normalizar a base inteira; mas isso fica fora deste passo (sem perda de dados, comportamento atual preservado para registros legados).
+- Importar `mascararCPF` e `mascararTelefoneBR` de `@/lib/br-format`.
+- No `CardDescription` do contato, exibir:
+  - `CPF: {mascararCPF(contato.cpf)}` quando houver CPF
+  - `Tel: {mascararTelefoneBR(contato.telefone)}` quando houver telefone
+- A persistência continua somente com dígitos no banco (sem mudanças de schema).
+- Boa-prática: como a base pode ter contatos antigos com máscara, as funções já são idempotentes (`apenasDigitos` interno) — exibição fica consistente em ambos os casos.
 
-### Diagrama do fluxo após o ajuste
+## 4. Checagem de duplicidade extra no salvar (`NovoContatoCaixaDialog.tsx`)
 
-```text
-[busca CPF/tel] -> normaliza dígitos -> SELECT contatos
-       |
-       +-- achou ----> carregarContato (fluxo atual)
-       |
-       +-- não achou -> aviso inline + botão
-                              |
-                       [Dialog Novo Cliente]
-                       máscara + validação
-                              |
-                  insert(dígitos puros) → contato criado
-                              |
-              onCriado(novo) → carregarContato(novo)
-                              |
-                  card do cliente entra na tela
-                  (scrollIntoView automático)
-                              |
-                     fluxo de Giftback continua
+A pré-checagem atual tem janela de corrida. Reforço:
+
+- Manter o `SELECT` prévio como UX rápida.
+- Após o `INSERT`, tratar o erro Postgres `23505` (unique violation) — a tabela já tem `UNIQUE (tenant_id, telefone)`. Quando ocorrer:
+  - Buscar o contato existente pelo telefone normalizado.
+  - Mostrar toast: "Este telefone já pertence a outro cliente — carregando o cadastro existente."
+  - Chamar `onCriado(existente)` e fechar o modal.
+- Para CPF: como **não há** unique constraint hoje, fazer um `SELECT ... FOR UPDATE` lógico não é possível pelo client. Vamos:
+  - Repetir a verificação por CPF imediatamente antes do `INSERT` (segunda checagem, em transação curta com o insert).
+  - Sugerir (parte técnica abaixo) adicionar `UNIQUE (tenant_id, cpf)` via migração para garantia definitiva.
+
+## 5. Migração de banco
+
+Adicionar índice único parcial para CPF por tenant, alinhando à proteção já existente para telefone:
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS contatos_tenant_cpf_unique
+  ON public.contatos (tenant_id, cpf)
+  WHERE cpf IS NOT NULL;
 ```
 
-Posso aplicar?
+Parcial (`WHERE cpf IS NOT NULL`) para não bloquear múltiplos contatos sem CPF informado.
+
+## Detalhes técnicos
+
+- Arquivos alterados: `src/components/giftback/NovoContatoCaixaDialog.tsx`, `src/pages/GiftbackCaixa.tsx`.
+- Migração nova em `supabase/migrations/`.
+- Sem mudanças em RLS, edge functions ou tipos compartilhados além do que o Supabase regenera.
+- Tratamento de erro `23505`: detectar via `error.code === '23505'` retornado pelo PostgREST.
+
+## Fora do escopo
+
+- Normalizar retroativamente CPFs/telefones antigos no banco (pode ser feito em uma tarefa de manutenção separada se desejado).
+- Mudanças no fluxo de busca/Caixa que não sejam exibição mascarada e destaque.

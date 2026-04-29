@@ -306,7 +306,44 @@ export default function IAConfig() {
     }
   };
 
-  if (loading) {
+  const handleTranscreverPendentes = async () => {
+    if (!tenantId) return;
+    setTranscrevendoPendentes(true);
+    try {
+      // Busca até 100 mensagens de áudio sem transcrição
+      const { data: msgs, error } = await supabase
+        .from("mensagens")
+        .select("id, metadata")
+        .eq("tenant_id", tenantId)
+        .eq("tipo", "audio")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      const pendentes = (msgs || []).filter((m: any) => {
+        const s = m.metadata?.transcricao_status;
+        return !s || s === "erro";
+      }).slice(0, 100);
+
+      if (pendentes.length === 0) {
+        toast.info("Nenhum áudio pendente para transcrever.");
+        return;
+      }
+
+      // Marca como pendente em lote
+      for (const m of pendentes) {
+        await supabase.from("mensagens").update({
+          metadata: { ...(m.metadata || {}), transcricao_status: "pendente", transcricao_tentativas: 0, transcricao_erro: null },
+        }).eq("id", m.id);
+      }
+      // Dispara processamento imediato
+      await supabase.functions.invoke("transcrever-audio", { body: { mode: "batch" } });
+      toast.success(`${pendentes.length} áudios enfileirados para transcrição.`);
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "desconhecido"));
+    } finally {
+      setTranscrevendoPendentes(false);
+    }
+  };
     return (
       <div className="flex items-center justify-center p-8">
         <p className="text-muted-foreground">Carregando...</p>

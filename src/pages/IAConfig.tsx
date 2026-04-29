@@ -141,6 +141,8 @@ export default function IAConfig() {
         satisfacao_ativo: satisfacaoAtivo,
         satisfacao_criterios: satisfacaoCriterios,
         satisfacao_min_mensagens_cliente: satisfacaoMinMsgs,
+        transcricao_audio_ativo: transcricaoAtivo,
+        transcricao_audio_idioma: transcricaoIdioma,
       };
 
       if (configId) {

@@ -842,6 +842,8 @@ export default function Conversas() {
             onBack={isMobile ? () => setSelectedId(null) : undefined}
             onTransfer={() => setTransferDialogOpen(true)}
             onMarkUnread={handleMarkUnread}
+            isPinned={selected.fixada}
+            onTogglePin={handleTogglePin}
             loading={loadingMsgs}
             isAssignedToMe={selected.atendente_id === user?.id}
             canal={selected.canal || "zapi"}

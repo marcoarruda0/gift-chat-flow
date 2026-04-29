@@ -525,6 +525,7 @@ export default function GiftbackCaixa() {
 
       {/* Contato */}
       {contato && (
+        <div ref={contatoCardRef}>
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-2">

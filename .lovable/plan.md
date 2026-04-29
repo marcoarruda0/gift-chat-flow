@@ -1,50 +1,45 @@
 ## Problema
 
-O gatilho `criado` em **Comunicações de Giftback** (`supabase/functions/processar-comunicacoes-giftback/index.ts`) hoje busca movimentos com `created_at` entre **00:00 de hoje** e **00:00 de amanhã** (BRT). Como o disparo costuma rodar às 9h, isso:
+No caixa do Giftback, ao digitar um telefone como `11952697419` (sem DDI), o cadastro existente gravado como `5511952697419` (com DDI 55) não é localizado. A busca atual em `GiftbackCaixa.tsx → buscarContato()` só faz match exato do valor digitado (com e sem máscara) contra `cpf`/`telefone`, então qualquer divergência de formato (DDI 55, 9º dígito) gera "contato não encontrado" — mesmo já existindo na base.
 
-- Pega só o que foi criado entre 00h–09h de hoje (perde a maior parte do dia anterior).
-- Não cobre o dia útil completo do cliente.
-- Pode sobrepor com uma execução anterior se o tenant tiver horário próximo da virada do dia.
+Curiosamente, o `NovoContatoCaixaDialog` (cadastro rápido) já usa `gerarVariantesTelefone()` de `src/lib/br-format.ts`, que cobre exatamente esses casos (com/sem 55, com/sem 9 extra). A busca principal do caixa simplesmente não foi alinhada a essa lógica.
 
-## Objetivo
+## Solução
 
-Para o gatilho `criado`, considerar **todos os giftbacks criados no dia anterior completo** (00:00:00 a 23:59:59.999 BRT do dia D-1), independente do horário em que o tenant configurou o disparo.
+Reutilizar utilitários já existentes em `src/lib/br-format.ts` para que a busca do caixa case telefones em qualquer formato gravado, sem mudar o banco e sem migração de dados.
 
-## Mudanças
+### 1. Detectar se o termo é telefone e gerar variantes
 
-### 1. `supabase/functions/processar-comunicacoes-giftback/index.ts`
+Em `src/pages/GiftbackCaixa.tsx → buscarContato()`:
 
-Substituir a janela do bloco `if (regra.tipo_gatilho === "criado")`:
+- Se o termo digitado, após `apenasDigitos`, parecer telefone BR (10 ou 11 dígitos com DDD válido, validado por `validarTelefoneBR`), montar a lista de variantes via `gerarVariantesTelefone(termoDigitos)`.
+- Para cada variante, adicionar um filtro `telefone.eq.<variante>` ao `.or(...)` da consulta. Isso cobre:
+  - número puro (`11952697419`)
+  - com DDI (`5511952697419`)
+  - sem o 9 extra (`1152697419` e `551152697419`)
+  - com 9 extra (caso o cadastro antigo seja sem 9)
+- Manter os filtros atuais para CPF (com e sem máscara) e o filtro literal para o termo, preservando comportamento atual quando o termo for CPF ou texto livre.
 
-- Calcular `ontemISO = addDaysISO(hojeISO, -1)`.
-- Filtrar:
-  - `created_at >= ontemISO + "T00:00:00.000-03:00"` (início do dia anterior em BRT, convertido para UTC)
-  - `created_at < hojeISO + "T00:00:00.000-03:00"` (início de hoje em BRT)
-- Manter `status = 'ativo'` e `tipo = 'credito'`.
+### 2. Aplicar máscara visual ao detectar telefone (UX)
 
-Como o restante do código já trabalha com BRT via `hojeISO` e `inicioDia`, a derivação será feita reutilizando o mesmo helper de fuso já usado no arquivo (timezone fixo BRT, sem horário de verão — alinhado ao restante do scheduler).
+No `Input` de busca do caixa (mesmo arquivo, próximo à linha 494):
 
-### 2. Idempotência (já existe, só validar)
+- Enquanto o usuário digita, se o conteúdo for puramente numérico e tiver entre 10 e 13 dígitos (cobrindo `5511...`), aplicar `mascararTelefoneBR(normalizarTelefoneBR(valor))` para exibição.
+- Se for CPF (11 dígitos válidos via `ehProvavelCPF`), manter `mascararCPF`.
+- Caso contrário, deixar o texto bruto (busca por nome/parcial não muda).
+- A normalização é apenas para exibição/máscara; a busca já passa por `apenasDigitos` + variantes, então digitar com ou sem 55 funciona igual.
 
-A tabela `giftback_comunicacao_envios` (chave por `regra_id + movimento_id`) já evita reenvio. Com a janela passando para o dia anterior, se um tenant rodar duas vezes (ex.: por reentrega do cron), o dedupe continua valendo — não precisa mexer.
+### 3. Trato de empate (mais de 1 match)
 
-### 3. Documentação na UI (opcional, leve)
+`maybeSingle()` falha se a busca por variantes retornar 2 linhas (improvável, mas possível em bases sujas). Trocar por `.limit(1)` ordenando por `created_at asc` para sempre carregar o cadastro mais antigo, igual ao padrão usado em `NovoContatoCaixaDialog.buscarMatches`.
 
-Em `src/components/giftback/RegraComunicacaoDialog.tsx`, ajustar o helper-text do gatilho "criado" para deixar claro:
+### Arquivos afetados
 
-> "Envia uma vez por giftback **criado no dia anterior**, no horário configurado."
+- `src/pages/GiftbackCaixa.tsx` — função `buscarContato` e o `Input` de busca.
 
-(Pequeno texto, sem mudança de comportamento.)
+Sem mudanças em banco, edge functions, RLS ou outros módulos.
 
-## Fora de escopo
+### Fora do escopo
 
-- Gatilhos `vencendo` e `expirado` continuam como estão (operam por data de `validade`, não por `created_at`).
-- Modal de teste (`TestarRegraDialog`) não filtra por janela — sem alteração.
-- Sem migração de banco.
-
-## Resumo do impacto
-
-```text
-ANTES:  created_at ∈ [hoje 00:00 BRT, amanhã 00:00 BRT)   ← janela "andando" durante o dia
-DEPOIS: created_at ∈ [ontem 00:00 BRT, hoje 00:00 BRT)    ← dia anterior fechado
-```
+- Não vamos normalizar/migrar telefones já gravados na tabela `contatos` (risco alto e desnecessário para resolver o problema).
+- Não mexemos em outros pontos de busca (Contatos, Conversas) — este pedido é específico do Giftback.

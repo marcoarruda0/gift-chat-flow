@@ -18,7 +18,15 @@ import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "l
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
 import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
-import { apenasDigitos, mascararCPF, mascararTelefoneBR } from "@/lib/br-format";
+import {
+  apenasDigitos,
+  ehProvavelCPF,
+  gerarVariantesTelefone,
+  mascararCPF,
+  mascararTelefoneBR,
+  normalizarTelefoneBR,
+  validarTelefoneBR,
+} from "@/lib/br-format";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,
@@ -249,14 +257,28 @@ export default function GiftbackCaixa() {
         filtros.add(`cpf.eq.${termoDigitos}`);
         filtros.add(`telefone.eq.${termoDigitos}`);
       }
+      // Se o termo parece um telefone BR (mesmo se vier com DDI 55),
+      // gera todas as variantes (com/sem 55, com/sem 9 extra) e
+      // adiciona como filtros. Isso resolve o caso clássico em que o
+      // contato foi gravado como "5511..." pelo webhook do Z-API e o
+      // operador digita só "11..." no caixa.
+      const telCanon = normalizarTelefoneBR(termoDigitos);
+      if (telCanon && validarTelefoneBR(telCanon)) {
+        for (const v of gerarVariantesTelefone(termoDigitos)) {
+          filtros.add(`telefone.eq.${v}`);
+        }
+      }
 
-      const { data: cData } = await supabase
+      const { data: matches } = await supabase
         .from("contatos")
         .select(
-          "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor",
+          "id, nome, telefone, cpf, saldo_giftback, rfv_recencia, rfv_frequencia, rfv_valor, created_at",
         )
         .or(Array.from(filtros).join(","))
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      const cData = matches?.[0] ?? null;
 
       if (!cData) {
         setContato(null);
@@ -490,7 +512,30 @@ export default function GiftbackCaixa() {
             <Input
               placeholder="CPF ou telefone do cliente"
               value={busca}
-              onChange={(e) => setBusca(e.target.value)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const d = apenasDigitos(raw);
+                // Só aplica máscara se o usuário está digitando essencialmente números
+                // (permite buscar por nome/parcial digitando letras).
+                const sohDigitosOuMascara = /^[\d().\-\s/]*$/.test(raw);
+                if (!sohDigitosOuMascara) {
+                  setBusca(raw);
+                  return;
+                }
+                if (d.length === 11 && ehProvavelCPF(d)) {
+                  setBusca(mascararCPF(d));
+                  return;
+                }
+                // Telefone BR: 10 ou 11 dígitos puros, ou 12/13 com DDI 55.
+                if (d.length >= 10 && d.length <= 13) {
+                  const canon = normalizarTelefoneBR(d);
+                  if (canon.length === 10 || canon.length === 11) {
+                    setBusca(mascararTelefoneBR(canon));
+                    return;
+                  }
+                }
+                setBusca(raw);
+              }}
               onKeyDown={(e) => e.key === "Enter" && buscarContato()}
             />
             <Button onClick={buscarContato} disabled={buscando}>

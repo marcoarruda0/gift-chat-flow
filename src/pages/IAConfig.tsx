@@ -109,6 +109,8 @@ export default function IAConfig() {
         setSatisfacaoAtivo((data as any).satisfacao_ativo ?? false);
         setSatisfacaoCriterios((data as any).satisfacao_criterios ?? "");
         setSatisfacaoMinMsgs((data as any).satisfacao_min_mensagens_cliente ?? 2);
+        setTranscricaoAtivo((data as any).transcricao_audio_ativo ?? true);
+        setTranscricaoIdioma((data as any).transcricao_audio_idioma ?? "pt");
       }
 
       const { data: analises } = await supabase

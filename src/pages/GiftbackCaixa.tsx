@@ -14,9 +14,10 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Search, Gift, CheckCircle, ArrowLeft, AlertTriangle, UserPlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import RfvBadge from "@/components/giftback/RfvBadge";
+import { NovoContatoCaixaDialog, type ContatoCaixa } from "@/components/giftback/NovoContatoCaixaDialog";
 import {
   resolverRegrasGiftback,
   calcularCompraMinima,

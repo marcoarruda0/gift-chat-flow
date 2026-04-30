@@ -859,26 +859,22 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
               onClick={async () => {
                 if (!newTenantName.trim() || !user) return;
                 setCreatingTenant(true);
-                const { data: newTenant, error } = await supabase
-                  .from("tenants")
-                  .insert({ nome: newTenantName.trim() } as any)
-                  .select("id")
-                  .single();
-                if (error) {
-                  toast({ title: "Erro ao criar empresa", description: error.message, variant: "destructive" });
+                const { data, error } = await supabase.functions.invoke("criar-tenant", {
+                  body: { nome: newTenantName.trim() },
+                });
+                if (error || (data as any)?.error) {
+                  toast({
+                    title: "Erro ao criar empresa",
+                    description: (data as any)?.error || error?.message || "Falha desconhecida",
+                    variant: "destructive",
+                  });
                   setCreatingTenant(false);
                   return;
                 }
-                // Add user to new tenant
-                await supabase.from("user_tenants").insert({
-                  user_id: user.id,
-                  tenant_id: newTenant.id,
-                } as any);
                 toast({ title: "Empresa criada com sucesso!" });
                 setShowNewTenant(false);
                 setNewTenantName("");
                 setCreatingTenant(false);
-                // Reload tenants
                 window.location.reload();
               }}
               disabled={creatingTenant || !newTenantName.trim()}

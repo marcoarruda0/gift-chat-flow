@@ -71,20 +71,29 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: cfg } = await serviceClient
+    const body = await req.json();
+    const { action, endpoint, method = "GET", data, draft } = body;
+
+    const { data: savedCfg } = await serviceClient
       .from("instagram_config")
       .select("ig_user_id, page_id, page_access_token")
       .eq("tenant_id", profile.tenant_id)
       .maybeSingle();
+
+    // For test_token, allow draft credentials from body (pre-save validation)
+    const cfg = (action === "test_token" && draft)
+      ? {
+          ig_user_id: draft.ig_user_id || savedCfg?.ig_user_id || "",
+          page_id: draft.page_id || savedCfg?.page_id || "",
+          page_access_token: draft.page_access_token || savedCfg?.page_access_token || "",
+        }
+      : savedCfg;
 
     if (!cfg) {
       return new Response(JSON.stringify({ error: "Instagram não configurado para este tenant" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const body = await req.json();
-    const { action, endpoint, method = "GET", data } = body;
 
     // Validate token first for ALL actions
     const tokenCheck = validateToken(cfg.page_access_token || "");

@@ -99,11 +99,13 @@ Deno.serve(async (req) => {
     const tokenCheck = validateToken(cfg.page_access_token || "");
     if (!tokenCheck.ok) {
       console.error(`Token inválido. ${tokenCheck.error}`);
-      await serviceClient.from("instagram_config").update({
-        status: "erro",
-        ultimo_erro: tokenCheck.error,
-        ultima_verificacao_at: new Date().toISOString(),
-      }).eq("tenant_id", profile.tenant_id);
+      if (savedCfg) {
+        await serviceClient.from("instagram_config").update({
+          status: "erro",
+          ultimo_erro: tokenCheck.error,
+          ultima_verificacao_at: new Date().toISOString(),
+        }).eq("tenant_id", profile.tenant_id);
+      }
       return new Response(JSON.stringify({
         ok: false,
         error: tokenCheck.error,

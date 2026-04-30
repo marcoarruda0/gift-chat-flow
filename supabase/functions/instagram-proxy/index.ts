@@ -180,11 +180,13 @@ Deno.serve(async (req) => {
         ? `OK @${igUsername} — todas permissões OK`
         : errors.join(" | ");
 
-      await serviceClient.from("instagram_config").update({
-        ultima_verificacao_at: new Date().toISOString(),
-        ultimo_erro: ok ? null : summary.slice(0, 500),
-        ig_username: igUsername || undefined,
-      }).eq("tenant_id", profile.tenant_id);
+      if (savedCfg) {
+        await serviceClient.from("instagram_config").update({
+          ultima_verificacao_at: new Date().toISOString(),
+          ultimo_erro: ok ? null : summary.slice(0, 500),
+          ig_username: igUsername || undefined,
+        }).eq("tenant_id", profile.tenant_id);
+      }
 
       return new Response(JSON.stringify({
         ok,

@@ -123,7 +123,14 @@ export default function InstagramConfig() {
     setTokenTest(null);
     try {
       const { data, error } = await supabase.functions.invoke("instagram-proxy", {
-        body: { action: "test_token" },
+        body: {
+          action: "test_token",
+          draft: {
+            ig_user_id: config.ig_user_id?.trim() || "",
+            page_id: config.page_id?.trim() || "",
+            page_access_token: (config.page_access_token || "").replace(/[\s"'`]+/g, "").trim(),
+          },
+        },
       });
       if (error) throw error;
       setTokenTest(data as TokenTestResult);

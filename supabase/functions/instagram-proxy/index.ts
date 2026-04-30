@@ -71,11 +71,23 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: cfg } = await serviceClient
+    const body = await req.json();
+    const { action, endpoint, method = "GET", data, draft } = body;
+
+    const { data: savedCfg } = await serviceClient
       .from("instagram_config")
       .select("ig_user_id, page_id, page_access_token")
       .eq("tenant_id", profile.tenant_id)
       .maybeSingle();
+
+    // For test_token, allow draft credentials from body (pre-save validation)
+    const cfg = (action === "test_token" && draft)
+      ? {
+          ig_user_id: draft.ig_user_id || savedCfg?.ig_user_id || "",
+          page_id: draft.page_id || savedCfg?.page_id || "",
+          page_access_token: draft.page_access_token || savedCfg?.page_access_token || "",
+        }
+      : savedCfg;
 
     if (!cfg) {
       return new Response(JSON.stringify({ error: "Instagram não configurado para este tenant" }), {
@@ -83,18 +95,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    const body = await req.json();
-    const { action, endpoint, method = "GET", data } = body;
-
     // Validate token first for ALL actions
     const tokenCheck = validateToken(cfg.page_access_token || "");
     if (!tokenCheck.ok) {
       console.error(`Token inválido. ${tokenCheck.error}`);
-      await serviceClient.from("instagram_config").update({
-        status: "erro",
-        ultimo_erro: tokenCheck.error,
-        ultima_verificacao_at: new Date().toISOString(),
-      }).eq("tenant_id", profile.tenant_id);
+      if (savedCfg) {
+        await serviceClient.from("instagram_config").update({
+          status: "erro",
+          ultimo_erro: tokenCheck.error,
+          ultima_verificacao_at: new Date().toISOString(),
+        }).eq("tenant_id", profile.tenant_id);
+      }
       return new Response(JSON.stringify({
         ok: false,
         error: tokenCheck.error,
@@ -169,11 +180,13 @@ Deno.serve(async (req) => {
         ? `OK @${igUsername} — todas permissões OK`
         : errors.join(" | ");
 
-      await serviceClient.from("instagram_config").update({
-        ultima_verificacao_at: new Date().toISOString(),
-        ultimo_erro: ok ? null : summary.slice(0, 500),
-        ig_username: igUsername || undefined,
-      }).eq("tenant_id", profile.tenant_id);
+      if (savedCfg) {
+        await serviceClient.from("instagram_config").update({
+          ultima_verificacao_at: new Date().toISOString(),
+          ultimo_erro: ok ? null : summary.slice(0, 500),
+          ig_username: igUsername || undefined,
+        }).eq("tenant_id", profile.tenant_id);
+      }
 
       return new Response(JSON.stringify({
         ok,

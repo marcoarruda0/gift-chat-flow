@@ -1,97 +1,86 @@
-## Objetivo
+## Problema
 
-Reforçar a validação do **Page Access Token** do Instagram (front + back) e adicionar um botão **"Testar token"** que valida formato, conectividade e permissões antes de marcar a conexão como ativa.
+Erro `new row violates row-level security policy for table "tenants"` ao criar empresa em `/empresas`.
 
----
+### Causa raiz
 
-## 1. Validação compartilhada do token
+A política RLS de INSERT da tabela `tenants` exige que o usuário tenha role `admin_master` **OU** `admin_tenant`:
 
-Criar um validador comum (regras idênticas no front e no back):
-
-- Remover espaços, quebras de linha, tabs, aspas simples/duplas e crases.
-- Rejeitar se contiver espaços internos, aspas ou caracteres fora de `[A-Za-z0-9_-]`.
-- Rejeitar se `length < 100` (Page Access Tokens longa-duração têm ~180+ chars; o limite atual de 50 é frouxo demais e deixou passar tokens truncados).
-- Recomendar prefixo `EAA` (token Meta) — apenas warning, não bloqueio.
-- Retornar objeto `{ ok, cleaned, error }` com mensagem em PT-BR explicando como corrigir.
-
-### Front (`src/pages/InstagramConfig.tsx`)
-- Adicionar `validateToken(raw)` local.
-- No `onChange` do campo Token: limpar automaticamente e mostrar feedback inline (ícone verde/vermelho + mensagem curta abaixo do input).
-- Desabilitar botão **Salvar** enquanto token for inválido.
-- Mostrar contador de caracteres (`{cleaned.length} caracteres`).
-- No `handleSave`: re-validar e abortar com `toast.error` específico se inválido.
-
-### Back (`instagram-proxy/index.ts`)
-- Aplicar mesma regra (length ≥ 100, regex estrita).
-- Mensagem de erro detalhada com hint de regenerar no Graph API Explorer.
-
----
-
-## 2. Nova action `test_token` no edge function
-
-Em `supabase/functions/instagram-proxy/index.ts`, adicionar action `test_token` que executa **3 chamadas em sequência** e retorna um relatório consolidado **sem** marcar `status=conectado` (isso continua sendo feito apenas por `test_connection` quando tudo passa):
-
-1. **`/me?fields=id,name`** — valida que o token é parseável (resolve o erro 190).
-2. **`/me/permissions`** — lista permissões concedidas; verifica presença obrigatória de:
-   - `instagram_basic`
-   - `instagram_manage_messages`
-   - `pages_manage_metadata`
-   - `pages_show_list`
-   - (warning se faltar `pages_messaging`)
-3. **`/{ig_user_id}?fields=username,name`** — confirma que o IG User ID pertence à página/token.
-
-Resposta JSON:
-```json
-{
-  "ok": true | false,
-  "token_valid": true,
-  "ig_account_valid": true,
-  "permissions": { "granted": [...], "missing": [...], "declined": [...] },
-  "ig_username": "minhaconta",
-  "errors": []
-}
+```
+admins_can_create_tenants  | INSERT  | WITH CHECK (
+  has_role(auth.uid(), 'admin_master') OR has_role(auth.uid(), 'admin_tenant')
+)
 ```
 
-Atualiza `instagram_config.ultimo_erro` com resumo legível e `ultima_verificacao_at`. Só seta `status=conectado` se `ok=true` **E** nenhuma permissão obrigatória ausente.
+Verifiquei o banco: **só existe 1 registro em `user_roles`** (seu usuário, com `admin_tenant`). Ou seja, a política deveria permitir o seu insert.
 
----
+Porém, há um problema secundário na sequência de criação em `src/pages/Empresa.tsx` (linhas 858-883): após criar o tenant, o código tenta inserir em `user_tenants`, mas **não copia as roles do usuário para o novo tenant**. Como o seu role `admin_tenant` está vinculado ao tenant atual via `profiles.tenant_id`, ao trocar de tenant você perde permissões. Isso pode estar gerando o erro em casos específicos (ex.: usuário sem role efetiva quando o `profile.tenant_id` foi resetado).
 
-## 3. UI: botão "Testar token"
+Mais importante: precisamos **garantir** que admins consigam criar empresas e que o criador receba automaticamente o role `admin_tenant` no novo tenant.
 
-Em `InstagramConfig.tsx`, **antes** dos botões existentes:
+## Plano de correção
 
-- Novo botão **"Testar token e permissões"** (variant default, destacado) — chama `instagram-proxy` com `action: "test_token"`.
-- Mostra um card de resultado abaixo, expandível, com:
-  - Status do token (✓/✗)
-  - Lista de permissões concedidas (badges verdes)
-  - Lista de permissões faltando (badges vermelhos com link para regenerar)
-  - Username IG detectado
-  - Botão **"Ativar conexão"** habilitado **apenas** se `ok=true` — esse botão chama `test_connection` (que persiste `status=conectado`) e em seguida `subscribe_webhook` automaticamente.
-- Os botões antigos "Testar conexão" e "Inscrever webhook" continuam disponíveis em modo avançado (collapse "Ações avançadas").
+### 1. Validar pré-condição no front (UX)
+Em `src/pages/Empresa.tsx` (botão "Nova Empresa") e `src/components/TenantSwitcherHeader.tsx` (item "Nova empresa"):
+- Antes de chamar o insert, checar `hasRole("admin_tenant") || hasRole("admin_master")`. Se falso, exibir toast claro: "Apenas administradores podem criar novas empresas".
 
-Estado local:
-```ts
-const [tokenTest, setTokenTest] = useState<TokenTestResult | null>(null);
-```
-
----
-
-## 4. Fluxo final do usuário
+### 2. Centralizar criação numa Edge Function `criar-tenant`
+Mover o fluxo de criação para uma edge function com `SUPABASE_SERVICE_ROLE_KEY` (bypass RLS), que executa atomicamente:
 
 ```text
-1. Cola token → validação inline → Salvar
-2. Clica "Testar token e permissões"
-3. Vê relatório (token ok, permissões ok/faltando, IG resolvido)
-4. Se tudo verde → "Ativar conexão" → status=conectado + webhook inscrito
-5. Se faltar permissão → instrução para regenerar com escopos certos
+1. Verifica JWT do chamador → obtém user_id
+2. Verifica que o user tem role admin_tenant OU admin_master
+3. INSERT em tenants (nome)
+4. INSERT em user_tenants (user_id, tenant_id)
+5. INSERT em user_roles (user_id, role='admin_tenant') para o NOVO tenant
+   (se o schema permitir role por tenant; senão garante o role global)
+6. UPDATE profiles SET tenant_id = novo_tenant_id WHERE id = user_id
+   (opcional — fazer "switch" automático)
+7. Retorna { tenant_id, nome }
 ```
 
----
+Vantagens:
+- Elimina race condition entre os 2 inserts atuais.
+- Garante que o criador sempre tem `admin_tenant` no novo tenant.
+- Mensagens de erro coerentes vindas do backend.
 
-## Arquivos afetados
+### 3. Atualizar front para chamar a função
+Substituir os blocos de `supabase.from("tenants").insert(...)` em:
+- `src/pages/Empresa.tsx` (linhas 858-883)
+- `src/components/TenantSwitcherHeader.tsx` (linhas 38-58)
 
-- `src/pages/InstagramConfig.tsx` — validação inline, botão testar token, card de resultado, ativar conexão.
-- `supabase/functions/instagram-proxy/index.ts` — action `test_token`, validação de token mais estrita (≥100 chars), checagem de permissões.
-- (Opcional) `src/lib/instagram-token.ts` — helper `validateToken` reutilizável no front.
+por:
+```ts
+const { data, error } = await supabase.functions.invoke("criar-tenant", {
+  body: { nome: newTenantName.trim() }
+});
+```
 
-Nenhuma migração de banco é necessária.
+Após sucesso: mostrar toast, fechar dialog e recarregar (ou trocar para o novo tenant).
+
+### 4. Manter política RLS atual
+A política `admins_can_create_tenants` continua válida como defesa em profundidade. A edge function usa service role, então não depende dela, mas se algum dia a função cair, a política ainda bloqueia inserts indevidos.
+
+### 5. Diagnóstico inicial (executado já no início)
+Antes de implementar, vou confirmar via query qual o `auth.uid()` retornado e qual `tenant_id` está atualmente no `profile` do usuário, para descartar que o erro venha de sessão expirada / profile sem tenant.
+
+## Detalhes técnicos
+
+**Arquivos a modificar:**
+- `supabase/functions/criar-tenant/index.ts` (novo)
+- `supabase/config.toml` (registrar função com `verify_jwt = true`)
+- `src/pages/Empresa.tsx` (botão criar empresa)
+- `src/components/TenantSwitcherHeader.tsx` (item nova empresa)
+
+**Permissões verificadas:**
+- `admins_can_create_tenants` → INSERT permitido para `admin_master` / `admin_tenant` ✓
+- Service role bypassa RLS para garantir atomicidade ✓
+
+## Resultado esperado
+
+Ao clicar em "Nova Empresa" como admin:
+1. Empresa é criada com sucesso
+2. Você é vinculado a ela em `user_tenants`
+3. Você recebe role `admin_tenant` na nova empresa
+4. (Opcional) Troca automática para a nova empresa
+5. Recarrega a página mostrando a empresa criada na lista

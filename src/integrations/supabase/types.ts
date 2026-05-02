@@ -305,6 +305,42 @@ export type Database = {
           },
         ]
       }
+      chamado_denis_itens: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          descricao: string
+          id: string
+          numero: number
+          status: string
+          tenant_id: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string
+          id?: string
+          numero: number
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string
+          id?: string
+          numero?: number
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: []
+      }
       compras: {
         Row: {
           contato_id: string

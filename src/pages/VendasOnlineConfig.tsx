@@ -68,6 +68,23 @@ export default function VendasOnlineConfig() {
 
   const generateSecret = () => setSecret(randomSecret(24));
 
+  const testarConexao = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("vendas-online-testar-chave");
+      if (error) {
+        setTestResult({ ok: false, message: error.message || "Erro ao testar chave" });
+      } else {
+        setTestResult(data as any);
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.message || "Erro inesperado" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const webhookUrl =
     tenantId && secret
       ? `https://${PROJECT_ID}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret=${tenantId}:${secret}`

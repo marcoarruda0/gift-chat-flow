@@ -171,8 +171,8 @@ export default function VendasOnlineConfig() {
   };
 
   const webhookUrl =
-    tenantId && secret
-      ? `https://${PROJECT_ID}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret=${tenantId}:${secret}`
+    secret
+      ? `https://${PROJECT_ID}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret=${secret}`
       : "";
 
   const copy = (text: string, label: string) => {

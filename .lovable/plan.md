@@ -1,81 +1,74 @@
-# Plano: Botão "Testar Webhook" em Vendas Online
+## Diagnóstico
 
-## Objetivo
+O webhook real da AbacatePay chegou com `webhookSecret` na URL, mas nosso endpoint retornou `{"error":"invalid_secret"}`.
 
-Permitir que você valide, antes de ativar produção, se:
-1. A URL do webhook está acessível.
-2. O `webhookSecret` está correto (não retorna 403).
-3. Os eventos `billing.paid` e `billing.refunded` são processados sem erro.
-4. O log aparece em `vendas_online_webhook_log` corretamente.
+Causa: hoje a função `vendas-online-webhook` exige o formato `webhookSecret={tenantId}:{secret}`. Quando você cadastra a URL no painel da AbacatePay, é natural colar **só o secret** (a UI deles trata como um valor único, e o `:` no meio confunde). Sem o `tenantId:` na frente, o split falha → 401 `invalid_secret`.
 
-Tudo isso sem precisar fazer um pagamento real ou configurar nada na AbacatePay.
+Confirmação no payload recebido: o `metadata.tenantId` (`fcaec321-...`) e o `metadata.itemId` já vêm dentro do corpo, então **não precisamos do tenantId na URL** — podemos descobrir o tenant pelo próprio secret (que é único por tenant) e cruzar com o metadata.
 
-## Como vai funcionar (UX)
+## Mudanças
 
-Em **Configuração Vendas Online → card "Webhook (obrigatório)"**, abaixo da URL copiável, adicionar uma seção **"Testar webhook"**:
+### 1. `vendas-online-webhook/index.ts` — aceitar 3 formatos de secret
+Aceitar, em ordem:
+1. `webhookSecret={tenantId}:{secret}` (formato atual, retrocompatível com testes internos)
+2. `webhookSecret={secret}` apenas → buscar `vendas_online_config` por `webhook_secret = secret` e usar o `tenant_id` daí
+3. Em ambos os casos, se `payload.data.billing.metadata.tenantId` estiver presente, validar que bate com o tenant resolvido (já fazemos isso, mantém)
 
-- Dois botões lado a lado:
-  - **"Simular billing.paid"**
-  - **"Simular billing.refunded"**
-- Ao clicar, o sistema dispara internamente um POST para a própria URL do webhook com um payload v2 sintético, marcado como teste (`metadata.test = true`).
-- Resultado exibido em um painel inline, com:
-  - Status HTTP retornado.
-  - Corpo da resposta (JSON formatado).
-  - Indicador visual: verde (200 ok), amarelo (200 com warning ex. `item_not_found`), vermelho (>=400).
-  - Link "Ver logs do webhook" que faz refresh consultando `vendas_online_webhook_log` e mostra a última linha registrada (event, processado, erro).
-- Aviso explicando que o teste **não altera nenhum item real** — usa um `itemId` falso, então o webhook responde com `warning: "item_not_found"` (esperado e indica que tudo funcionou até a etapa de localização do item).
+Pseudocódigo do bloco de auth:
+```ts
+const raw = url.searchParams.get("webhookSecret") || "";
+let tenantId: string | null = null;
+let secret: string | null = null;
+if (raw.includes(":")) {
+  [tenantId, secret] = raw.split(":");
+}
+if (!secret) secret = raw;
 
-## Mudanças técnicas
+let cfg;
+if (tenantId) {
+  cfg = await admin.from("vendas_online_config")
+    .select("tenant_id, webhook_secret")
+    .eq("tenant_id", tenantId).maybeSingle();
+} else {
+  cfg = await admin.from("vendas_online_config")
+    .select("tenant_id, webhook_secret")
+    .eq("webhook_secret", secret).maybeSingle();
+  tenantId = cfg.data?.tenant_id ?? null;
+}
+if (!cfg.data || cfg.data.webhook_secret !== secret || !tenantId) {
+  return json({ error: "forbidden" }, 403);
+}
+```
 
-### 1. Nova edge function `vendas-online-testar-webhook`
-- Autenticada (verifica JWT do usuário e pega `tenant_id` do profile).
-- Recebe `{ event: "billing.paid" | "billing.refunded" }`.
-- Lê `webhook_secret` do `vendas_online_config` do tenant.
-- Monta a URL `https://{PROJECT}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret={tenant}:{secret}`.
-- Monta payload v2 sintético:
-  ```json
-  {
-    "event": "billing.paid",
-    "apiVersion": 2,
-    "data": {
-      "billing": {
-        "id": "bill_test_<uuid>",
-        "status": "PAID",
-        "metadata": { "tenantId": "...", "itemId": "test-<uuid>", "test": true }
-      },
-      "customer": { "name": "Teste Webhook", "email": "teste@exemplo.com", "taxId": "00000000000" }
-    }
-  }
-  ```
-- Faz `fetch` POST e retorna `{ httpStatus, responseBody, webhookUrl, sentPayload }`.
-- Para `billing.refunded`, troca `event` e `status` para `REFUNDED`.
+Logar o motivo do 401/403 em `vendas_online_webhook_log` (com `tenant_id` nulo permitido) para facilitar debug futuro.
 
-Vantagem de chamar via HTTP (e não invocar a função interna): valida de verdade que a URL pública está exposta e que o `webhookSecret` confere — exatamente o que a AbacatePay vai fazer.
+### 2. `src/pages/VendasOnlineConfig.tsx` — simplificar a URL exibida
+Trocar o template da URL recomendada para o formato simples:
+```
+https://{PROJECT}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret={secret}
+```
+Sem `tenantId:` no meio. O guia passo-a-passo continua igual, só mais limpo de copiar/colar.
 
-### 2. Pequeno ajuste no `vendas-online-webhook`
-- Reconhecer `metadata.test === true` e:
-  - Pular a tentativa de localizar item (retornar `{ ok: true, test: true }`).
-  - Ainda assim gravar uma linha em `vendas_online_webhook_log` com `event` e `payload` para você confirmar que chegou.
-- Isso garante que o teste exercita parsing + auth + log, sem poluir dados.
+Manter o teste interno (`vendas-online-testar-webhook`) como está — o endpoint aceita os dois formatos, então não quebra.
 
-### 3. UI em `VendasOnlineConfig.tsx`
-- Nova subseção dentro do card de Webhook, abaixo da caixa amarela de instruções:
-  - Título: "Testar webhook"
-  - Texto curto: "Dispara um evento de teste para confirmar que a URL está respondendo. Não altera nenhuma venda."
-  - 2 botões com loading individual.
-  - Painel de resultado (mesmo estilo visual do "Testar conexão" que já existe).
-  - Botão secundário "Ver últimos logs" → consulta `vendas_online_webhook_log` (últimos 5 do tenant) e mostra em uma lista compacta (timestamp, event, processado, erro).
-- Desabilitar os botões se `apiKey`, `secret` ou config não estiverem salvos (mostrando hint "Salve a configuração antes de testar").
+### 3. Migrar configurações existentes
+Adicionar índice/único em `vendas_online_config(webhook_secret)` para que a busca por secret seja confiável e não permita duplicidade entre tenants.
+
+```sql
+create unique index if not exists vendas_online_config_webhook_secret_uniq
+  on public.vendas_online_config (webhook_secret)
+  where webhook_secret is not null;
+```
 
 ## Arquivos
 
-- **criar** `supabase/functions/vendas-online-testar-webhook/index.ts`
-- **editar** `supabase/functions/vendas-online-webhook/index.ts` (suporte a `metadata.test`)
-- **editar** `src/pages/VendasOnlineConfig.tsx` (UI de teste + visualizador de logs)
+- editar `supabase/functions/vendas-online-webhook/index.ts`
+- editar `src/pages/VendasOnlineConfig.tsx`
+- nova migration com o índice único
 
-Sem migrations.
+## Validação
 
-## Observações
-
-- O webhook real continua exigindo cadastro manual no painel AbacatePay — esse botão **não substitui** isso, apenas verifica que sua infra está pronta para receber.
-- O log de teste fica gravado com o evento real (`billing.paid`/`billing.refunded`); se quiser, posso filtrar testes na visualização (`payload->>data->>billing->>metadata->>test`).
+1. Após deploy, cadastrar a URL nova (só `?webhookSecret={secret}`) na AbacatePay.
+2. Usar **Testar webhook** (botões já existentes) — deve continuar funcionando (formato `tenantId:secret`).
+3. Disparar uma cobrança real — agora `billing.paid` deve marcar o item como `vendido` e gravar o pagador.
+4. Conferir em **Ver últimos logs** que o evento aparece com `processado = true`.

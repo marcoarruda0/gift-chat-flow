@@ -21,17 +21,42 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const secretParam = url.searchParams.get("webhookSecret") || "";
-  const [tenantId, secret] = secretParam.split(":");
-  if (!tenantId || !secret) return json({ error: "invalid_secret" }, 401);
+  if (!secretParam) return json({ error: "invalid_secret" }, 401);
+
+  // Aceita dois formatos:
+  //  1) "{tenantId}:{secret}" (formato legado / usado pelo botão de teste)
+  //  2) "{secret}" puro (cadastrado direto no painel da AbacatePay)
+  let tenantId: string | null = null;
+  let secret: string | null = null;
+  if (secretParam.includes(":")) {
+    const parts = secretParam.split(":");
+    tenantId = parts[0] || null;
+    secret = parts.slice(1).join(":") || null;
+  } else {
+    secret = secretParam;
+  }
+  if (!secret) return json({ error: "invalid_secret" }, 401);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-  const { data: cfg } = await admin
-    .from("vendas_online_config")
-    .select("webhook_secret")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  if (!cfg?.webhook_secret || cfg.webhook_secret !== secret) {
+  let cfgRow: { tenant_id: string; webhook_secret: string } | null = null;
+  if (tenantId) {
+    const { data } = await admin
+      .from("vendas_online_config")
+      .select("tenant_id, webhook_secret")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    cfgRow = data as any;
+  } else {
+    const { data } = await admin
+      .from("vendas_online_config")
+      .select("tenant_id, webhook_secret")
+      .eq("webhook_secret", secret)
+      .maybeSingle();
+    cfgRow = data as any;
+    if (cfgRow) tenantId = cfgRow.tenant_id;
+  }
+  if (!cfgRow || !cfgRow.webhook_secret || cfgRow.webhook_secret !== secret || !tenantId) {
     return json({ error: "forbidden" }, 403);
   }
 

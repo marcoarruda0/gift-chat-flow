@@ -105,15 +105,36 @@ Deno.serve(async (req) => {
       body: JSON.stringify(payload),
     });
 
-    const abJson = await ab.json().catch(() => ({}));
+    const rawBody = await ab.text();
+    let abJson: any = null;
+    try { abJson = JSON.parse(rawBody); } catch { abJson = null; }
+
     if (!ab.ok || abJson?.error) {
-      console.error("abacate error", ab.status, abJson);
-      const msg =
+      console.error("abacate error", ab.status, rawBody);
+      const apiMsg =
         abJson?.error?.message ||
         (typeof abJson?.error === "string" ? abJson.error : null) ||
         abJson?.message ||
-        `HTTP ${ab.status}`;
-      return json({ error: "abacate_error", message: msg, details: abJson }, 502);
+        null;
+
+      let message: string;
+      if (ab.status === 401 || ab.status === 403) {
+        message = "Chave API inválida ou sem permissão na AbacatePay.";
+      } else if (ab.status === 422) {
+        message = apiMsg ? `Validação AbacatePay: ${apiMsg}` : "Payload rejeitado pela AbacatePay (422).";
+      } else if (ab.status >= 500) {
+        message = "AbacatePay está indisponível no momento. Tente novamente.";
+      } else {
+        message = apiMsg ? `AbacatePay: ${apiMsg}` : `Falha ao gerar link (HTTP ${ab.status}).`;
+      }
+
+      return json({
+        error: "abacate_error",
+        message,
+        httpStatus: ab.status,
+        errorPayload: abJson ?? undefined,
+        rawBody: abJson ? undefined : rawBody?.slice(0, 500),
+      }, 200);
     }
 
     const billing = abJson?.data ?? abJson;

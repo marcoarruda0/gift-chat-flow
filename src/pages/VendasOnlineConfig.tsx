@@ -37,6 +37,27 @@ export default function VendasOnlineConfig() {
     rawBody?: string;
   } | null>(null);
 
+  const [testingWebhook, setTestingWebhook] = useState<null | "billing.paid" | "billing.refunded">(null);
+  const [webhookTestResult, setWebhookTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    httpStatus?: number;
+    elapsedMs?: number;
+    event?: string;
+    sentPayload?: unknown;
+    responseBody?: unknown;
+  } | null>(null);
+
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logs, setLogs] = useState<Array<{
+    id: string;
+    created_at: string;
+    event: string | null;
+    billing_id: string | null;
+    processado: boolean | null;
+    erro: string | null;
+  }> | null>(null);
+
   useEffect(() => {
     if (!tenantId) return;
     (async () => {

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 type Item = {
@@ -47,6 +47,7 @@ export default function ChamadoDenis() {
   const [draftValue, setDraftValue] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;

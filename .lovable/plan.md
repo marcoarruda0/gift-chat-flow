@@ -1,61 +1,91 @@
-## Chamado Vendas Online — Tabela editável estilo Excel
+## Vendas Online + AbacatePay (aprovado)
 
-Criar um novo módulo onde o usuário gerencia itens em uma tabela inline-editable (parecida com Excel/Google Sheets), com persistência por tenant no Lovable Cloud.
+**Decisões confirmadas:** chave AbacatePay por tenant + webhook secret por tenant (URL `?webhookSecret=<tenant_id>:<secret>`).
 
-### Colunas
+---
 
-- **ID** — auto-incrementado por tenant (1, 2, 3…), somente leitura
-- **Descrição** — texto livre, editável inline
-- **Valor** — numérico (R$), editável inline com máscara BRL
-- **Status** — dropdown inline: `disponível` | `vendido`
+### 1. Rename (apenas UI, sem migração)
 
-### UX (Excel-like)
+- `src/components/AppSidebar.tsx`: label `"Chamado Denis Online"` → `"Vendas Online"`.
+- `src/pages/ChamadoDenis.tsx`: trocar título e subtítulo.
+- Manter rota `/chamado-denis`, tabela `chamado_denis_itens` e nome do componente para não quebrar nada.
 
-- Toda célula editável ao clicar (ou duplo clique); `Enter` salva e desce para a próxima linha; `Tab` salva e vai para a próxima coluna; `Esc` cancela.
-- Auto-save por célula (debounce ~500ms) — sem botão "Salvar" por linha.
-- Linha vazia permanente no fim ("nova linha"): ao digitar nela cria-se um novo registro automaticamente.
-- Botão "Nova linha" e "Excluir" (ícone lixeira por linha, com confirmação rápida).
-- Filtro por status + busca por descrição no topo.
-- Totalizador no rodapé: contagem por status + soma de "Valor" dos disponíveis e dos vendidos.
-- Badges coloridos para status (verde = disponível, cinza = vendido).
+### 2. Migração
 
-### Backend (Lovable Cloud)
-
-Nova tabela `chamado_denis_itens`:
-
-```text
-id              uuid pk
-tenant_id       uuid not null  → FK lógico tenants
-numero          int  not null  → ID visível, sequencial por tenant
-descricao       text
-valor           numeric(12,2) default 0
-status          text default 'disponivel'  (check: 'disponivel'|'vendido')
-created_at      timestamptz default now()
-updated_at      timestamptz default now()
-unique (tenant_id, numero)
+Adicionar em `chamado_denis_itens`:
+```
+abacate_billing_id   text unique
+abacate_url          text
+abacate_status       text          -- PENDING|PAID|EXPIRED|CANCELLED|REFUNDED
+pagador_nome         text
+pagador_email        text
+pagador_cel          text
+pagador_tax_id       text
+pago_em              timestamptz
 ```
 
-- Trigger `BEFORE INSERT` para preencher `numero = COALESCE(MAX(numero),0)+1` por tenant.
-- Trigger `BEFORE UPDATE` para atualizar `updated_at`.
-- RLS habilitada com políticas seguindo o padrão do projeto:
-  - SELECT/INSERT/UPDATE/DELETE permitidos quando `tenant_id = (select tenant_id from profiles where id = auth.uid())` OU `has_role(auth.uid(),'admin_master')`.
+Nova tabela `vendas_online_config`:
+```
+tenant_id        uuid pk → tenants
+abacate_api_key  text
+dev_mode         boolean default true
+webhook_secret   text
+created_at, updated_at
+```
+RLS: SELECT/UPSERT só para `admin_tenant`/`admin_master` do próprio tenant.
 
-### Rota e navegação
+Nova tabela `vendas_online_webhook_log` (auditoria/idempotência):
+```
+id uuid pk, tenant_id uuid, event text, billing_id text,
+payload jsonb, processado bool, erro text, created_at timestamptz
+```
 
-- Rota: `/chamado-denis` em `src/App.tsx` (protegida).
-- Item no `AppSidebar` com ícone `ClipboardList` (lucide), visível para todos os usuários autenticados do tenant.
+### 3. Edge function `vendas-online-criar-link`
 
-### Arquivos a criar/editar
+`POST { item_id }` → autentica JWT, busca item do tenant, lê API key de `vendas_online_config`, chama `POST https://api.abacatepay.com/v1/billing/create` com `products: [{ name: "Item #<numero>", description: item.descricao, price: round(item.valor*100), quantity: 1 }]`, sem `customerId` (cliente preenche no checkout). Salva `abacate_billing_id`, `abacate_url`, `abacate_status='PENDING'`. Idempotente: se já existe link PENDING, retorna o existente.
 
-- `supabase/migrations/<timestamp>_chamado_denis.sql` — tabela, triggers, RLS.
-- `src/pages/ChamadoDenis.tsx` — página com a tabela editável.
-- `src/components/chamado-denis/EditableCell.tsx` — célula genérica (texto/número/select) com handlers de teclado.
-- `src/App.tsx` — registrar a rota.
-- `src/components/AppSidebar.tsx` — adicionar item de menu.
+### 4. Edge function `vendas-online-webhook` (público, `verify_jwt = false`)
 
-### Detalhes técnicos
+URL: `…/functions/v1/vendas-online-webhook?webhookSecret=<tenant_id>:<secret>`
 
-- shadcn `Table` + inputs nativos para edição inline (mais leve que libs externas).
-- `valor` formatado como BRL na exibição; em edição vira input `type="number"` com 2 decimais.
-- Realtime opcional (postgres_changes) para refletir mudanças entre abas — manter desligado no MVP.
-- Validação com zod antes do upsert (descricao ≤ 500 chars, valor ≥ 0, status ∈ enum).
+1. Separa `tenant_id` e `secret` da query, compara com `vendas_online_config.webhook_secret`.
+2. Valida HMAC do header `X-Webhook-Signature` com a chave pública AbacatePay.
+3. Localiza item por `abacate_billing_id` (ou `data.externalId`).
+4. Atualiza `abacate_status`, `pago_em`, dados do pagador (`name`, `email`, `cellphone`, `taxId`); se evento de pagamento aprovado → `status='vendido'`; se reembolso → volta para `disponivel`.
+5. Loga em `vendas_online_webhook_log` (idempotente por `billing_id+event`).
+
+### 5. UI
+
+`src/pages/ChamadoDenis.tsx`:
+- Título "Vendas Online".
+- Nova coluna **Pagamento**: "Gerar link" / "Aguardando (copiar URL · abrir)" / "Pago ✓ <nome do pagador>" (tooltip com email, cel, tax_id, data).
+- Realtime via `postgres_changes` na tabela para atualizar quando o webhook chegar.
+- Filtro extra: pago / pendente / sem link.
+- Coluna `status` vira read-only quando `abacate_status='PAID'`.
+
+Nova página `src/pages/VendasOnlineConfig.tsx` (admin do tenant):
+- Inputs: API key (mascarada), `dev_mode` toggle, webhook secret (com botão "gerar").
+- Mostra a URL do webhook pronta para copiar e colar no dashboard AbacatePay.
+- Botão "Testar conexão".
+
+Rota `/vendas-online-config` em `src/App.tsx`; item no sidebar dentro de "Configurações" ou ícone de engrenagem na página de Vendas Online.
+
+### 6. Segurança
+
+- RLS estrita em `vendas_online_config`; API key acessível só via edge function (service role).
+- Edge `criar-link` valida que o item pertence ao tenant do JWT.
+- Webhook valida secret (URL) **e** HMAC (corpo).
+- Idempotência em `webhook_log`.
+
+### Arquivos
+
+Criar:
+- `supabase/migrations/<ts>_vendas_online.sql`
+- `supabase/functions/vendas-online-criar-link/index.ts`
+- `supabase/functions/vendas-online-webhook/index.ts`
+- `src/pages/VendasOnlineConfig.tsx`
+
+Editar:
+- `src/pages/ChamadoDenis.tsx`
+- `src/components/AppSidebar.tsx`
+- `src/App.tsx`

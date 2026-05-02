@@ -31,6 +31,7 @@ export default function VendasOnlineConfig() {
     ok: boolean;
     message: string;
     mode?: string;
+    apiVersion?: number;
     httpStatus?: number;
     errorPayload?: unknown;
     rawBody?: string;
@@ -128,9 +129,14 @@ export default function VendasOnlineConfig() {
 
       <Card>
         <CardHeader>
-          <CardTitle>AbacatePay</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle>AbacatePay</CardTitle>
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              API v2
+            </span>
+          </div>
           <CardDescription>
-            Crie sua chave em{" "}
+            Esta integração usa a <strong>API v2</strong> da AbacatePay (Checkout). Gere sua chave em{" "}
             <a
               href="https://app.abacatepay.com"
               target="_blank"
@@ -139,7 +145,7 @@ export default function VendasOnlineConfig() {
             >
               app.abacatepay.com
             </a>{" "}
-            → Integrações → API Keys.
+            → Integrações → API Keys e cole abaixo. O cliente preenche os próprios dados na página de pagamento; você não precisa coletar CPF/email no seu app.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -192,6 +198,9 @@ export default function VendasOnlineConfig() {
                   <span>{testResult.message}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {testResult.apiVersion && (
+                    <span>API: <strong>v{testResult.apiVersion}</strong></span>
+                  )}
                   {testResult.mode && <span>Modo: <strong>{testResult.mode}</strong></span>}
                   {typeof testResult.httpStatus === "number" && (
                     <span>HTTP: <strong>{testResult.httpStatus}</strong></span>

@@ -316,7 +316,11 @@ export type Database = {
           created_by: string | null
           descricao: string
           entregue: boolean
+          entregue_assinatura: string | null
           entregue_em: string | null
+          entregue_para_doc: string | null
+          entregue_para_nome: string | null
+          entregue_para_proprio: boolean | null
           entregue_por: string | null
           forma_pagamento: string | null
           id: string
@@ -342,7 +346,11 @@ export type Database = {
           created_by?: string | null
           descricao?: string
           entregue?: boolean
+          entregue_assinatura?: string | null
           entregue_em?: string | null
+          entregue_para_doc?: string | null
+          entregue_para_nome?: string | null
+          entregue_para_proprio?: boolean | null
           entregue_por?: string | null
           forma_pagamento?: string | null
           id?: string
@@ -368,7 +376,11 @@ export type Database = {
           created_by?: string | null
           descricao?: string
           entregue?: boolean
+          entregue_assinatura?: string | null
           entregue_em?: string | null
+          entregue_para_doc?: string | null
+          entregue_para_nome?: string | null
+          entregue_para_proprio?: boolean | null
           entregue_por?: string | null
           forma_pagamento?: string | null
           id?: string

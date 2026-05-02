@@ -1,82 +1,75 @@
-## Objetivo
+## Problema 1 — Não consegue acessar "Produtos vendidos"
 
-Adicionar, na página **Vendas Online**, uma nova seção (abaixo da tabela atual) que lista todos os produtos **vendidos/pagos** com gerenciamento de **alocação em locais físicos** e marcação de **entrega**.
+A seção existe em `src/pages/ChamadoDenis.tsx` (página Vendas Online), mas como você está no viewport **mobile (375px)** e ela é renderizada como `<Table>` larga após a tabela principal + KPIs, ela:
+- fica empurrada para fora do scroll vertical inicial; e
+- estoura horizontalmente sem wrapper de scroll, ficando "cortada".
 
-## 1. Banco de dados (migrations)
+**Correções:**
+- Envolver a tabela "Produtos vendidos" em `div.overflow-x-auto` (igual à tabela principal).
+- Em telas `<md`, renderizar **cards** (1 por item) em vez da tabela, com os mesmos campos (ID, descrição, valor, forma pgto, cliente+CPF, dropdown de Local, status entregue e botão de entrega). Mantém a tabela em desktop.
+- Adicionar âncora `#vendidos` + botão de atalho no topo ("Ir para vendidos") para facilitar acesso.
 
-### Nova tabela `vendas_online_locais`
-Cadastro dos locais físicos onde os produtos vendidos ficam alocados aguardando retirada.
+## Problema 2 — Fluxo de confirmação de entrega
 
+Hoje o ícone `PackageCheck` é um toggle direto. Vamos transformá-lo em um **diálogo de confirmação** que registra **quem retirou** e **assinatura**.
+
+### 2.1 Banco de dados (migration)
+
+Novas colunas em `chamado_denis_itens`:
 | Coluna | Tipo | Notas |
 |---|---|---|
-| `id` | uuid PK | |
-| `tenant_id` | uuid | RLS por tenant |
-| `nome` | text | Ex: "Prateleira A1", "Estoque Frente" |
-| `descricao` | text nullable | |
-| `ativo` | boolean default true | |
-| `created_at` / `updated_at` | timestamptz | |
+| `entregue_para_proprio` | boolean nullable | true = retirado pelo próprio comprador |
+| `entregue_para_nome` | text nullable | nome de quem retirou (se outra pessoa) |
+| `entregue_para_doc` | text nullable | CPF/RG de quem retirou (opcional) |
+| `entregue_assinatura` | text nullable | data URL PNG (base64) da assinatura |
 
-RLS: SELECT por tenant; INSERT/UPDATE/DELETE para qualquer membro do tenant (mesmo padrão de `chamado_denis_itens`).
+Sem mudança em RLS (já cobertas pelas policies existentes da tabela).
 
-### Colunas novas em `chamado_denis_itens`
-- `local_id` uuid nullable → FK lógica para `vendas_online_locais.id`
-- `entregue` boolean default false
-- `entregue_em` timestamptz nullable
-- `entregue_por` uuid nullable (auth user)
-- `forma_pagamento` text nullable (preenchido pelo webhook a partir de `payment.method`, ex: PIX)
+### 2.2 UI — novo componente `ConfirmarEntregaDialog`
 
-O webhook `vendas-online-webhook` passará a gravar `forma_pagamento` quando processar `billing.paid`.
+Arquivo: `src/components/vendas-online/ConfirmarEntregaDialog.tsx`.
 
-## 2. Edge function: ajuste no webhook
+Conteúdo do diálogo:
+- Cabeçalho: "Confirmar entrega — Item #N — {descricao}"
+- Resumo do comprador (Nome + CPF) em destaque.
+- **Radio group** "Quem está retirando?":
+  - `Próprio comprador ({pagador_nome})` (default)
+  - `Outra pessoa`
+- Se "Outra pessoa":
+  - Input **Nome de quem está retirando** (obrigatório)
+  - Input **Documento (CPF/RG)** (opcional)
+- **Pad de assinatura** (obrigatório):
+  - `<canvas>` ~320x140 com captura de pointer/touch (sem dependência nova).
+  - Botões: "Limpar".
+  - Validação: precisa ter ≥ N traços antes de confirmar.
+- Botões do rodapé: "Cancelar" / "Confirmar entrega" (desabilitado até validar).
 
-Em `vendas-online-webhook/index.ts`, no bloco `billing.paid`, incluir no UPDATE do item:
+Ao confirmar:
 ```ts
-forma_pagamento: data?.payment?.method ?? null,
+await supabase.from("chamado_denis_itens").update({
+  entregue: true,
+  entregue_em: new Date().toISOString(),
+  entregue_por: profile.id,
+  entregue_para_proprio: proprio,
+  entregue_para_nome: proprio ? null : nome.trim(),
+  entregue_para_doc:   proprio ? null : (doc.trim() || null),
+  entregue_assinatura: canvas.toDataURL("image/png"),
+}).eq("id", item.id);
 ```
 
-## 3. UI — `src/pages/ChamadoDenis.tsx` (página Vendas Online)
-
-### 3a. Nova seção "Produtos vendidos" (abaixo da tabela e dos KPIs)
-
-Tabela com colunas:
-- ID (#numero)
-- Descrição
-- Valor (BRL)
-- Forma de pagamento (badge: PIX, etc.)
-- Status venda (badge "Vendido" / "Pago")
-- Cliente: Nome + CPF (com tooltip mostrando email/telefone)
-- **Local** — `<Select>` com os locais ativos do tenant; "— sem local —" como opção; on change → `update chamado_denis_itens set local_id`
-- **Entregue?** — Badge "Sim" / "Não"
-- **Ação entrega** — ícone (Truck/PackageCheck). Por enquanto: toggle simples que marca `entregue=true`, `entregue_em=now()`, `entregue_por=auth.uid()`. (Detalhamento no próximo prompt — apenas placeholder funcional.)
-
-Filtros locais à seção:
-- Busca por nome/CPF/descrição
-- Filtro por local (todos / sem local / cada local)
-- Filtro por entrega (todos / pendente / entregue)
-
-Critério de "vendido" para esta seção: `status = 'vendido'` **OU** `abacate_status = 'PAID'`.
-
-### 3b. Sub-seção "Locais cadastrados" (abaixo da tabela de vendidos)
-
-Card com:
-- Lista dos locais (nome, descrição, toggle ativo, botão excluir)
-- Input + botão "Adicionar local"
-- Edição inline do nome (mesmo padrão das células editáveis já existente)
-
-Realtime: assinar `postgres_changes` em `vendas_online_locais` filtrando por `tenant_id`.
-
-## 4. Tipos / queries
-
-- Atualizar `SELECT_COLS` para incluir `local_id, entregue, entregue_em, forma_pagamento, pagador_*` (já há a maioria).
-- Hook/load separado para `locais` (`useEffect` carregando lista quando `tenantId` muda).
-
-## 5. Fora de escopo (próximo prompt)
-
-- Fluxo detalhado de entrega (confirmação, assinatura, comprovante, registro de quem retirou, etc.)
-- Notificação ao cliente quando produto é alocado/entregue
+### 2.3 Mudanças em `ChamadoDenis.tsx`
+- Substituir `toggleEntregue` por:
+  - Se `!item.entregue` → abre `ConfirmarEntregaDialog`.
+  - Se `item.entregue` → abre `AlertDialog` "Desfazer entrega?" (limpa todos os campos de entrega + assinatura).
+- Coluna **Entregue?**: ao clicar no badge "Sim", abre um `Popover`/`Dialog` somente leitura mostrando: data, quem registrou, quem retirou (próprio/outro + nome/doc) e thumbnail da assinatura.
+- Atualizar `Item` type e `SELECT_COLS` com as 4 novas colunas.
 
 ## Arquivos afetados
+- `supabase/migrations/<novo>.sql` — 4 colunas em `chamado_denis_itens`
+- `src/components/vendas-online/ConfirmarEntregaDialog.tsx` *(novo)*
+- `src/pages/ChamadoDenis.tsx` — wrapper scroll + cards mobile + integração do diálogo + visualização da assinatura
 
-- `supabase/migrations/<novo>.sql` — tabela `vendas_online_locais` + colunas em `chamado_denis_itens` + RLS
-- `supabase/functions/vendas-online-webhook/index.ts` — gravar `forma_pagamento`
-- `src/pages/ChamadoDenis.tsx` — nova seção "Produtos vendidos" + gerenciamento de locais
+## Fora de escopo (próximo prompt, se quiser)
+- Geração de comprovante PDF da entrega
+- Notificação automática ao comprador quando entrega é confirmada
+- Upload da assinatura para Storage (por ora fica como data URL na coluna `text`; aceitável para assinaturas pequenas)

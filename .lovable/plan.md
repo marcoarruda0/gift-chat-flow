@@ -1,74 +1,82 @@
-## Diagnóstico
+## Objetivo
 
-O webhook real da AbacatePay chegou com `webhookSecret` na URL, mas nosso endpoint retornou `{"error":"invalid_secret"}`.
+Adicionar, na página **Vendas Online**, uma nova seção (abaixo da tabela atual) que lista todos os produtos **vendidos/pagos** com gerenciamento de **alocação em locais físicos** e marcação de **entrega**.
 
-Causa: hoje a função `vendas-online-webhook` exige o formato `webhookSecret={tenantId}:{secret}`. Quando você cadastra a URL no painel da AbacatePay, é natural colar **só o secret** (a UI deles trata como um valor único, e o `:` no meio confunde). Sem o `tenantId:` na frente, o split falha → 401 `invalid_secret`.
+## 1. Banco de dados (migrations)
 
-Confirmação no payload recebido: o `metadata.tenantId` (`fcaec321-...`) e o `metadata.itemId` já vêm dentro do corpo, então **não precisamos do tenantId na URL** — podemos descobrir o tenant pelo próprio secret (que é único por tenant) e cruzar com o metadata.
+### Nova tabela `vendas_online_locais`
+Cadastro dos locais físicos onde os produtos vendidos ficam alocados aguardando retirada.
 
-## Mudanças
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `tenant_id` | uuid | RLS por tenant |
+| `nome` | text | Ex: "Prateleira A1", "Estoque Frente" |
+| `descricao` | text nullable | |
+| `ativo` | boolean default true | |
+| `created_at` / `updated_at` | timestamptz | |
 
-### 1. `vendas-online-webhook/index.ts` — aceitar 3 formatos de secret
-Aceitar, em ordem:
-1. `webhookSecret={tenantId}:{secret}` (formato atual, retrocompatível com testes internos)
-2. `webhookSecret={secret}` apenas → buscar `vendas_online_config` por `webhook_secret = secret` e usar o `tenant_id` daí
-3. Em ambos os casos, se `payload.data.billing.metadata.tenantId` estiver presente, validar que bate com o tenant resolvido (já fazemos isso, mantém)
+RLS: SELECT por tenant; INSERT/UPDATE/DELETE para qualquer membro do tenant (mesmo padrão de `chamado_denis_itens`).
 
-Pseudocódigo do bloco de auth:
+### Colunas novas em `chamado_denis_itens`
+- `local_id` uuid nullable → FK lógica para `vendas_online_locais.id`
+- `entregue` boolean default false
+- `entregue_em` timestamptz nullable
+- `entregue_por` uuid nullable (auth user)
+- `forma_pagamento` text nullable (preenchido pelo webhook a partir de `payment.method`, ex: PIX)
+
+O webhook `vendas-online-webhook` passará a gravar `forma_pagamento` quando processar `billing.paid`.
+
+## 2. Edge function: ajuste no webhook
+
+Em `vendas-online-webhook/index.ts`, no bloco `billing.paid`, incluir no UPDATE do item:
 ```ts
-const raw = url.searchParams.get("webhookSecret") || "";
-let tenantId: string | null = null;
-let secret: string | null = null;
-if (raw.includes(":")) {
-  [tenantId, secret] = raw.split(":");
-}
-if (!secret) secret = raw;
-
-let cfg;
-if (tenantId) {
-  cfg = await admin.from("vendas_online_config")
-    .select("tenant_id, webhook_secret")
-    .eq("tenant_id", tenantId).maybeSingle();
-} else {
-  cfg = await admin.from("vendas_online_config")
-    .select("tenant_id, webhook_secret")
-    .eq("webhook_secret", secret).maybeSingle();
-  tenantId = cfg.data?.tenant_id ?? null;
-}
-if (!cfg.data || cfg.data.webhook_secret !== secret || !tenantId) {
-  return json({ error: "forbidden" }, 403);
-}
+forma_pagamento: data?.payment?.method ?? null,
 ```
 
-Logar o motivo do 401/403 em `vendas_online_webhook_log` (com `tenant_id` nulo permitido) para facilitar debug futuro.
+## 3. UI — `src/pages/ChamadoDenis.tsx` (página Vendas Online)
 
-### 2. `src/pages/VendasOnlineConfig.tsx` — simplificar a URL exibida
-Trocar o template da URL recomendada para o formato simples:
-```
-https://{PROJECT}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret={secret}
-```
-Sem `tenantId:` no meio. O guia passo-a-passo continua igual, só mais limpo de copiar/colar.
+### 3a. Nova seção "Produtos vendidos" (abaixo da tabela e dos KPIs)
 
-Manter o teste interno (`vendas-online-testar-webhook`) como está — o endpoint aceita os dois formatos, então não quebra.
+Tabela com colunas:
+- ID (#numero)
+- Descrição
+- Valor (BRL)
+- Forma de pagamento (badge: PIX, etc.)
+- Status venda (badge "Vendido" / "Pago")
+- Cliente: Nome + CPF (com tooltip mostrando email/telefone)
+- **Local** — `<Select>` com os locais ativos do tenant; "— sem local —" como opção; on change → `update chamado_denis_itens set local_id`
+- **Entregue?** — Badge "Sim" / "Não"
+- **Ação entrega** — ícone (Truck/PackageCheck). Por enquanto: toggle simples que marca `entregue=true`, `entregue_em=now()`, `entregue_por=auth.uid()`. (Detalhamento no próximo prompt — apenas placeholder funcional.)
 
-### 3. Migrar configurações existentes
-Adicionar índice/único em `vendas_online_config(webhook_secret)` para que a busca por secret seja confiável e não permita duplicidade entre tenants.
+Filtros locais à seção:
+- Busca por nome/CPF/descrição
+- Filtro por local (todos / sem local / cada local)
+- Filtro por entrega (todos / pendente / entregue)
 
-```sql
-create unique index if not exists vendas_online_config_webhook_secret_uniq
-  on public.vendas_online_config (webhook_secret)
-  where webhook_secret is not null;
-```
+Critério de "vendido" para esta seção: `status = 'vendido'` **OU** `abacate_status = 'PAID'`.
 
-## Arquivos
+### 3b. Sub-seção "Locais cadastrados" (abaixo da tabela de vendidos)
 
-- editar `supabase/functions/vendas-online-webhook/index.ts`
-- editar `src/pages/VendasOnlineConfig.tsx`
-- nova migration com o índice único
+Card com:
+- Lista dos locais (nome, descrição, toggle ativo, botão excluir)
+- Input + botão "Adicionar local"
+- Edição inline do nome (mesmo padrão das células editáveis já existente)
 
-## Validação
+Realtime: assinar `postgres_changes` em `vendas_online_locais` filtrando por `tenant_id`.
 
-1. Após deploy, cadastrar a URL nova (só `?webhookSecret={secret}`) na AbacatePay.
-2. Usar **Testar webhook** (botões já existentes) — deve continuar funcionando (formato `tenantId:secret`).
-3. Disparar uma cobrança real — agora `billing.paid` deve marcar o item como `vendido` e gravar o pagador.
-4. Conferir em **Ver últimos logs** que o evento aparece com `processado = true`.
+## 4. Tipos / queries
+
+- Atualizar `SELECT_COLS` para incluir `local_id, entregue, entregue_em, forma_pagamento, pagador_*` (já há a maioria).
+- Hook/load separado para `locais` (`useEffect` carregando lista quando `tenantId` muda).
+
+## 5. Fora de escopo (próximo prompt)
+
+- Fluxo detalhado de entrega (confirmação, assinatura, comprovante, registro de quem retirou, etc.)
+- Notificação ao cliente quando produto é alocado/entregue
+
+## Arquivos afetados
+
+- `supabase/migrations/<novo>.sql` — tabela `vendas_online_locais` + colunas em `chamado_denis_itens` + RLS
+- `supabase/functions/vendas-online-webhook/index.ts` — gravar `forma_pagamento`
+- `src/pages/ChamadoDenis.tsx` — nova seção "Produtos vendidos" + gerenciamento de locais

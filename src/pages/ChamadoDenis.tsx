@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 type Item = {
@@ -25,6 +26,17 @@ type Item = {
   pagador_cel: string | null;
   pagador_tax_id: string | null;
   pago_em: string | null;
+  forma_pagamento: string | null;
+  local_id: string | null;
+  entregue: boolean;
+  entregue_em: string | null;
+};
+
+type Local = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
 };
 
 type CellKey = `${string}-${"descricao" | "valor" | "status"}`;
@@ -34,7 +46,7 @@ function brl(v: number) {
 }
 
 const SELECT_COLS =
-  "id, numero, descricao, valor, status, abacate_billing_id, abacate_url, abacate_status, pagador_nome, pagador_email, pagador_cel, pagador_tax_id, pago_em";
+  "id, numero, descricao, valor, status, abacate_billing_id, abacate_url, abacate_status, pagador_nome, pagador_email, pagador_cel, pagador_tax_id, pago_em, forma_pagamento, local_id, entregue, entregue_em";
 
 export default function ChamadoDenis() {
   const { profile } = useAuth();
@@ -48,6 +60,99 @@ export default function ChamadoDenis() {
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [locais, setLocais] = useState<Local[]>([]);
+  const [novoLocalNome, setNovoLocalNome] = useState("");
+  const [criandoLocal, setCriandoLocal] = useState(false);
+  const [filtroLocal, setFiltroLocal] = useState<string>("todos");
+  const [filtroEntrega, setFiltroEntrega] = useState<"todos" | "pendente" | "entregue">("todos");
+  const [buscaVendidos, setBuscaVendidos] = useState("");
+
+  const loadLocais = useCallback(async () => {
+    if (!tenantId) return;
+    const { data } = await supabase
+      .from("vendas_online_locais")
+      .select("id, nome, descricao, ativo")
+      .eq("tenant_id", tenantId)
+      .order("nome");
+    setLocais((data || []) as Local[]);
+  }, [tenantId]);
+
+  useEffect(() => { loadLocais(); }, [loadLocais]);
+
+  // Realtime locais
+  useEffect(() => {
+    if (!tenantId) return;
+    const ch = supabase
+      .channel("vendas-online-locais-" + tenantId)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "vendas_online_locais", filter: `tenant_id=eq.${tenantId}` },
+        () => loadLocais()
+      ).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [tenantId, loadLocais]);
+
+  const addLocal = async () => {
+    const nome = novoLocalNome.trim();
+    if (!nome || !tenantId) return;
+    setCriandoLocal(true);
+    const { error } = await supabase.from("vendas_online_locais").insert({ tenant_id: tenantId, nome });
+    setCriandoLocal(false);
+    if (error) { toast.error("Erro ao criar local"); return; }
+    setNovoLocalNome("");
+    toast.success("Local criado");
+  };
+
+  const updateLocal = async (id: string, patch: Partial<Local>) => {
+    const { error } = await supabase.from("vendas_online_locais").update(patch).eq("id", id);
+    if (error) toast.error("Erro ao atualizar local");
+  };
+
+  const removeLocal = async (id: string) => {
+    if (!confirm("Excluir este local? Itens alocados ficarão sem local.")) return;
+    const { error } = await supabase.from("vendas_online_locais").delete().eq("id", id);
+    if (error) toast.error("Erro ao excluir local");
+  };
+
+  const setItemLocal = async (item: Item, local_id: string | null) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, local_id } : i));
+    const { error } = await supabase.from("chamado_denis_itens").update({ local_id }).eq("id", item.id);
+    if (error) { toast.error("Erro ao alocar local"); load(); }
+  };
+
+  const toggleEntregue = async (item: Item) => {
+    const novo = !item.entregue;
+    const patch: { entregue: boolean; entregue_em: string | null; entregue_por: string | null } = {
+      entregue: novo,
+      entregue_em: novo ? new Date().toISOString() : null,
+      entregue_por: novo ? (profile?.id ?? null) : null,
+    };
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
+    const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
+    if (error) { toast.error("Erro ao atualizar entrega"); load(); }
+    else toast.success(novo ? "Marcado como entregue" : "Entrega desfeita");
+  };
+
+  const vendidos = useMemo(() => {
+    return items.filter(i => {
+      const isVend = i.status === "vendido" || i.abacate_status === "PAID";
+      if (!isVend) return false;
+      if (filtroLocal === "sem_local" && i.local_id) return false;
+      if (filtroLocal !== "todos" && filtroLocal !== "sem_local" && i.local_id !== filtroLocal) return false;
+      if (filtroEntrega === "pendente" && i.entregue) return false;
+      if (filtroEntrega === "entregue" && !i.entregue) return false;
+      if (buscaVendidos) {
+        const q = buscaVendidos.toLowerCase();
+        const hit =
+          (i.descricao || "").toLowerCase().includes(q) ||
+          (i.pagador_nome || "").toLowerCase().includes(q) ||
+          (i.pagador_tax_id || "").toLowerCase().includes(q) ||
+          String(i.numero).includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [items, filtroLocal, filtroEntrega, buscaVendidos]);
+
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -535,6 +640,187 @@ export default function ChamadoDenis() {
           <div className="rounded-lg border bg-card p-4">
             <p className="text-xs text-muted-foreground">Valor vendido</p>
             <p className="text-2xl font-bold">{brl(totals.somaVend)}</p>
+          </div>
+        </div>
+
+        {/* ===== Produtos vendidos ===== */}
+        <div className="space-y-3 pt-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-xl font-bold flex items-center gap-2"><Package className="h-5 w-5" /> Produtos vendidos</h2>
+              <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 flex-wrap items-center">
+            <Input placeholder="Buscar por cliente, CPF, descrição..." value={buscaVendidos} onChange={(e) => setBuscaVendidos(e.target.value)} className="max-w-xs" />
+            <Select value={filtroLocal} onValueChange={setFiltroLocal}>
+              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os locais</SelectItem>
+                <SelectItem value="sem_local">Sem local</SelectItem>
+                {locais.filter(l => l.ativo).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filtroEntrega} onValueChange={(v) => setFiltroEntrega(v as typeof filtroEntrega)}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="pendente">Aguardando entrega</SelectItem>
+                <SelectItem value="entregue">Entregues</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-lg border bg-card overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-16">ID</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead className="w-28">Valor</TableHead>
+                  <TableHead className="w-28">Pagamento</TableHead>
+                  <TableHead className="w-24">Status</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead className="w-48">Local</TableHead>
+                  <TableHead className="w-28">Entregue?</TableHead>
+                  <TableHead className="w-16" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vendidos.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum produto vendido encontrado.</TableCell></TableRow>
+                ) : vendidos.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-mono text-muted-foreground">#{item.numero}</TableCell>
+                    <TableCell className="max-w-[260px] truncate">{item.descricao}</TableCell>
+                    <TableCell>{brl(Number(item.valor || 0))}</TableCell>
+                    <TableCell>{item.forma_pagamento ? <Badge variant="outline">{item.forma_pagamento}</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>
+                      {item.abacate_status === "PAID"
+                        ? <Badge className="bg-green-600 hover:bg-green-700">Pago</Badge>
+                        : <Badge variant="secondary">Vendido</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="text-sm">
+                            <div className="font-medium truncate max-w-[200px]">{item.pagador_nome || <span className="text-muted-foreground italic">Sem nome</span>}</div>
+                            {item.pagador_tax_id && <div className="text-xs text-muted-foreground">{item.pagador_tax_id}</div>}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs space-y-0.5">
+                          {item.pagador_email && <div>Email: {item.pagador_email}</div>}
+                          {item.pagador_cel && <div>Tel: {item.pagador_cel}</div>}
+                          {item.pago_em && <div>Pago em: {new Date(item.pago_em).toLocaleString("pt-BR")}</div>}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={item.local_id ?? "__none__"} onValueChange={(v) => setItemLocal(item, v === "__none__" ? null : v)}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="— sem local —" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— sem local —</SelectItem>
+                          {locais.filter(l => l.ativo || l.id === item.local_id).map(l => (
+                            <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      {item.entregue
+                        ? <Badge className="bg-green-600 hover:bg-green-700">Sim</Badge>
+                        : <Badge variant="outline">Não</Badge>}
+                      {item.entregue && item.entregue_em && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{new Date(item.entregue_em).toLocaleDateString("pt-BR")}</div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => toggleEntregue(item)}>
+                            <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{item.entregue ? "Desfazer entrega" : "Marcar como entregue"}</TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* ===== Locais ===== */}
+        <div className="space-y-3 pt-4">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2"><MapPin className="h-5 w-5" /> Locais</h2>
+            <p className="text-sm text-muted-foreground">Cadastre os locais físicos onde os produtos vendidos ficam alocados até a retirada do cliente.</p>
+          </div>
+
+          <div className="flex gap-2 max-w-md">
+            <Input
+              placeholder="Nome do local (ex: Prateleira A1)"
+              value={novoLocalNome}
+              onChange={(e) => setNovoLocalNome(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addLocal(); }}
+            />
+            <Button onClick={addLocal} disabled={criandoLocal || !novoLocalNome.trim()}>
+              {criandoLocal ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Adicionar
+            </Button>
+          </div>
+
+          <div className="rounded-lg border bg-card overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead className="w-28">Itens alocados</TableHead>
+                  <TableHead className="w-20">Ativo</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {locais.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Nenhum local cadastrado.</TableCell></TableRow>
+                ) : locais.map((l) => {
+                  const qtd = items.filter(i => i.local_id === l.id && !i.entregue).length;
+                  return (
+                    <TableRow key={l.id}>
+                      <TableCell>
+                        <Input
+                          defaultValue={l.nome}
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== l.nome) updateLocal(l.id, { nome: v }); }}
+                          className="h-8"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          defaultValue={l.descricao ?? ""}
+                          onBlur={(e) => { const v = e.target.value; if (v !== (l.descricao ?? "")) updateLocal(l.id, { descricao: v || null }); }}
+                          className="h-8"
+                          placeholder="—"
+                        />
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{qtd}</Badge></TableCell>
+                      <TableCell>
+                        <Switch checked={l.ativo} onCheckedChange={(v) => updateLocal(l.id, { ativo: v })} />
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLocal(l.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </div>
       </div>

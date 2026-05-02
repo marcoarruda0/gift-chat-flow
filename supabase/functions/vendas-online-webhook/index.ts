@@ -75,6 +75,7 @@ Deno.serve(async (req) => {
   const checkout = data?.checkout ?? data?.billing ?? data ?? {};
   const customer = data?.customer ?? checkout?.customer ?? {};
   const payerInformation = data?.payerInformation ?? {};
+  const payment = data?.payment ?? {};
 
   const billingId: string | undefined = checkout?.id;
   const externalId: string | undefined =
@@ -193,6 +194,8 @@ Deno.serve(async (req) => {
       patch.abacate_status = "PAID";
       patch.status = "vendido";
       patch.pago_em = new Date().toISOString();
+      const metodo = payment?.method ?? payment?.type ?? null;
+      if (metodo) patch.forma_pagamento = String(metodo).toUpperCase();
     }
     if (isRefund) {
       patch.abacate_status = "REFUNDED";

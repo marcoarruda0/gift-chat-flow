@@ -315,7 +315,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           descricao: string
+          entregue: boolean
+          entregue_em: string | null
+          entregue_por: string | null
+          forma_pagamento: string | null
           id: string
+          local_id: string | null
           numero: number
           pagador_cel: string | null
           pagador_email: string | null
@@ -336,7 +341,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           descricao?: string
+          entregue?: boolean
+          entregue_em?: string | null
+          entregue_por?: string | null
+          forma_pagamento?: string | null
           id?: string
+          local_id?: string | null
           numero: number
           pagador_cel?: string | null
           pagador_email?: string | null
@@ -357,7 +367,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           descricao?: string
+          entregue?: boolean
+          entregue_em?: string | null
+          entregue_por?: string | null
+          forma_pagamento?: string | null
           id?: string
+          local_id?: string | null
           numero?: number
           pagador_cel?: string | null
           pagador_email?: string | null
@@ -369,7 +384,15 @@ export type Database = {
           updated_at?: string
           valor?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "chamado_denis_itens_local_id_fkey"
+            columns: ["local_id"]
+            isOneToOne: false
+            referencedRelation: "vendas_online_locais"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       compras: {
         Row: {
@@ -1984,6 +2007,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      vendas_online_locais: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       vendas_online_webhook_log: {
         Row: {

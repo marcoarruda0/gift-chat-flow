@@ -107,7 +107,12 @@ Deno.serve(async (req) => {
     const abJson = await ab.json().catch(() => ({}));
     if (!ab.ok || abJson?.error) {
       console.error("abacate error", ab.status, abJson);
-      return json({ error: "abacate_error", details: abJson }, 502);
+      const msg =
+        abJson?.error?.message ||
+        (typeof abJson?.error === "string" ? abJson.error : null) ||
+        abJson?.message ||
+        `HTTP ${ab.status}`;
+      return json({ error: "abacate_error", message: msg, details: abJson }, 502);
     }
 
     const billing = abJson?.data ?? abJson;

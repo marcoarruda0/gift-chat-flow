@@ -123,6 +123,53 @@ export default function VendasOnlineConfig() {
     }
   };
 
+  const testarWebhook = async (event: "billing.paid" | "billing.refunded") => {
+    if (!secret) {
+      toast.error("Salve o webhook secret antes de testar");
+      return;
+    }
+    setTestingWebhook(event);
+    setWebhookTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("vendas-online-testar-webhook", {
+        body: { event },
+      });
+      if (error) {
+        let extra: any = null;
+        try { extra = await (error as any).context?.json?.(); } catch { /* noop */ }
+        setWebhookTestResult({
+          ok: false,
+          message: extra?.message || error.message || "Erro ao testar webhook",
+          httpStatus: extra?.httpStatus,
+          responseBody: extra?.responseBody,
+        });
+      } else {
+        setWebhookTestResult({ ...(data as any), event });
+      }
+    } catch (e: any) {
+      setWebhookTestResult({ ok: false, message: e?.message || "Erro inesperado" });
+    } finally {
+      setTestingWebhook(null);
+    }
+  };
+
+  const carregarLogs = async () => {
+    if (!tenantId) return;
+    setLoadingLogs(true);
+    const { data, error } = await supabase
+      .from("vendas_online_webhook_log")
+      .select("id, created_at, event, billing_id, processado, erro")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setLoadingLogs(false);
+    if (error) {
+      toast.error("Erro ao carregar logs: " + error.message);
+      return;
+    }
+    setLogs((data as any) || []);
+  };
+
   const webhookUrl =
     tenantId && secret
       ? `https://${PROJECT_ID}.supabase.co/functions/v1/vendas-online-webhook?webhookSecret=${tenantId}:${secret}`

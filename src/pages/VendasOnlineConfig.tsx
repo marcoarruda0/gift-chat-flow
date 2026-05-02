@@ -27,7 +27,14 @@ export default function VendasOnlineConfig() {
   const [secret, setSecret] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; mode?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    mode?: string;
+    httpStatus?: number;
+    errorPayload?: unknown;
+    rawBody?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;

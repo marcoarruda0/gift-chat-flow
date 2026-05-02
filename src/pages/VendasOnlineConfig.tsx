@@ -81,7 +81,16 @@ export default function VendasOnlineConfig() {
     try {
       const { data, error } = await supabase.functions.invoke("vendas-online-testar-chave");
       if (error) {
-        setTestResult({ ok: false, message: error.message || "Erro ao testar chave" });
+        // Tenta extrair body de resposta non-2xx
+        let extra: any = null;
+        try { extra = await (error as any).context?.json?.(); } catch { /* noop */ }
+        setTestResult({
+          ok: false,
+          message: extra?.message || error.message || "Erro ao testar chave",
+          httpStatus: extra?.httpStatus,
+          errorPayload: extra?.errorPayload,
+          rawBody: extra?.rawBody,
+        });
       } else {
         setTestResult(data as any);
       }

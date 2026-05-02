@@ -226,9 +226,11 @@ export default function VendasOnlineConfig() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Webhook</CardTitle>
+          <CardTitle>Webhook (obrigatório)</CardTitle>
           <CardDescription>
-            Cole esta URL no painel da AbacatePay (Webhooks) para receber atualizações de pagamento.
+            Sem cadastrar este webhook na AbacatePay, os pagamentos <strong>não</strong> são marcados
+            como pagos automaticamente no sistema. Você ainda pode usar o botão "Sincronizar status"
+            em cada item, mas é manual.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -256,6 +258,18 @@ export default function VendasOnlineConfig() {
               </p>
             </div>
           )}
+
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm space-y-2">
+            <p className="font-medium text-amber-700 dark:text-amber-500">
+              Como cadastrar na AbacatePay
+            </p>
+            <ol className="list-decimal pl-5 space-y-1 text-muted-foreground text-xs">
+              <li>Acesse <a href="https://app.abacatepay.com" target="_blank" rel="noreferrer" className="text-primary underline">app.abacatepay.com</a> → Configurações → Webhooks.</li>
+              <li>Clique em "Adicionar webhook" e cole a URL acima.</li>
+              <li>Marque os eventos: <code className="px-1 rounded bg-muted">billing.paid</code>, e (opcional) <code className="px-1 rounded bg-muted">billing.cancelled</code> e <code className="px-1 rounded bg-muted">billing.refunded</code>.</li>
+              <li>Salve. A AbacatePay enviará uma notificação de teste — confira em "Vendas Online" se o pagamento aparece.</li>
+            </ol>
+          </div>
         </CardContent>
       </Card>
 

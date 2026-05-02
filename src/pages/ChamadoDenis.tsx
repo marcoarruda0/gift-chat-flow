@@ -56,7 +56,7 @@ function brl(v: number) {
 }
 
 const SELECT_COLS =
-  "id, numero, descricao, valor, status, abacate_billing_id, abacate_url, abacate_status, pagador_nome, pagador_email, pagador_cel, pagador_tax_id, pago_em, forma_pagamento, local_id, entregue, entregue_em";
+  "id, numero, descricao, valor, status, abacate_billing_id, abacate_url, abacate_status, pagador_nome, pagador_email, pagador_cel, pagador_tax_id, pago_em, forma_pagamento, local_id, entregue, entregue_em, entregue_para_proprio, entregue_para_nome, entregue_para_doc, entregue_assinatura";
 
 export default function ChamadoDenis() {
   const { profile } = useAuth();

@@ -81,7 +81,6 @@ Deno.serve(async (req) => {
       methods: ["PIX"],
       products: [
         {
-          externalId: item.id,
           name: `Item #${item.numero}`,
           description: (item.descricao || "Venda Online").slice(0, 200),
           quantity: 1,
@@ -90,7 +89,10 @@ Deno.serve(async (req) => {
       ],
       returnUrl: completionUrl,
       completionUrl: completionUrl,
-      externalId: item.id,
+      metadata: {
+        externalId: item.id,
+        tenantId: tenantId,
+      },
     };
 
     const ab = await fetch("https://api.abacatepay.com/v1/billing/create", {
@@ -105,7 +107,12 @@ Deno.serve(async (req) => {
     const abJson = await ab.json().catch(() => ({}));
     if (!ab.ok || abJson?.error) {
       console.error("abacate error", ab.status, abJson);
-      return json({ error: "abacate_error", details: abJson }, 502);
+      const msg =
+        abJson?.error?.message ||
+        (typeof abJson?.error === "string" ? abJson.error : null) ||
+        abJson?.message ||
+        `HTTP ${ab.status}`;
+      return json({ error: "abacate_error", message: msg, details: abJson }, 502);
     }
 
     const billing = abJson?.data ?? abJson;

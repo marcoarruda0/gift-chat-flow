@@ -76,6 +76,9 @@ export default function ChamadoDenis() {
   const [filtroLocal, setFiltroLocal] = useState<string>("todos");
   const [filtroEntrega, setFiltroEntrega] = useState<"todos" | "pendente" | "entregue">("todos");
   const [buscaVendidos, setBuscaVendidos] = useState("");
+  const [entregaItem, setEntregaItem] = useState<Item | null>(null);
+  const [desfazerItem, setDesfazerItem] = useState<Item | null>(null);
+  const [verEntregaItem, setVerEntregaItem] = useState<Item | null>(null);
 
   const loadLocais = useCallback(async () => {
     if (!tenantId) return;

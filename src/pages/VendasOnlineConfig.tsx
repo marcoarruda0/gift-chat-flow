@@ -27,7 +27,14 @@ export default function VendasOnlineConfig() {
   const [secret, setSecret] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; mode?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    mode?: string;
+    httpStatus?: number;
+    errorPayload?: unknown;
+    rawBody?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -74,7 +81,16 @@ export default function VendasOnlineConfig() {
     try {
       const { data, error } = await supabase.functions.invoke("vendas-online-testar-chave");
       if (error) {
-        setTestResult({ ok: false, message: error.message || "Erro ao testar chave" });
+        // Tenta extrair body de resposta non-2xx
+        let extra: any = null;
+        try { extra = await (error as any).context?.json?.(); } catch { /* noop */ }
+        setTestResult({
+          ok: false,
+          message: extra?.message || error.message || "Erro ao testar chave",
+          httpStatus: extra?.httpStatus,
+          errorPayload: extra?.errorPayload,
+          rawBody: extra?.rawBody,
+        });
       } else {
         setTestResult(data as any);
       }
@@ -150,27 +166,49 @@ export default function VendasOnlineConfig() {
             <Switch checked={devMode} onCheckedChange={setDevMode} />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="space-y-3">
             <Button type="button" variant="outline" onClick={testarConexao} disabled={testing || !apiKey}>
               {testing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plug className="h-4 w-4 mr-2" />}
               Testar conexão
             </Button>
             {testResult && (
               <div
-                className={`flex items-center gap-2 text-sm ${
-                  testResult.ok ? "text-green-600" : "text-destructive"
+                className={`rounded-lg border p-3 space-y-2 text-sm ${
+                  testResult.ok
+                    ? "border-green-600/40 bg-green-600/5"
+                    : "border-destructive/40 bg-destructive/5"
                 }`}
               >
-                {testResult.ok ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <XCircle className="h-4 w-4" />
+                <div
+                  className={`flex items-center gap-2 font-medium ${
+                    testResult.ok ? "text-green-700 dark:text-green-500" : "text-destructive"
+                  }`}
+                >
+                  {testResult.ok ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                  <span>{testResult.message}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {testResult.mode && <span>Modo: <strong>{testResult.mode}</strong></span>}
+                  {typeof testResult.httpStatus === "number" && (
+                    <span>HTTP: <strong>{testResult.httpStatus}</strong></span>
+                  )}
+                </div>
+                {(testResult.errorPayload || testResult.rawBody) && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                      Ver payload de erro
+                    </summary>
+                    <pre className="mt-2 max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] leading-snug">
+{testResult.errorPayload
+  ? JSON.stringify(testResult.errorPayload, null, 2)
+  : testResult.rawBody}
+                    </pre>
+                  </details>
                 )}
-                <span>
-                  {testResult.ok
-                    ? `Chave válida${testResult.mode ? ` (modo ${testResult.mode})` : ""}`
-                    : testResult.message}
-                </span>
               </div>
             )}
           </div>

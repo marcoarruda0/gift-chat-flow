@@ -205,16 +205,33 @@ export default function ChamadoDenis() {
       body: { item_id: item.id },
     });
     setGenerating(null);
+
+    // Se houve erro HTTP, tenta extrair body retornado pela function
     if (error) {
-      toast.error("Falha ao gerar link: " + error.message);
+      let body: any = null;
+      try { body = await (error as any).context?.json?.(); } catch { /* noop */ }
+      const msg =
+        body?.message ||
+        (body?.error === "abacate_not_configured" ? "Configure sua chave AbacatePay primeiro." : null) ||
+        body?.error ||
+        error.message ||
+        "Falha ao gerar link";
+      toast.error(msg, {
+        description: body?.httpStatus ? `HTTP ${body.httpStatus}` : undefined,
+      });
+      console.error("gerar link erro:", { error, body });
       return;
     }
+
     if (data?.error === "abacate_not_configured") {
       toast.error("Configure sua chave AbacatePay primeiro.");
       return;
     }
     if (data?.error) {
-      toast.error("Erro: " + data.error);
+      toast.error(data.message || data.error, {
+        description: data.httpStatus ? `HTTP ${data.httpStatus}` : undefined,
+      });
+      console.error("gerar link payload:", data);
       return;
     }
     if (data?.url) {

@@ -75,6 +75,7 @@ Deno.serve(async (req) => {
   const checkout = data?.checkout ?? data?.billing ?? data ?? {};
   const customer = data?.customer ?? checkout?.customer ?? {};
   const payerInformation = data?.payerInformation ?? {};
+  const payment = data?.payment ?? {};
 
   const billingId: string | undefined = checkout?.id;
   const externalId: string | undefined =

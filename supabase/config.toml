@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.vendas-online-criar-link]
 verify_jwt = true
+
+[functions.vendas-online-testar-chave]
+verify_jwt = true

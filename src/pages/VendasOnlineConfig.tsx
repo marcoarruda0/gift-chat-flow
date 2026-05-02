@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug } from "lucide-react";
+import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug, Webhook, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
@@ -36,6 +36,27 @@ export default function VendasOnlineConfig() {
     errorPayload?: unknown;
     rawBody?: string;
   } | null>(null);
+
+  const [testingWebhook, setTestingWebhook] = useState<null | "billing.paid" | "billing.refunded">(null);
+  const [webhookTestResult, setWebhookTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    httpStatus?: number;
+    elapsedMs?: number;
+    event?: string;
+    sentPayload?: unknown;
+    responseBody?: unknown;
+  } | null>(null);
+
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logs, setLogs] = useState<Array<{
+    id: string;
+    created_at: string;
+    event: string | null;
+    billing_id: string | null;
+    processado: boolean | null;
+    erro: string | null;
+  }> | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -100,6 +121,53 @@ export default function VendasOnlineConfig() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const testarWebhook = async (event: "billing.paid" | "billing.refunded") => {
+    if (!secret) {
+      toast.error("Salve o webhook secret antes de testar");
+      return;
+    }
+    setTestingWebhook(event);
+    setWebhookTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("vendas-online-testar-webhook", {
+        body: { event },
+      });
+      if (error) {
+        let extra: any = null;
+        try { extra = await (error as any).context?.json?.(); } catch { /* noop */ }
+        setWebhookTestResult({
+          ok: false,
+          message: extra?.message || error.message || "Erro ao testar webhook",
+          httpStatus: extra?.httpStatus,
+          responseBody: extra?.responseBody,
+        });
+      } else {
+        setWebhookTestResult({ ...(data as any), event });
+      }
+    } catch (e: any) {
+      setWebhookTestResult({ ok: false, message: e?.message || "Erro inesperado" });
+    } finally {
+      setTestingWebhook(null);
+    }
+  };
+
+  const carregarLogs = async () => {
+    if (!tenantId) return;
+    setLoadingLogs(true);
+    const { data, error } = await supabase
+      .from("vendas_online_webhook_log")
+      .select("id, created_at, event, billing_id, processado, erro")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setLoadingLogs(false);
+    if (error) {
+      toast.error("Erro ao carregar logs: " + error.message);
+      return;
+    }
+    setLogs((data as any) || []);
   };
 
   const webhookUrl =
@@ -269,6 +337,163 @@ export default function VendasOnlineConfig() {
               <li>Marque os eventos: <code className="px-1 rounded bg-muted">billing.paid</code>, e (opcional) <code className="px-1 rounded bg-muted">billing.cancelled</code> e <code className="px-1 rounded bg-muted">billing.refunded</code>.</li>
               <li>Salve. A AbacatePay enviará uma notificação de teste — confira em "Vendas Online" se o pagamento aparece.</li>
             </ol>
+          </div>
+
+          {/* Testar Webhook */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <div className="flex items-center gap-2">
+              <Webhook className="h-4 w-4 text-primary" />
+              <p className="font-medium">Testar webhook</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Dispara um evento simulado para confirmar que sua URL está respondendo
+              corretamente. <strong>Não altera nenhuma venda</strong> — útil para validar
+              a configuração antes de ativar produção.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => testarWebhook("billing.paid")}
+                disabled={!secret || testingWebhook !== null}
+              >
+                {testingWebhook === "billing.paid" ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                )}
+                Simular billing.paid
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => testarWebhook("billing.refunded")}
+                disabled={!secret || testingWebhook !== null}
+              >
+                {testingWebhook === "billing.refunded" ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Simular billing.refunded
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={carregarLogs}
+                disabled={loadingLogs}
+              >
+                {loadingLogs ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ListChecks className="h-4 w-4 mr-2" />
+                )}
+                Ver últimos logs
+              </Button>
+            </div>
+            {!secret && (
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                Gere e salve o webhook secret antes de testar.
+              </p>
+            )}
+
+            {webhookTestResult && (
+              <div
+                className={`rounded-lg border p-3 space-y-2 text-sm ${
+                  webhookTestResult.ok
+                    ? "border-green-600/40 bg-green-600/5"
+                    : "border-destructive/40 bg-destructive/5"
+                }`}
+              >
+                <div
+                  className={`flex items-center gap-2 font-medium ${
+                    webhookTestResult.ok
+                      ? "text-green-700 dark:text-green-500"
+                      : "text-destructive"
+                  }`}
+                >
+                  {webhookTestResult.ok ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                  <span>{webhookTestResult.message}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {webhookTestResult.event && (
+                    <span>Evento: <strong>{webhookTestResult.event}</strong></span>
+                  )}
+                  {typeof webhookTestResult.httpStatus === "number" && (
+                    <span>HTTP: <strong>{webhookTestResult.httpStatus}</strong></span>
+                  )}
+                  {typeof webhookTestResult.elapsedMs === "number" && (
+                    <span>Tempo: <strong>{webhookTestResult.elapsedMs}ms</strong></span>
+                  )}
+                </div>
+                {webhookTestResult.responseBody !== undefined && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                      Ver resposta do webhook
+                    </summary>
+                    <pre className="mt-2 max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] leading-snug">
+{JSON.stringify(webhookTestResult.responseBody, null, 2)}
+                    </pre>
+                  </details>
+                )}
+                {webhookTestResult.sentPayload !== undefined && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                      Ver payload enviado
+                    </summary>
+                    <pre className="mt-2 max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] leading-snug">
+{JSON.stringify(webhookTestResult.sentPayload, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {logs && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-medium">
+                  Últimos {logs.length} eventos recebidos
+                </p>
+                {logs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Nenhum evento registrado ainda.
+                  </p>
+                ) : (
+                  <ul className="space-y-1 text-xs">
+                    {logs.map((l) => (
+                      <li
+                        key={l.id}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/50 pb-1 last:border-0"
+                      >
+                        <span className="text-muted-foreground tabular-nums">
+                          {new Date(l.created_at).toLocaleString("pt-BR")}
+                        </span>
+                        <span className="font-medium">{l.event || "—"}</span>
+                        {l.processado ? (
+                          <span className="text-green-700 dark:text-green-500">
+                            ✓ processado
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-500">
+                            pendente
+                          </span>
+                        )}
+                        {l.erro && (
+                          <span className="text-destructive">{l.erro}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

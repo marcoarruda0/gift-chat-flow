@@ -109,9 +109,13 @@ export default function ChamadoDenis() {
     }
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, [field]: newValue } : i)));
     cancelEdit();
+    const patch: { descricao?: string; valor?: number; status?: string } = {};
+    if (field === "descricao") patch.descricao = newValue as string;
+    else if (field === "valor") patch.valor = newValue as number;
+    else if (field === "status") patch.status = newValue as string;
     const { error } = await supabase
       .from("chamado_denis_itens")
-      .update({ [field]: newValue })
+      .update(patch)
       .eq("id", item.id);
     if (error) {
       toast.error("Falha ao salvar");

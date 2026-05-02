@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 type Item = {
@@ -47,6 +47,7 @@ export default function ChamadoDenis() {
   const [draftValue, setDraftValue] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -250,6 +251,30 @@ export default function ChamadoDenis() {
     toast.success("Link copiado");
   };
 
+  const sincronizarStatus = async (item: Item) => {
+    setSyncing(item.id);
+    const { data, error } = await supabase.functions.invoke("vendas-online-sincronizar-status", {
+      body: { item_id: item.id },
+    });
+    setSyncing(null);
+    if (error) {
+      let body: any = null;
+      try { body = await (error as any).context?.json?.(); } catch { /* noop */ }
+      toast.error(body?.message || error.message || "Falha ao sincronizar");
+      return;
+    }
+    if (data?.error) {
+      toast.error(data.message || data.error);
+      return;
+    }
+    if (data?.status === "PAID") {
+      toast.success("Pagamento confirmado!");
+    } else {
+      toast.info(`Status na AbacatePay: ${data?.status || "desconhecido"}`);
+    }
+    load();
+  };
+
   const handleKey = (e: KeyboardEvent<HTMLInputElement>, item: Item, field: "descricao" | "valor") => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -446,6 +471,24 @@ export default function ChamadoDenis() {
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                             </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                  onClick={() => sincronizarStatus(item)}
+                                  disabled={syncing === item.id}
+                                >
+                                  {syncing === item.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Sincronizar status com AbacatePay</TooltipContent>
+                            </Tooltip>
                           </div>
                         ) : (
                           <Button

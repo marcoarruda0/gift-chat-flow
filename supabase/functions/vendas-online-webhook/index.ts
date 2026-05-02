@@ -133,8 +133,13 @@ Deno.serve(async (req) => {
 
     // ---- Mapear evento ----
     const evt = String(event || "").toLowerCase();
-    const isCompleted = evt.includes("completed") || String(status || "").toUpperCase() === "PAID";
-    const isRefund = evt.includes("refund");
+    const statusUpper = String(status || "").toUpperCase();
+    const isCompleted =
+      evt.includes("completed") ||
+      evt.includes("paid") ||
+      evt === "billing.paid" ||
+      statusUpper === "PAID";
+    const isRefund = evt.includes("refund") || statusUpper === "REFUNDED";
     const isDispute = evt.includes("dispute");
 
     const patch: Record<string, unknown> = {};

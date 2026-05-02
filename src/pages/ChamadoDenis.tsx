@@ -11,6 +11,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { ConfirmarEntregaDialog, EntregaPayload } from "@/components/vendas-online/ConfirmarEntregaDialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type Item = {
   id: string;
@@ -30,6 +36,10 @@ type Item = {
   local_id: string | null;
   entregue: boolean;
   entregue_em: string | null;
+  entregue_para_proprio: boolean | null;
+  entregue_para_nome: string | null;
+  entregue_para_doc: string | null;
+  entregue_assinatura: string | null;
 };
 
 type Local = {

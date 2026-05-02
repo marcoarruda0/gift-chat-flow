@@ -149,6 +149,31 @@ export default function VendasOnlineConfig() {
             </div>
             <Switch checked={devMode} onCheckedChange={setDevMode} />
           </div>
+
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="outline" onClick={testarConexao} disabled={testing || !apiKey}>
+              {testing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plug className="h-4 w-4 mr-2" />}
+              Testar conexão
+            </Button>
+            {testResult && (
+              <div
+                className={`flex items-center gap-2 text-sm ${
+                  testResult.ok ? "text-green-600" : "text-destructive"
+                }`}
+              >
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                <span>
+                  {testResult.ok
+                    ? `Chave válida${testResult.mode ? ` (modo ${testResult.mode})` : ""}`
+                    : testResult.message}
+                </span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

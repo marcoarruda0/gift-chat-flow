@@ -128,7 +128,7 @@ export default function ChamadoDenis() {
     setCreating(true);
     const { data, error } = await supabase
       .from("chamado_denis_itens")
-      .insert({ tenant_id: tenantId, descricao: "", valor: 0, status: "disponivel" })
+      .insert({ tenant_id: tenantId, numero: 0, descricao: "", valor: 0, status: "disponivel" })
       .select("id, numero, descricao, valor, status")
       .single();
     setCreating(false);

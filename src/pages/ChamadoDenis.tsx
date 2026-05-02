@@ -685,9 +685,9 @@ export default function ChamadoDenis() {
           </div>
 
           <div className="flex gap-3 flex-wrap items-center">
-            <Input placeholder="Buscar por cliente, CPF, descrição..." value={buscaVendidos} onChange={(e) => setBuscaVendidos(e.target.value)} className="max-w-xs" />
+            <Input placeholder="Buscar por cliente, CPF, descrição..." value={buscaVendidos} onChange={(e) => setBuscaVendidos(e.target.value)} className="w-full sm:max-w-xs" />
             <Select value={filtroLocal} onValueChange={setFiltroLocal}>
-              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os locais</SelectItem>
                 <SelectItem value="sem_local">Sem local</SelectItem>
@@ -697,7 +697,7 @@ export default function ChamadoDenis() {
               </SelectContent>
             </Select>
             <Select value={filtroEntrega} onValueChange={(v) => setFiltroEntrega(v as typeof filtroEntrega)}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos</SelectItem>
                 <SelectItem value="pendente">Aguardando entrega</SelectItem>

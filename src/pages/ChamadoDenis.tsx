@@ -706,7 +706,8 @@ export default function ChamadoDenis() {
             </Select>
           </div>
 
-          <div className="rounded-lg border bg-card overflow-x-auto">
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-lg border bg-card overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -763,7 +764,7 @@ export default function ChamadoDenis() {
                     </TableCell>
                     <TableCell>
                       {item.entregue
-                        ? <Badge className="bg-green-600 hover:bg-green-700">Sim</Badge>
+                        ? <button type="button" onClick={() => setVerEntregaItem(item)}><Badge className="bg-green-600 hover:bg-green-700 cursor-pointer">Sim</Badge></button>
                         : <Badge variant="outline">Não</Badge>}
                       {item.entregue && item.entregue_em && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">{new Date(item.entregue_em).toLocaleDateString("pt-BR")}</div>
@@ -772,11 +773,11 @@ export default function ChamadoDenis() {
                     <TableCell>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => toggleEntregue(item)}>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}>
                             <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{item.entregue ? "Desfazer entrega" : "Marcar como entregue"}</TooltipContent>
+                        <TooltipContent>{item.entregue ? "Desfazer entrega" : "Confirmar entrega"}</TooltipContent>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -784,7 +785,128 @@ export default function ChamadoDenis() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {vendidos.length === 0 ? (
+              <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum produto vendido encontrado.</div>
+            ) : vendidos.map((item) => (
+              <div key={item.id} className="rounded-lg border bg-card p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs text-muted-foreground font-mono">#{item.numero}</div>
+                    <div className="font-medium text-sm break-words">{item.descricao}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold">{brl(Number(item.valor || 0))}</div>
+                    {item.forma_pagamento && <Badge variant="outline" className="text-[10px] mt-1">{item.forma_pagamento}</Badge>}
+                  </div>
+                </div>
+                <div className="text-xs">
+                  <div className="font-medium">{item.pagador_nome || <span className="text-muted-foreground italic">Sem nome</span>}</div>
+                  {item.pagador_tax_id && <div className="text-muted-foreground">CPF: {item.pagador_tax_id}</div>}
+                  {item.pagador_cel && <div className="text-muted-foreground">Tel: {item.pagador_cel}</div>}
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground mb-1">Local</div>
+                  <Select value={item.local_id ?? "__none__"} onValueChange={(v) => setItemLocal(item, v === "__none__" ? null : v)}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="— sem local —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— sem local —</SelectItem>
+                      {locais.filter(l => l.ativo || l.id === item.local_id).map(l => (
+                        <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  {item.entregue ? (
+                    <button type="button" onClick={() => setVerEntregaItem(item)} className="text-left">
+                      <Badge className="bg-green-600 hover:bg-green-700">Entregue</Badge>
+                      {item.entregue_em && <div className="text-[10px] text-muted-foreground">{new Date(item.entregue_em).toLocaleString("pt-BR")}</div>}
+                    </button>
+                  ) : (
+                    <Badge variant="outline">Aguardando entrega</Badge>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={item.entregue ? "outline" : "default"}
+                    onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}
+                  >
+                    <PackageCheck className="h-4 w-4 mr-1" />
+                    {item.entregue ? "Desfazer" : "Entregar"}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* ===== Dialogs de entrega ===== */}
+        {entregaItem && (
+          <ConfirmarEntregaDialog
+            open={!!entregaItem}
+            onOpenChange={(v) => { if (!v) setEntregaItem(null); }}
+            itemNumero={entregaItem.numero}
+            itemDescricao={entregaItem.descricao}
+            pagadorNome={entregaItem.pagador_nome}
+            pagadorTaxId={entregaItem.pagador_tax_id}
+            onConfirm={(payload) => confirmarEntrega(entregaItem, payload)}
+          />
+        )}
+
+        <AlertDialog open={!!desfazerItem} onOpenChange={(v) => { if (!v) setDesfazerItem(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Desfazer entrega?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação remove o registro de quem retirou e a assinatura. O item voltará para "Aguardando entrega".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { if (desfazerItem) { desfazerEntrega(desfazerItem); setDesfazerItem(null); } }}>
+                Desfazer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Dialog open={!!verEntregaItem} onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Comprovante de entrega — #{verEntregaItem?.numero}</DialogTitle>
+              <DialogDescription className="truncate">{verEntregaItem?.descricao}</DialogDescription>
+            </DialogHeader>
+            {verEntregaItem && (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <div className="text-muted-foreground text-xs">Entregue em</div>
+                  <div>{verEntregaItem.entregue_em ? new Date(verEntregaItem.entregue_em).toLocaleString("pt-BR") : "—"}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">Quem retirou</div>
+                  {verEntregaItem.entregue_para_proprio === false ? (
+                    <div>
+                      <div>{verEntregaItem.entregue_para_nome || "—"}</div>
+                      {verEntregaItem.entregue_para_doc && <div className="text-xs text-muted-foreground">Doc: {verEntregaItem.entregue_para_doc}</div>}
+                    </div>
+                  ) : (
+                    <div>Próprio comprador {verEntregaItem.pagador_nome ? `(${verEntregaItem.pagador_nome})` : ""}</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs mb-1">Assinatura</div>
+                  {verEntregaItem.entregue_assinatura ? (
+                    <img src={verEntregaItem.entregue_assinatura} alt="Assinatura" className="rounded-md border bg-background w-full" />
+                  ) : (
+                    <div className="text-muted-foreground text-xs italic">Sem assinatura registrada (entrega legada).</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* ===== Locais ===== */}
         <div className="space-y-3 pt-4">

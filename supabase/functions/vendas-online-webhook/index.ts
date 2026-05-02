@@ -194,6 +194,8 @@ Deno.serve(async (req) => {
       patch.abacate_status = "PAID";
       patch.status = "vendido";
       patch.pago_em = new Date().toISOString();
+      const metodo = payment?.method ?? payment?.type ?? null;
+      if (metodo) patch.forma_pagamento = String(metodo).toUpperCase();
     }
     if (isRefund) {
       patch.abacate_status = "REFUNDED";

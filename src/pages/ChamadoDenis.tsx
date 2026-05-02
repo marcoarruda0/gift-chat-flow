@@ -471,6 +471,24 @@ export default function ChamadoDenis() {
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                             </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                  onClick={() => sincronizarStatus(item)}
+                                  disabled={syncing === item.id}
+                                >
+                                  {syncing === item.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Sincronizar status com AbacatePay</TooltipContent>
+                            </Tooltip>
                           </div>
                         ) : (
                           <Button

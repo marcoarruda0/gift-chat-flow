@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   ChevronsUpDown,
   BarChart3,
+  ClipboardList,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";

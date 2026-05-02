@@ -132,17 +132,36 @@ export default function ChamadoDenis() {
     if (error) { toast.error("Erro ao alocar local"); load(); }
   };
 
-  const toggleEntregue = async (item: Item) => {
-    const novo = !item.entregue;
-    const patch: { entregue: boolean; entregue_em: string | null; entregue_por: string | null } = {
-      entregue: novo,
-      entregue_em: novo ? new Date().toISOString() : null,
-      entregue_por: novo ? (profile?.id ?? null) : null,
+  const confirmarEntrega = async (item: Item, payload: EntregaPayload) => {
+    const patch = {
+      entregue: true,
+      entregue_em: new Date().toISOString(),
+      entregue_por: profile?.id ?? null,
+      entregue_para_proprio: payload.proprio,
+      entregue_para_nome: payload.nome,
+      entregue_para_doc: payload.doc,
+      entregue_assinatura: payload.assinatura,
     };
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
-    if (error) { toast.error("Erro ao atualizar entrega"); load(); }
-    else toast.success(novo ? "Marcado como entregue" : "Entrega desfeita");
+    if (error) { toast.error("Erro ao confirmar entrega"); load(); }
+    else toast.success("Entrega confirmada");
+  };
+
+  const desfazerEntrega = async (item: Item) => {
+    const patch = {
+      entregue: false,
+      entregue_em: null,
+      entregue_por: null,
+      entregue_para_proprio: null,
+      entregue_para_nome: null,
+      entregue_para_doc: null,
+      entregue_assinatura: null,
+    };
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
+    const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
+    if (error) { toast.error("Erro ao desfazer entrega"); load(); }
+    else toast.success("Entrega desfeita");
   };
 
   const vendidos = useMemo(() => {

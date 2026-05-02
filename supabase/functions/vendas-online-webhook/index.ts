@@ -82,11 +82,31 @@ Deno.serve(async (req) => {
     }
   }
 
+  const isTest = metadata?.test === true || metadata?.test === "true";
+
   const { data: logRow } = await admin
     .from("vendas_online_webhook_log")
-    .insert({ tenant_id: tenantId, event, billing_id: billingId, payload })
+    .insert({
+      tenant_id: tenantId,
+      event,
+      billing_id: billingId,
+      payload,
+      erro: isTest ? "teste_webhook" : null,
+      processado: isTest ? true : false,
+    })
     .select("id")
     .single();
+
+  // Evento de teste: confirma recebimento sem alterar nenhum item real
+  if (isTest) {
+    return json({
+      ok: true,
+      test: true,
+      event,
+      message:
+        "Evento de teste recebido com sucesso. Nenhum item foi alterado (modo teste).",
+    });
+  }
 
   try {
     // ---- Localizar o item ----

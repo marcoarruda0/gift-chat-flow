@@ -251,6 +251,30 @@ export default function ChamadoDenis() {
     toast.success("Link copiado");
   };
 
+  const sincronizarStatus = async (item: Item) => {
+    setSyncing(item.id);
+    const { data, error } = await supabase.functions.invoke("vendas-online-sincronizar-status", {
+      body: { item_id: item.id },
+    });
+    setSyncing(null);
+    if (error) {
+      let body: any = null;
+      try { body = await (error as any).context?.json?.(); } catch { /* noop */ }
+      toast.error(body?.message || error.message || "Falha ao sincronizar");
+      return;
+    }
+    if (data?.error) {
+      toast.error(data.message || data.error);
+      return;
+    }
+    if (data?.status === "PAID") {
+      toast.success("Pagamento confirmado!");
+    } else {
+      toast.info(`Status na AbacatePay: ${data?.status || "desconhecido"}`);
+    }
+    load();
+  };
+
   const handleKey = (e: KeyboardEvent<HTMLInputElement>, item: Item, field: "descricao" | "valor") => {
     if (e.key === "Enter") {
       e.preventDefault();

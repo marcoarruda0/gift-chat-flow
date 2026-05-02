@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
       methods: ["PIX"],
       products: [
         {
+          externalId: String(item.id),
           name: `Item #${item.numero}`,
           description: (item.descricao || "Venda Online").slice(0, 200),
           quantity: 1,

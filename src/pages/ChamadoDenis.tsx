@@ -60,6 +60,99 @@ export default function ChamadoDenis() {
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [locais, setLocais] = useState<Local[]>([]);
+  const [novoLocalNome, setNovoLocalNome] = useState("");
+  const [criandoLocal, setCriandoLocal] = useState(false);
+  const [filtroLocal, setFiltroLocal] = useState<string>("todos");
+  const [filtroEntrega, setFiltroEntrega] = useState<"todos" | "pendente" | "entregue">("todos");
+  const [buscaVendidos, setBuscaVendidos] = useState("");
+
+  const loadLocais = useCallback(async () => {
+    if (!tenantId) return;
+    const { data } = await supabase
+      .from("vendas_online_locais")
+      .select("id, nome, descricao, ativo")
+      .eq("tenant_id", tenantId)
+      .order("nome");
+    setLocais((data || []) as Local[]);
+  }, [tenantId]);
+
+  useEffect(() => { loadLocais(); }, [loadLocais]);
+
+  // Realtime locais
+  useEffect(() => {
+    if (!tenantId) return;
+    const ch = supabase
+      .channel("vendas-online-locais-" + tenantId)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "vendas_online_locais", filter: `tenant_id=eq.${tenantId}` },
+        () => loadLocais()
+      ).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [tenantId, loadLocais]);
+
+  const addLocal = async () => {
+    const nome = novoLocalNome.trim();
+    if (!nome || !tenantId) return;
+    setCriandoLocal(true);
+    const { error } = await supabase.from("vendas_online_locais").insert({ tenant_id: tenantId, nome });
+    setCriandoLocal(false);
+    if (error) { toast.error("Erro ao criar local"); return; }
+    setNovoLocalNome("");
+    toast.success("Local criado");
+  };
+
+  const updateLocal = async (id: string, patch: Partial<Local>) => {
+    const { error } = await supabase.from("vendas_online_locais").update(patch).eq("id", id);
+    if (error) toast.error("Erro ao atualizar local");
+  };
+
+  const removeLocal = async (id: string) => {
+    if (!confirm("Excluir este local? Itens alocados ficarão sem local.")) return;
+    const { error } = await supabase.from("vendas_online_locais").delete().eq("id", id);
+    if (error) toast.error("Erro ao excluir local");
+  };
+
+  const setItemLocal = async (item: Item, local_id: string | null) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, local_id } : i));
+    const { error } = await supabase.from("chamado_denis_itens").update({ local_id }).eq("id", item.id);
+    if (error) { toast.error("Erro ao alocar local"); load(); }
+  };
+
+  const toggleEntregue = async (item: Item) => {
+    const novo = !item.entregue;
+    const patch: { entregue: boolean; entregue_em: string | null; entregue_por: string | null } = {
+      entregue: novo,
+      entregue_em: novo ? new Date().toISOString() : null,
+      entregue_por: novo ? (profile?.id ?? null) : null,
+    };
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
+    const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
+    if (error) { toast.error("Erro ao atualizar entrega"); load(); }
+    else toast.success(novo ? "Marcado como entregue" : "Entrega desfeita");
+  };
+
+  const vendidos = useMemo(() => {
+    return items.filter(i => {
+      const isVend = i.status === "vendido" || i.abacate_status === "PAID";
+      if (!isVend) return false;
+      if (filtroLocal === "sem_local" && i.local_id) return false;
+      if (filtroLocal !== "todos" && filtroLocal !== "sem_local" && i.local_id !== filtroLocal) return false;
+      if (filtroEntrega === "pendente" && i.entregue) return false;
+      if (filtroEntrega === "entregue" && !i.entregue) return false;
+      if (buscaVendidos) {
+        const q = buscaVendidos.toLowerCase();
+        const hit =
+          (i.descricao || "").toLowerCase().includes(q) ||
+          (i.pagador_nome || "").toLowerCase().includes(q) ||
+          (i.pagador_tax_id || "").toLowerCase().includes(q) ||
+          String(i.numero).includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [items, filtroLocal, filtroEntrega, buscaVendidos]);
+
 
   const load = useCallback(async () => {
     if (!tenantId) return;

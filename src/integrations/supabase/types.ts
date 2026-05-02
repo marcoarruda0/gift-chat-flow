@@ -307,33 +307,57 @@ export type Database = {
       }
       chamado_denis_itens: {
         Row: {
+          abacate_billing_id: string | null
+          abacate_status: string | null
+          abacate_url: string | null
           created_at: string
           created_by: string | null
           descricao: string
           id: string
           numero: number
+          pagador_cel: string | null
+          pagador_email: string | null
+          pagador_nome: string | null
+          pagador_tax_id: string | null
+          pago_em: string | null
           status: string
           tenant_id: string
           updated_at: string
           valor: number
         }
         Insert: {
+          abacate_billing_id?: string | null
+          abacate_status?: string | null
+          abacate_url?: string | null
           created_at?: string
           created_by?: string | null
           descricao?: string
           id?: string
           numero: number
+          pagador_cel?: string | null
+          pagador_email?: string | null
+          pagador_nome?: string | null
+          pagador_tax_id?: string | null
+          pago_em?: string | null
           status?: string
           tenant_id: string
           updated_at?: string
           valor?: number
         }
         Update: {
+          abacate_billing_id?: string | null
+          abacate_status?: string | null
+          abacate_url?: string | null
           created_at?: string
           created_by?: string | null
           descricao?: string
           id?: string
           numero?: number
+          pagador_cel?: string | null
+          pagador_email?: string | null
+          pagador_nome?: string | null
+          pagador_tax_id?: string | null
+          pago_em?: string | null
           status?: string
           tenant_id?: string
           updated_at?: string
@@ -1910,6 +1934,82 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_tenants_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendas_online_config: {
+        Row: {
+          abacate_api_key: string | null
+          created_at: string
+          dev_mode: boolean
+          tenant_id: string
+          updated_at: string
+          webhook_secret: string | null
+        }
+        Insert: {
+          abacate_api_key?: string | null
+          created_at?: string
+          dev_mode?: boolean
+          tenant_id: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Update: {
+          abacate_api_key?: string | null
+          created_at?: string
+          dev_mode?: boolean
+          tenant_id?: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendas_online_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendas_online_webhook_log: {
+        Row: {
+          billing_id: string | null
+          created_at: string
+          erro: string | null
+          event: string | null
+          id: string
+          payload: Json | null
+          processado: boolean
+          tenant_id: string | null
+        }
+        Insert: {
+          billing_id?: string | null
+          created_at?: string
+          erro?: string | null
+          event?: string | null
+          id?: string
+          payload?: Json | null
+          processado?: boolean
+          tenant_id?: string | null
+        }
+        Update: {
+          billing_id?: string | null
+          created_at?: string
+          erro?: string | null
+          event?: string | null
+          id?: string
+          payload?: Json | null
+          processado?: boolean
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendas_online_webhook_log_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

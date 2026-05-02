@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug } from "lucide-react";
+import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug, Webhook, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;

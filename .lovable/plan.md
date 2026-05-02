@@ -1,86 +1,61 @@
-## Problema
+## Chamado Vendas Online — Tabela editável estilo Excel
 
-Erro `new row violates row-level security policy for table "tenants"` ao criar empresa em `/empresas`.
+Criar um novo módulo onde o usuário gerencia itens em uma tabela inline-editable (parecida com Excel/Google Sheets), com persistência por tenant no Lovable Cloud.
 
-### Causa raiz
+### Colunas
 
-A política RLS de INSERT da tabela `tenants` exige que o usuário tenha role `admin_master` **OU** `admin_tenant`:
+- **ID** — auto-incrementado por tenant (1, 2, 3…), somente leitura
+- **Descrição** — texto livre, editável inline
+- **Valor** — numérico (R$), editável inline com máscara BRL
+- **Status** — dropdown inline: `disponível` | `vendido`
 
-```
-admins_can_create_tenants  | INSERT  | WITH CHECK (
-  has_role(auth.uid(), 'admin_master') OR has_role(auth.uid(), 'admin_tenant')
-)
-```
+### UX (Excel-like)
 
-Verifiquei o banco: **só existe 1 registro em `user_roles`** (seu usuário, com `admin_tenant`). Ou seja, a política deveria permitir o seu insert.
+- Toda célula editável ao clicar (ou duplo clique); `Enter` salva e desce para a próxima linha; `Tab` salva e vai para a próxima coluna; `Esc` cancela.
+- Auto-save por célula (debounce ~500ms) — sem botão "Salvar" por linha.
+- Linha vazia permanente no fim ("nova linha"): ao digitar nela cria-se um novo registro automaticamente.
+- Botão "Nova linha" e "Excluir" (ícone lixeira por linha, com confirmação rápida).
+- Filtro por status + busca por descrição no topo.
+- Totalizador no rodapé: contagem por status + soma de "Valor" dos disponíveis e dos vendidos.
+- Badges coloridos para status (verde = disponível, cinza = vendido).
 
-Porém, há um problema secundário na sequência de criação em `src/pages/Empresa.tsx` (linhas 858-883): após criar o tenant, o código tenta inserir em `user_tenants`, mas **não copia as roles do usuário para o novo tenant**. Como o seu role `admin_tenant` está vinculado ao tenant atual via `profiles.tenant_id`, ao trocar de tenant você perde permissões. Isso pode estar gerando o erro em casos específicos (ex.: usuário sem role efetiva quando o `profile.tenant_id` foi resetado).
+### Backend (Lovable Cloud)
 
-Mais importante: precisamos **garantir** que admins consigam criar empresas e que o criador receba automaticamente o role `admin_tenant` no novo tenant.
-
-## Plano de correção
-
-### 1. Validar pré-condição no front (UX)
-Em `src/pages/Empresa.tsx` (botão "Nova Empresa") e `src/components/TenantSwitcherHeader.tsx` (item "Nova empresa"):
-- Antes de chamar o insert, checar `hasRole("admin_tenant") || hasRole("admin_master")`. Se falso, exibir toast claro: "Apenas administradores podem criar novas empresas".
-
-### 2. Centralizar criação numa Edge Function `criar-tenant`
-Mover o fluxo de criação para uma edge function com `SUPABASE_SERVICE_ROLE_KEY` (bypass RLS), que executa atomicamente:
+Nova tabela `chamado_denis_itens`:
 
 ```text
-1. Verifica JWT do chamador → obtém user_id
-2. Verifica que o user tem role admin_tenant OU admin_master
-3. INSERT em tenants (nome)
-4. INSERT em user_tenants (user_id, tenant_id)
-5. INSERT em user_roles (user_id, role='admin_tenant') para o NOVO tenant
-   (se o schema permitir role por tenant; senão garante o role global)
-6. UPDATE profiles SET tenant_id = novo_tenant_id WHERE id = user_id
-   (opcional — fazer "switch" automático)
-7. Retorna { tenant_id, nome }
+id              uuid pk
+tenant_id       uuid not null  → FK lógico tenants
+numero          int  not null  → ID visível, sequencial por tenant
+descricao       text
+valor           numeric(12,2) default 0
+status          text default 'disponivel'  (check: 'disponivel'|'vendido')
+created_at      timestamptz default now()
+updated_at      timestamptz default now()
+unique (tenant_id, numero)
 ```
 
-Vantagens:
-- Elimina race condition entre os 2 inserts atuais.
-- Garante que o criador sempre tem `admin_tenant` no novo tenant.
-- Mensagens de erro coerentes vindas do backend.
+- Trigger `BEFORE INSERT` para preencher `numero = COALESCE(MAX(numero),0)+1` por tenant.
+- Trigger `BEFORE UPDATE` para atualizar `updated_at`.
+- RLS habilitada com políticas seguindo o padrão do projeto:
+  - SELECT/INSERT/UPDATE/DELETE permitidos quando `tenant_id = (select tenant_id from profiles where id = auth.uid())` OU `has_role(auth.uid(),'admin_master')`.
 
-### 3. Atualizar front para chamar a função
-Substituir os blocos de `supabase.from("tenants").insert(...)` em:
-- `src/pages/Empresa.tsx` (linhas 858-883)
-- `src/components/TenantSwitcherHeader.tsx` (linhas 38-58)
+### Rota e navegação
 
-por:
-```ts
-const { data, error } = await supabase.functions.invoke("criar-tenant", {
-  body: { nome: newTenantName.trim() }
-});
-```
+- Rota: `/chamado-denis` em `src/App.tsx` (protegida).
+- Item no `AppSidebar` com ícone `ClipboardList` (lucide), visível para todos os usuários autenticados do tenant.
 
-Após sucesso: mostrar toast, fechar dialog e recarregar (ou trocar para o novo tenant).
+### Arquivos a criar/editar
 
-### 4. Manter política RLS atual
-A política `admins_can_create_tenants` continua válida como defesa em profundidade. A edge function usa service role, então não depende dela, mas se algum dia a função cair, a política ainda bloqueia inserts indevidos.
+- `supabase/migrations/<timestamp>_chamado_denis.sql` — tabela, triggers, RLS.
+- `src/pages/ChamadoDenis.tsx` — página com a tabela editável.
+- `src/components/chamado-denis/EditableCell.tsx` — célula genérica (texto/número/select) com handlers de teclado.
+- `src/App.tsx` — registrar a rota.
+- `src/components/AppSidebar.tsx` — adicionar item de menu.
 
-### 5. Diagnóstico inicial (executado já no início)
-Antes de implementar, vou confirmar via query qual o `auth.uid()` retornado e qual `tenant_id` está atualmente no `profile` do usuário, para descartar que o erro venha de sessão expirada / profile sem tenant.
+### Detalhes técnicos
 
-## Detalhes técnicos
-
-**Arquivos a modificar:**
-- `supabase/functions/criar-tenant/index.ts` (novo)
-- `supabase/config.toml` (registrar função com `verify_jwt = true`)
-- `src/pages/Empresa.tsx` (botão criar empresa)
-- `src/components/TenantSwitcherHeader.tsx` (item nova empresa)
-
-**Permissões verificadas:**
-- `admins_can_create_tenants` → INSERT permitido para `admin_master` / `admin_tenant` ✓
-- Service role bypassa RLS para garantir atomicidade ✓
-
-## Resultado esperado
-
-Ao clicar em "Nova Empresa" como admin:
-1. Empresa é criada com sucesso
-2. Você é vinculado a ela em `user_tenants`
-3. Você recebe role `admin_tenant` na nova empresa
-4. (Opcional) Troca automática para a nova empresa
-5. Recarrega a página mostrando a empresa criada na lista
+- shadcn `Table` + inputs nativos para edição inline (mais leve que libs externas).
+- `valor` formatado como BRL na exibição; em edição vira input `type="number"` com 2 decimais.
+- Realtime opcional (postgres_changes) para refletir mudanças entre abas — manter desligado no MVP.
+- Validação com zod antes do upsert (descricao ≤ 500 chars, valor ≥ 0, status ∈ enum).

@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   ChevronsUpDown,
   BarChart3,
+  ClipboardList,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -47,6 +48,7 @@ const mainItems = [
   { title: "Giftback", url: "/giftback", icon: Gift },
   { title: "Base de Conhecimento", url: "/conhecimento", icon: BookOpen },
   { title: "Peça Rara", url: "/peca-rara", icon: ShoppingBag },
+  { title: "Chamado Denis Online", url: "/chamado-denis", icon: ClipboardList },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
 

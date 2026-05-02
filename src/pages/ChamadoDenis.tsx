@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 type Item = {
@@ -25,6 +26,17 @@ type Item = {
   pagador_cel: string | null;
   pagador_tax_id: string | null;
   pago_em: string | null;
+  forma_pagamento: string | null;
+  local_id: string | null;
+  entregue: boolean;
+  entregue_em: string | null;
+};
+
+type Local = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
 };
 
 type CellKey = `${string}-${"descricao" | "valor" | "status"}`;

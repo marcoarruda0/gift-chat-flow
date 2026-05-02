@@ -308,6 +308,8 @@ export type Database = {
       chamado_denis_itens: {
         Row: {
           abacate_billing_id: string | null
+          abacate_product_external_id: string | null
+          abacate_product_id: string | null
           abacate_status: string | null
           abacate_url: string | null
           created_at: string
@@ -327,6 +329,8 @@ export type Database = {
         }
         Insert: {
           abacate_billing_id?: string | null
+          abacate_product_external_id?: string | null
+          abacate_product_id?: string | null
           abacate_status?: string | null
           abacate_url?: string | null
           created_at?: string
@@ -346,6 +350,8 @@ export type Database = {
         }
         Update: {
           abacate_billing_id?: string | null
+          abacate_product_external_id?: string | null
+          abacate_product_id?: string | null
           abacate_status?: string | null
           abacate_url?: string | null
           created_at?: string
@@ -1944,6 +1950,7 @@ export type Database = {
       vendas_online_config: {
         Row: {
           abacate_api_key: string | null
+          api_version: number
           created_at: string
           dev_mode: boolean
           tenant_id: string
@@ -1952,6 +1959,7 @@ export type Database = {
         }
         Insert: {
           abacate_api_key?: string | null
+          api_version?: number
           created_at?: string
           dev_mode?: boolean
           tenant_id: string
@@ -1960,6 +1968,7 @@ export type Database = {
         }
         Update: {
           abacate_api_key?: string | null
+          api_version?: number
           created_at?: string
           dev_mode?: boolean
           tenant_id?: string

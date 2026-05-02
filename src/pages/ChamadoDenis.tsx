@@ -216,9 +216,11 @@ export default function ChamadoDenis() {
         body?.error ||
         error.message ||
         "Falha ao gerar link";
-      toast.error(msg, {
-        description: body?.httpStatus ? `HTTP ${body.httpStatus}` : undefined,
-      });
+      const desc = [
+        body?.httpStatus ? `HTTP ${body.httpStatus}` : null,
+        body?.stage ? `etapa: ${body.stage}` : null,
+      ].filter(Boolean).join(" · ");
+      toast.error(msg, { description: desc || undefined });
       console.error("gerar link erro:", { error, body });
       return;
     }
@@ -228,9 +230,11 @@ export default function ChamadoDenis() {
       return;
     }
     if (data?.error) {
-      toast.error(data.message || data.error, {
-        description: data.httpStatus ? `HTTP ${data.httpStatus}` : undefined,
-      });
+      const desc = [
+        data.httpStatus ? `HTTP ${data.httpStatus}` : null,
+        data.stage ? `etapa: ${data.stage}` : null,
+      ].filter(Boolean).join(" · ");
+      toast.error(data.message || data.error, { description: desc || undefined });
       console.error("gerar link payload:", data);
       return;
     }

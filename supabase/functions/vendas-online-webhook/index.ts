@@ -43,17 +43,23 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_json" }, 400);
   }
 
+  // ---- Parse payload v2 ----
+  // { event, apiVersion: 2, data: { checkout: {...}, customer: {...}, payerInformation: {...} } }
   const event: string = payload?.event || payload?.type || "unknown";
-  const data = payload?.data || payload?.billing || payload;
-  const billingId: string | undefined = data?.id || data?.billing?.id;
-  const metadata = data?.metadata || data?.billing?.metadata || payload?.metadata || {};
+  const data = payload?.data ?? {};
+  const checkout = data?.checkout ?? data?.billing ?? data ?? {};
+  const customer = data?.customer ?? checkout?.customer ?? {};
+  const payerInformation = data?.payerInformation ?? {};
+
+  const billingId: string | undefined = checkout?.id;
   const externalId: string | undefined =
-    metadata?.externalId ||
-    data?.externalId ||
-    data?.billing?.externalId ||
-    data?.products?.[0]?.externalId;
+    checkout?.externalId ||
+    checkout?.metadata?.itemId ||
+    data?.externalId;
+  const metadata = checkout?.metadata ?? data?.metadata ?? {};
   const metaTenantId: string | undefined = metadata?.tenantId;
-  const status: string | undefined = data?.status || data?.billing?.status;
+  const metaItemId: string | undefined = metadata?.itemId;
+  const status: string | undefined = checkout?.status;
 
   if (metaTenantId && metaTenantId !== tenantId) {
     await admin.from("vendas_online_webhook_log").insert({
@@ -83,16 +89,20 @@ Deno.serve(async (req) => {
     .single();
 
   try {
+    // ---- Localizar o item ----
     let item: any = null;
-    if (billingId) {
+
+    // 1) por metadata.itemId
+    if (metaItemId) {
       const { data } = await admin
         .from("chamado_denis_itens")
         .select("*")
         .eq("tenant_id", tenantId)
-        .eq("abacate_billing_id", billingId)
+        .eq("id", metaItemId)
         .maybeSingle();
       item = data;
     }
+    // 2) por externalId (= item.id)
     if (!item && externalId) {
       const { data } = await admin
         .from("chamado_denis_itens")
@@ -102,6 +112,17 @@ Deno.serve(async (req) => {
         .maybeSingle();
       item = data;
     }
+    // 3) por billing id já gravado
+    if (!item && billingId) {
+      const { data } = await admin
+        .from("chamado_denis_itens")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("abacate_billing_id", billingId)
+        .maybeSingle();
+      item = data;
+    }
+
     if (!item) {
       await admin
         .from("vendas_online_webhook_log")
@@ -110,15 +131,15 @@ Deno.serve(async (req) => {
       return json({ ok: true, warning: "item_not_found" });
     }
 
-    const customer = data?.customer || data?.payer || data?.billing?.customer || {};
-    const isPaid =
-      event.toLowerCase().includes("paid") ||
-      String(status || "").toUpperCase() === "PAID";
-    const isRefund = event.toLowerCase().includes("refund");
+    // ---- Mapear evento ----
+    const evt = String(event || "").toLowerCase();
+    const isCompleted = evt.includes("completed") || String(status || "").toUpperCase() === "PAID";
+    const isRefund = evt.includes("refund");
+    const isDispute = evt.includes("dispute");
 
     const patch: Record<string, unknown> = {};
     if (status) patch.abacate_status = String(status).toUpperCase();
-    if (isPaid) {
+    if (isCompleted) {
       patch.abacate_status = "PAID";
       patch.status = "vendido";
       patch.pago_em = new Date().toISOString();
@@ -127,12 +148,38 @@ Deno.serve(async (req) => {
       patch.abacate_status = "REFUNDED";
       patch.status = "disponivel";
     }
-    if (customer?.name) patch.pagador_nome = String(customer.name);
-    if (customer?.email) patch.pagador_email = String(customer.email);
-    if (customer?.cellphone || customer?.phone)
-      patch.pagador_cel = String(customer.cellphone || customer.phone);
-    if (customer?.taxId || customer?.tax_id || customer?.document)
-      patch.pagador_tax_id = String(customer.taxId || customer.tax_id || customer.document);
+    if (isDispute) {
+      patch.abacate_status = "DISPUTED";
+    }
+
+    // ---- Dados do pagador (v2: data.customer + payerInformation) ----
+    const payerByMethod =
+      payerInformation?.PIX || payerInformation?.CARD || payerInformation?.BOLETO || {};
+
+    const pagadorNome =
+      customer?.name ||
+      payerByMethod?.name ||
+      null;
+    const pagadorEmail =
+      customer?.email ||
+      payerByMethod?.email ||
+      null;
+    const pagadorTaxId =
+      customer?.taxId ||
+      customer?.tax_id ||
+      payerByMethod?.taxId ||
+      null;
+    const pagadorCel =
+      customer?.cellphone ||
+      customer?.phone ||
+      payerByMethod?.cellphone ||
+      payerByMethod?.phone ||
+      null;
+
+    if (pagadorNome) patch.pagador_nome = String(pagadorNome);
+    if (pagadorEmail) patch.pagador_email = String(pagadorEmail);
+    if (pagadorTaxId) patch.pagador_tax_id = String(pagadorTaxId);
+    if (pagadorCel) patch.pagador_cel = String(pagadorCel);
 
     if (Object.keys(patch).length > 0) {
       await admin.from("chamado_denis_itens").update(patch).eq("id", item.id);
@@ -148,7 +195,7 @@ Deno.serve(async (req) => {
     console.error("webhook error", e);
     await admin
       .from("vendas_online_webhook_log")
-      .update({ erro: String(e?.message || e) })
+      .update({ erro: String((e as any)?.message || e) })
       .eq("id", logRow!.id);
     return json({ error: "internal" }, 500);
   }

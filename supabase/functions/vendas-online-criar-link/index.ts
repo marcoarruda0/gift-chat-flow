@@ -81,7 +81,6 @@ Deno.serve(async (req) => {
       methods: ["PIX"],
       products: [
         {
-          externalId: item.id,
           name: `Item #${item.numero}`,
           description: (item.descricao || "Venda Online").slice(0, 200),
           quantity: 1,
@@ -90,7 +89,10 @@ Deno.serve(async (req) => {
       ],
       returnUrl: completionUrl,
       completionUrl: completionUrl,
-      externalId: item.id,
+      metadata: {
+        externalId: item.id,
+        tenantId: tenantId,
+      },
     };
 
     const ab = await fetch("https://api.abacatepay.com/v1/billing/create", {

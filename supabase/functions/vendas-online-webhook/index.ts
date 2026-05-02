@@ -46,9 +46,21 @@ Deno.serve(async (req) => {
   const event: string = payload?.event || payload?.type || "unknown";
   const data = payload?.data || payload?.billing || payload;
   const billingId: string | undefined = data?.id || data?.billing?.id;
+  const metadata = data?.metadata || data?.billing?.metadata || payload?.metadata || {};
   const externalId: string | undefined =
-    data?.externalId || data?.metadata?.externalId || data?.billing?.externalId;
+    metadata?.externalId ||
+    data?.externalId ||
+    data?.billing?.externalId ||
+    data?.products?.[0]?.externalId;
+  const metaTenantId: string | undefined = metadata?.tenantId;
   const status: string | undefined = data?.status || data?.billing?.status;
+
+  if (metaTenantId && metaTenantId !== tenantId) {
+    await admin.from("vendas_online_webhook_log").insert({
+      tenant_id: tenantId, event, billing_id: billingId, payload, erro: "tenant_mismatch",
+    });
+    return json({ error: "tenant_mismatch" }, 403);
+  }
 
   // dedup
   if (billingId) {

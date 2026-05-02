@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Copy, Loader2, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug } from "lucide-react";
 import { toast } from "sonner";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
@@ -26,6 +26,8 @@ export default function VendasOnlineConfig() {
   const [devMode, setDevMode] = useState(true);
   const [secret, setSecret] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; mode?: string } | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -65,6 +67,23 @@ export default function VendasOnlineConfig() {
   };
 
   const generateSecret = () => setSecret(randomSecret(24));
+
+  const testarConexao = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("vendas-online-testar-chave");
+      if (error) {
+        setTestResult({ ok: false, message: error.message || "Erro ao testar chave" });
+      } else {
+        setTestResult(data as any);
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.message || "Erro inesperado" });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const webhookUrl =
     tenantId && secret
@@ -129,6 +148,31 @@ export default function VendasOnlineConfig() {
               <p className="text-sm text-muted-foreground">Use chave de teste enquanto valida a integração.</p>
             </div>
             <Switch checked={devMode} onCheckedChange={setDevMode} />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="outline" onClick={testarConexao} disabled={testing || !apiKey}>
+              {testing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plug className="h-4 w-4 mr-2" />}
+              Testar conexão
+            </Button>
+            {testResult && (
+              <div
+                className={`flex items-center gap-2 text-sm ${
+                  testResult.ok ? "text-green-600" : "text-destructive"
+                }`}
+              >
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                <span>
+                  {testResult.ok
+                    ? `Chave válida${testResult.mode ? ` (modo ${testResult.mode})` : ""}`
+                    : testResult.message}
+                </span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

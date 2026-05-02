@@ -25,6 +25,7 @@ import Conhecimento from "@/pages/Conhecimento";
 import IAConfig from "@/pages/IAConfig";
 import Empresa from "@/pages/Empresa";
 import PecaRara from "@/pages/PecaRara";
+import ChamadoDenis from "@/pages/ChamadoDenis";
 import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import RelatorioGiftback from "@/pages/RelatorioGiftback";
 import Relatorios from "@/pages/Relatorios";

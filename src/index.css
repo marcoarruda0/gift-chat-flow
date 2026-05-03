@@ -109,3 +109,16 @@
     background: white; color: black; z-index: 9999;
   }
 }
+
+@media print {
+  body.printing-comprovante * { visibility: hidden !important; }
+  body.printing-comprovante #comprovante-print,
+  body.printing-comprovante #comprovante-print * { visibility: visible !important; }
+  body.printing-comprovante #comprovante-print {
+    position: fixed !important;
+    left: 0; top: 0; width: 100%;
+    background: white !important;
+    color: black !important;
+    z-index: 9999;
+  }
+}

@@ -133,6 +133,25 @@ export default function ChamadoDenis() {
     if (error) { toast.error("Erro ao alocar local"); load(); }
   };
 
+  const logEntrega = async (
+    item: Item,
+    acao: "entregue" | "desfeito",
+    payload?: EntregaPayload,
+  ) => {
+    if (!tenantId) return;
+    await (supabase as any).from("chamado_denis_entregas_log").insert({
+      tenant_id: tenantId,
+      item_id: item.id,
+      acao,
+      usuario_id: profile?.id ?? null,
+      usuario_nome: (profile as any)?.nome ?? (profile as any)?.email ?? null,
+      retirante_proprio: payload ? payload.proprio : null,
+      retirante_nome: payload ? payload.nome : null,
+      retirante_doc: payload ? payload.doc : null,
+      assinatura: payload ? payload.assinatura : null,
+    });
+  };
+
   const confirmarEntrega = async (item: Item, payload: EntregaPayload) => {
     const patch = {
       entregue: true,
@@ -146,7 +165,7 @@ export default function ChamadoDenis() {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
     if (error) { toast.error("Erro ao confirmar entrega"); load(); }
-    else toast.success("Entrega confirmada");
+    else { toast.success("Entrega confirmada"); logEntrega(item, "entregue", payload); }
   };
 
   const desfazerEntrega = async (item: Item) => {
@@ -162,7 +181,7 @@ export default function ChamadoDenis() {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
     if (error) { toast.error("Erro ao desfazer entrega"); load(); }
-    else toast.success("Entrega desfeita");
+    else { toast.success("Entrega desfeita"); logEntrega(item, "desfeito"); }
   };
 
   const vendidos = useMemo(() => {

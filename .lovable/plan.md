@@ -1,75 +1,110 @@
-## Problema 1 — Não consegue acessar "Produtos vendidos"
+## Objetivo
 
-A seção existe em `src/pages/ChamadoDenis.tsx` (página Vendas Online), mas como você está no viewport **mobile (375px)** e ela é renderizada como `<Table>` larga após a tabela principal + KPIs, ela:
-- fica empurrada para fora do scroll vertical inicial; e
-- estoura horizontalmente sem wrapper de scroll, ficando "cortada".
+Refinar a página **Vendas Online** (`src/pages/ChamadoDenis.tsx`) com 3 melhorias: (1) seções colapsáveis e remoção do layout em cards, (2) comprovante de entrega imprimível/PDF, (3) histórico de auditoria de entregas.
 
-**Correções:**
-- Envolver a tabela "Produtos vendidos" em `div.overflow-x-auto` (igual à tabela principal).
-- Em telas `<md`, renderizar **cards** (1 por item) em vez da tabela, com os mesmos campos (ID, descrição, valor, forma pgto, cliente+CPF, dropdown de Local, status entregue e botão de entrega). Mantém a tabela em desktop.
-- Adicionar âncora `#vendidos` + botão de atalho no topo ("Ir para vendidos") para facilitar acesso.
+---
 
-## Problema 2 — Fluxo de confirmação de entrega
+## 1. Seções colapsáveis + tabela única em "Produtos vendidos"
 
-Hoje o ícone `PackageCheck` é um toggle direto. Vamos transformá-lo em um **diálogo de confirmação** que registra **quem retirou** e **assinatura**.
+Usar `Collapsible` (`@/components/ui/collapsible.tsx`, já existente) para agrupar três blocos da página:
 
-### 2.1 Banco de dados (migration)
-
-Novas colunas em `chamado_denis_itens`:
-| Coluna | Tipo | Notas |
-|---|---|---|
-| `entregue_para_proprio` | boolean nullable | true = retirado pelo próprio comprador |
-| `entregue_para_nome` | text nullable | nome de quem retirou (se outra pessoa) |
-| `entregue_para_doc` | text nullable | CPF/RG de quem retirou (opcional) |
-| `entregue_assinatura` | text nullable | data URL PNG (base64) da assinatura |
-
-Sem mudança em RLS (já cobertas pelas policies existentes da tabela).
-
-### 2.2 UI — novo componente `ConfirmarEntregaDialog`
-
-Arquivo: `src/components/vendas-online/ConfirmarEntregaDialog.tsx`.
-
-Conteúdo do diálogo:
-- Cabeçalho: "Confirmar entrega — Item #N — {descricao}"
-- Resumo do comprador (Nome + CPF) em destaque.
-- **Radio group** "Quem está retirando?":
-  - `Próprio comprador ({pagador_nome})` (default)
-  - `Outra pessoa`
-- Se "Outra pessoa":
-  - Input **Nome de quem está retirando** (obrigatório)
-  - Input **Documento (CPF/RG)** (opcional)
-- **Pad de assinatura** (obrigatório):
-  - `<canvas>` ~320x140 com captura de pointer/touch (sem dependência nova).
-  - Botões: "Limpar".
-  - Validação: precisa ter ≥ N traços antes de confirmar.
-- Botões do rodapé: "Cancelar" / "Confirmar entrega" (desabilitado até validar).
-
-Ao confirmar:
-```ts
-await supabase.from("chamado_denis_itens").update({
-  entregue: true,
-  entregue_em: new Date().toISOString(),
-  entregue_por: profile.id,
-  entregue_para_proprio: proprio,
-  entregue_para_nome: proprio ? null : nome.trim(),
-  entregue_para_doc:   proprio ? null : (doc.trim() || null),
-  entregue_assinatura: canvas.toDataURL("image/png"),
-}).eq("id", item.id);
+```
+[▾] Vendas online (tabela principal + KPIs + filtros)
+[▾] Produtos vendidos (filtros + tabela)
+[▾] Locais (cadastro + lista)
 ```
 
-### 2.3 Mudanças em `ChamadoDenis.tsx`
-- Substituir `toggleEntregue` por:
-  - Se `!item.entregue` → abre `ConfirmarEntregaDialog`.
-  - Se `item.entregue` → abre `AlertDialog` "Desfazer entrega?" (limpa todos os campos de entrega + assinatura).
-- Coluna **Entregue?**: ao clicar no badge "Sim", abre um `Popover`/`Dialog` somente leitura mostrando: data, quem registrou, quem retirou (próprio/outro + nome/doc) e thumbnail da assinatura.
-- Atualizar `Item` type e `SELECT_COLS` com as 4 novas colunas.
+- Cabeçalho de cada grupo: ícone chevron + título + contador (ex.: "Produtos vendidos · 12").
+- Estado de abertura persistido em `localStorage` (`vendas-online:groups`) para não fechar a cada reload.
+- Padrão inicial: todos abertos.
+
+Em "Produtos vendidos":
+- **Remover** o bloco mobile de cards (`md:hidden`).
+- Manter apenas `<Table>` para todas as larguras, dentro de `div.overflow-x-auto` (já existe). Em telas estreitas o usuário rola horizontalmente — comportamento padrão do resto da página.
+- Reduzir paddings e usar truncate em colunas longas (Descrição, Cliente) para melhor densidade.
+
+---
+
+## 2. Comprovante de entrega (visualizar + imprimir/PDF)
+
+### 2.1 Componente `ComprovanteEntregaDialog`
+
+Novo arquivo: `src/components/vendas-online/ComprovanteEntregaDialog.tsx`.
+
+- Recebe `item: Item` e dados do tenant (nome, opcional).
+- Renderiza em um `<Dialog>` o **comprovante formatado** (HTML imprimível):
+  - Cabeçalho: "Comprovante de Entrega — Vendas Online"
+  - Dados do produto: #ID, descrição, valor, forma de pagamento.
+  - Dados do comprador: nome, CPF, email, telefone, data do pagamento.
+  - Dados da retirada: data/hora da entrega, "Quem retirou" (próprio comprador / outra pessoa + nome + doc), usuário do sistema que registrou.
+  - Imagem da assinatura (`<img src={item.entregue_assinatura}>`).
+  - Rodapé: data de emissão.
+- Botões:
+  - **Imprimir** — `window.print()` aplicado a um wrapper com `id="comprovante-print"`. CSS global `@media print` (em `src/index.css`) oculta tudo exceto `#comprovante-print`.
+  - **Baixar PDF** — gerar via `html2canvas` + `jsPDF` (instalar dependências). Captura o nó do comprovante e exporta `comprovante-entrega-{numero}.pdf`.
+  - **Fechar**.
+
+### 2.2 Integração
+
+Na coluna "Entregue?" da tabela de vendidos, quando `item.entregue === true`:
+- Manter o badge "Sim" clicável (abre `ComprovanteEntregaDialog`, substitui o `verEntregaItem` atual).
+- Adicionar um botão extra `Printer` (lucide) ao lado da coluna de ações: abre direto o comprovante.
+
+Reutilizar o componente também na visualização atual de "ver entrega" (substituir o `Dialog` simples de assinatura existente).
+
+### Dependências a adicionar
+- `jspdf`
+- `html2canvas`
+
+---
+
+## 3. Histórico/auditoria de entregas
+
+### 3.1 Migration
+
+Nova tabela `chamado_denis_entregas_log`:
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| id | uuid PK default gen_random_uuid() | |
+| tenant_id | uuid not null | |
+| item_id | uuid not null | sem FK (mesmo padrão do projeto) |
+| acao | text not null | `entregue` ou `desfeito` |
+| usuario_id | uuid | quem disparou (auth.uid) |
+| usuario_nome | text | snapshot do nome do profile |
+| retirante_proprio | boolean | snapshot |
+| retirante_nome | text | snapshot |
+| retirante_doc | text | snapshot |
+| assinatura | text | snapshot do data URL |
+| created_at | timestamptz default now() | |
+
+**RLS** (mesmo padrão das outras tabelas do módulo):
+- SELECT: `tenant_id = get_user_tenant_id(auth.uid()) OR has_role(auth.uid(),'admin_master')`
+- INSERT: idem (with check).
+- Sem UPDATE/DELETE para usuários comuns (log imutável).
+
+### 3.2 Escrita do log
+
+Em `confirmarEntrega` e `desfazerEntrega` (`ChamadoDenis.tsx`), após o `update` bem-sucedido, inserir uma linha em `chamado_denis_entregas_log` com `acao = "entregue" | "desfeito"` e snapshot dos dados do payload + `profile.nome`.
+
+### 3.3 UI — visualização do histórico
+
+No `ComprovanteEntregaDialog`, adicionar uma aba/seção **"Histórico"**:
+- Lista cronológica (desc) das ações daquele `item_id`.
+- Cada linha: data/hora, usuário, ação (badge), retirante.
+- Carregada sob demanda quando o diálogo abre.
+
+---
 
 ## Arquivos afetados
-- `supabase/migrations/<novo>.sql` — 4 colunas em `chamado_denis_itens`
-- `src/components/vendas-online/ConfirmarEntregaDialog.tsx` *(novo)*
-- `src/pages/ChamadoDenis.tsx` — wrapper scroll + cards mobile + integração do diálogo + visualização da assinatura
 
-## Fora de escopo (próximo prompt, se quiser)
-- Geração de comprovante PDF da entrega
-- Notificação automática ao comprador quando entrega é confirmada
-- Upload da assinatura para Storage (por ora fica como data URL na coluna `text`; aceitável para assinaturas pequenas)
+- `src/pages/ChamadoDenis.tsx` — Collapsibles, remoção dos cards mobile, escrita no log, integração com novo diálogo.
+- `src/components/vendas-online/ComprovanteEntregaDialog.tsx` *(novo)* — comprovante imprimível + PDF + histórico.
+- `src/index.css` — regras `@media print` para `#comprovante-print`.
+- `supabase/migrations/<novo>.sql` — tabela `chamado_denis_entregas_log` + policies.
+- `package.json` — dependências `jspdf`, `html2canvas`.
+
+## Fora de escopo (próximos prompts)
+- Envio automático do comprovante por WhatsApp/Email ao comprador.
+- Exportar todo o histórico de entregas em CSV.
+- Filtro/listagem global de auditoria fora do contexto do item.

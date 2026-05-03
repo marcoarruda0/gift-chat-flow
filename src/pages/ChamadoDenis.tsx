@@ -8,15 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package } from "lucide-react";
+import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package, ChevronDown, Printer, ShoppingCart } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { ConfirmarEntregaDialog, EntregaPayload } from "@/components/vendas-online/ConfirmarEntregaDialog";
+import { ComprovanteEntregaDialog } from "@/components/vendas-online/ComprovanteEntregaDialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type Item = {
   id: string;
@@ -79,6 +80,18 @@ export default function ChamadoDenis() {
   const [entregaItem, setEntregaItem] = useState<Item | null>(null);
   const [desfazerItem, setDesfazerItem] = useState<Item | null>(null);
   const [verEntregaItem, setVerEntregaItem] = useState<Item | null>(null);
+  const [openGroups, setOpenGroups] = useState<{ vendas: boolean; vendidos: boolean; locais: boolean }>(() => {
+    try {
+      const raw = localStorage.getItem("vendas-online:groups");
+      if (raw) return { vendas: true, vendidos: true, locais: true, ...JSON.parse(raw) };
+    } catch { /* ignore */ }
+    return { vendas: true, vendidos: true, locais: true };
+  });
+  const toggleGroup = (k: "vendas" | "vendidos" | "locais") => setOpenGroups(prev => {
+    const next = { ...prev, [k]: !prev[k] };
+    try { localStorage.setItem("vendas-online:groups", JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
 
   const loadLocais = useCallback(async () => {
     if (!tenantId) return;
@@ -132,6 +145,25 @@ export default function ChamadoDenis() {
     if (error) { toast.error("Erro ao alocar local"); load(); }
   };
 
+  const logEntrega = async (
+    item: Item,
+    acao: "entregue" | "desfeito",
+    payload?: EntregaPayload,
+  ) => {
+    if (!tenantId) return;
+    await (supabase as any).from("chamado_denis_entregas_log").insert({
+      tenant_id: tenantId,
+      item_id: item.id,
+      acao,
+      usuario_id: profile?.id ?? null,
+      usuario_nome: (profile as any)?.nome ?? (profile as any)?.email ?? null,
+      retirante_proprio: payload ? payload.proprio : null,
+      retirante_nome: payload ? payload.nome : null,
+      retirante_doc: payload ? payload.doc : null,
+      assinatura: payload ? payload.assinatura : null,
+    });
+  };
+
   const confirmarEntrega = async (item: Item, payload: EntregaPayload) => {
     const patch = {
       entregue: true,
@@ -145,7 +177,7 @@ export default function ChamadoDenis() {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
     if (error) { toast.error("Erro ao confirmar entrega"); load(); }
-    else toast.success("Entrega confirmada");
+    else { toast.success("Entrega confirmada"); logEntrega(item, "entregue", payload); }
   };
 
   const desfazerEntrega = async (item: Item) => {
@@ -161,7 +193,7 @@ export default function ChamadoDenis() {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     const { error } = await supabase.from("chamado_denis_itens").update(patch).eq("id", item.id);
     if (error) { toast.error("Erro ao desfazer entrega"); load(); }
-    else toast.success("Entrega desfeita");
+    else { toast.success("Entrega desfeita"); logEntrega(item, "desfeito"); }
   };
 
   const vendidos = useMemo(() => {
@@ -451,6 +483,14 @@ export default function ChamadoDenis() {
           </div>
         </div>
 
+        <Collapsible open={openGroups.vendas} onOpenChange={() => toggleGroup("vendas")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.vendas ? "" : "-rotate-90")} />
+            <ShoppingCart className="h-4 w-4" />
+            <span className="font-semibold">Vendas online</span>
+            <Badge variant="outline" className="ml-1">{items.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
         <div className="flex gap-3 flex-wrap items-center">
           <Input
             placeholder="Buscar por descrição ou ID..."
@@ -674,15 +714,19 @@ export default function ChamadoDenis() {
             <p className="text-2xl font-bold">{brl(totals.somaVend)}</p>
           </div>
         </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* ===== Produtos vendidos ===== */}
-        <div className="space-y-3 pt-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2"><Package className="h-5 w-5" /> Produtos vendidos</h2>
-              <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
-            </div>
-          </div>
+        <Collapsible open={openGroups.vendidos} onOpenChange={() => toggleGroup("vendidos")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.vendidos ? "" : "-rotate-90")} />
+            <Package className="h-4 w-4" />
+            <span className="font-semibold">Produtos vendidos</span>
+            <Badge variant="outline" className="ml-1">{vendidos.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
 
           <div className="flex gap-3 flex-wrap items-center">
             <Input placeholder="Buscar por cliente, CPF, descrição..." value={buscaVendidos} onChange={(e) => setBuscaVendidos(e.target.value)} className="w-full sm:max-w-xs" />
@@ -706,8 +750,7 @@ export default function ChamadoDenis() {
             </Select>
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden md:block rounded-lg border bg-card overflow-x-auto">
+          <div className="rounded-lg border bg-card overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -719,7 +762,7 @@ export default function ChamadoDenis() {
                   <TableHead>Cliente</TableHead>
                   <TableHead className="w-48">Local</TableHead>
                   <TableHead className="w-28">Entregue?</TableHead>
-                  <TableHead className="w-16" />
+                  <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -771,76 +814,34 @@ export default function ChamadoDenis() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}>
-                            <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{item.entregue ? "Desfazer entrega" : "Confirmar entrega"}</TooltipContent>
-                      </Tooltip>
+                      <div className="flex items-center gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}>
+                              <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{item.entregue ? "Desfazer entrega" : "Confirmar entrega"}</TooltipContent>
+                        </Tooltip>
+                        {item.entregue && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setVerEntregaItem(item)}>
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Comprovante de entrega (imprimir / PDF)</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-3">
-            {vendidos.length === 0 ? (
-              <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum produto vendido encontrado.</div>
-            ) : vendidos.map((item) => (
-              <div key={item.id} className="rounded-lg border bg-card p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground font-mono">#{item.numero}</div>
-                    <div className="font-medium text-sm break-words">{item.descricao}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-semibold">{brl(Number(item.valor || 0))}</div>
-                    {item.forma_pagamento && <Badge variant="outline" className="text-[10px] mt-1">{item.forma_pagamento}</Badge>}
-                  </div>
-                </div>
-                <div className="text-xs">
-                  <div className="font-medium">{item.pagador_nome || <span className="text-muted-foreground italic">Sem nome</span>}</div>
-                  {item.pagador_tax_id && <div className="text-muted-foreground">CPF: {item.pagador_tax_id}</div>}
-                  {item.pagador_cel && <div className="text-muted-foreground">Tel: {item.pagador_cel}</div>}
-                </div>
-                <div>
-                  <div className="text-[11px] text-muted-foreground mb-1">Local</div>
-                  <Select value={item.local_id ?? "__none__"} onValueChange={(v) => setItemLocal(item, v === "__none__" ? null : v)}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="— sem local —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— sem local —</SelectItem>
-                      {locais.filter(l => l.ativo || l.id === item.local_id).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  {item.entregue ? (
-                    <button type="button" onClick={() => setVerEntregaItem(item)} className="text-left">
-                      <Badge className="bg-green-600 hover:bg-green-700">Entregue</Badge>
-                      {item.entregue_em && <div className="text-[10px] text-muted-foreground">{new Date(item.entregue_em).toLocaleString("pt-BR")}</div>}
-                    </button>
-                  ) : (
-                    <Badge variant="outline">Aguardando entrega</Badge>
-                  )}
-                  <Button
-                    size="sm"
-                    variant={item.entregue ? "outline" : "default"}
-                    onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}
-                  >
-                    <PackageCheck className="h-4 w-4 mr-1" />
-                    {item.entregue ? "Desfazer" : "Entregar"}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* ===== Dialogs de entrega ===== */}
         {entregaItem && (
@@ -872,48 +873,22 @@ export default function ChamadoDenis() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <Dialog open={!!verEntregaItem} onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Comprovante de entrega — #{verEntregaItem?.numero}</DialogTitle>
-              <DialogDescription className="truncate">{verEntregaItem?.descricao}</DialogDescription>
-            </DialogHeader>
-            {verEntregaItem && (
-              <div className="space-y-3 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Entregue em</div>
-                  <div>{verEntregaItem.entregue_em ? new Date(verEntregaItem.entregue_em).toLocaleString("pt-BR") : "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Quem retirou</div>
-                  {verEntregaItem.entregue_para_proprio === false ? (
-                    <div>
-                      <div>{verEntregaItem.entregue_para_nome || "—"}</div>
-                      {verEntregaItem.entregue_para_doc && <div className="text-xs text-muted-foreground">Doc: {verEntregaItem.entregue_para_doc}</div>}
-                    </div>
-                  ) : (
-                    <div>Próprio comprador {verEntregaItem.pagador_nome ? `(${verEntregaItem.pagador_nome})` : ""}</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1">Assinatura</div>
-                  {verEntregaItem.entregue_assinatura ? (
-                    <img src={verEntregaItem.entregue_assinatura} alt="Assinatura" className="rounded-md border bg-background w-full" />
-                  ) : (
-                    <div className="text-muted-foreground text-xs italic">Sem assinatura registrada (entrega legada).</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        <ComprovanteEntregaDialog
+          open={!!verEntregaItem}
+          onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}
+          item={verEntregaItem}
+        />
 
         {/* ===== Locais ===== */}
-        <div className="space-y-3 pt-4">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2"><MapPin className="h-5 w-5" /> Locais</h2>
+        <Collapsible open={openGroups.locais} onOpenChange={() => toggleGroup("locais")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.locais ? "" : "-rotate-90")} />
+            <MapPin className="h-4 w-4" />
+            <span className="font-semibold">Locais</span>
+            <Badge variant="outline" className="ml-1">{locais.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
             <p className="text-sm text-muted-foreground">Cadastre os locais físicos onde os produtos vendidos ficam alocados até a retirada do cliente.</p>
-          </div>
 
           <div className="flex gap-2 max-w-md">
             <Input
@@ -976,7 +951,8 @@ export default function ChamadoDenis() {
               </TableBody>
             </Table>
           </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </TooltipProvider>
   );

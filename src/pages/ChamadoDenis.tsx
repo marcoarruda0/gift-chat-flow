@@ -80,6 +80,18 @@ export default function ChamadoDenis() {
   const [entregaItem, setEntregaItem] = useState<Item | null>(null);
   const [desfazerItem, setDesfazerItem] = useState<Item | null>(null);
   const [verEntregaItem, setVerEntregaItem] = useState<Item | null>(null);
+  const [openGroups, setOpenGroups] = useState<{ vendas: boolean; vendidos: boolean; locais: boolean }>(() => {
+    try {
+      const raw = localStorage.getItem("vendas-online:groups");
+      if (raw) return { vendas: true, vendidos: true, locais: true, ...JSON.parse(raw) };
+    } catch { /* ignore */ }
+    return { vendas: true, vendidos: true, locais: true };
+  });
+  const toggleGroup = (k: "vendas" | "vendidos" | "locais") => setOpenGroups(prev => {
+    const next = { ...prev, [k]: !prev[k] };
+    try { localStorage.setItem("vendas-online:groups", JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
 
   const loadLocais = useCallback(async () => {
     if (!tenantId) return;

@@ -483,6 +483,14 @@ export default function ChamadoDenis() {
           </div>
         </div>
 
+        <Collapsible open={openGroups.vendas} onOpenChange={() => toggleGroup("vendas")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.vendas ? "" : "-rotate-90")} />
+            <ShoppingCart className="h-4 w-4" />
+            <span className="font-semibold">Vendas online</span>
+            <Badge variant="outline" className="ml-1">{items.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
         <div className="flex gap-3 flex-wrap items-center">
           <Input
             placeholder="Buscar por descrição ou ID..."

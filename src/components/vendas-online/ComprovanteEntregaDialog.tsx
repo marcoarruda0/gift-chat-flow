@@ -60,12 +60,12 @@ export function ComprovanteEntregaDialog({
   useEffect(() => {
     if (!open || !item) return;
     setLoadingLogs(true);
-    supabase
-      .from("chamado_denis_entregas_log" as any)
+    (supabase as any)
+      .from("chamado_denis_entregas_log")
       .select("id, acao, usuario_nome, retirante_proprio, retirante_nome, retirante_doc, created_at")
       .eq("item_id", item.id)
       .order("created_at", { ascending: false })
-      .then(({ data }) => {
+      .then(({ data }: { data: LogRow[] | null }) => {
         setLogs((data || []) as LogRow[]);
         setLoadingLogs(false);
       });

@@ -305,6 +305,48 @@ export type Database = {
           },
         ]
       }
+      chamado_denis_entregas_log: {
+        Row: {
+          acao: string
+          assinatura: string | null
+          created_at: string
+          id: string
+          item_id: string
+          retirante_doc: string | null
+          retirante_nome: string | null
+          retirante_proprio: boolean | null
+          tenant_id: string
+          usuario_id: string | null
+          usuario_nome: string | null
+        }
+        Insert: {
+          acao: string
+          assinatura?: string | null
+          created_at?: string
+          id?: string
+          item_id: string
+          retirante_doc?: string | null
+          retirante_nome?: string | null
+          retirante_proprio?: boolean | null
+          tenant_id: string
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Update: {
+          acao?: string
+          assinatura?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string
+          retirante_doc?: string | null
+          retirante_nome?: string | null
+          retirante_proprio?: boolean | null
+          tenant_id?: string
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Relationships: []
+      }
       chamado_denis_itens: {
         Row: {
           abacate_billing_id: string | null

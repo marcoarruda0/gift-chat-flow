@@ -880,11 +880,15 @@ export default function ChamadoDenis() {
         />
 
         {/* ===== Locais ===== */}
-        <div className="space-y-3 pt-4">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2"><MapPin className="h-5 w-5" /> Locais</h2>
+        <Collapsible open={openGroups.locais} onOpenChange={() => toggleGroup("locais")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.locais ? "" : "-rotate-90")} />
+            <MapPin className="h-4 w-4" />
+            <span className="font-semibold">Locais</span>
+            <Badge variant="outline" className="ml-1">{locais.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
             <p className="text-sm text-muted-foreground">Cadastre os locais físicos onde os produtos vendidos ficam alocados até a retirada do cliente.</p>
-          </div>
 
           <div className="flex gap-2 max-w-md">
             <Input

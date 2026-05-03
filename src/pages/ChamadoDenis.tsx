@@ -951,7 +951,8 @@ export default function ChamadoDenis() {
               </TableBody>
             </Table>
           </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </TooltipProvider>
   );

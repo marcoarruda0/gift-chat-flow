@@ -714,9 +714,19 @@ export default function ChamadoDenis() {
             <p className="text-2xl font-bold">{brl(totals.somaVend)}</p>
           </div>
         </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* ===== Produtos vendidos ===== */}
-        <div className="space-y-3 pt-4">
+        <Collapsible open={openGroups.vendidos} onOpenChange={() => toggleGroup("vendidos")} className="space-y-3 rounded-lg border bg-card/30 p-3">
+          <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+            <ChevronDown className={"h-4 w-4 transition-transform " + (openGroups.vendidos ? "" : "-rotate-90")} />
+            <Package className="h-4 w-4" />
+            <span className="font-semibold">Produtos vendidos</span>
+            <Badge variant="outline" className="ml-1">{vendidos.length}</Badge>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2"><Package className="h-5 w-5" /> Produtos vendidos</h2>

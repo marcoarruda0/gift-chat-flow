@@ -750,8 +750,7 @@ export default function ChamadoDenis() {
             </Select>
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden md:block rounded-lg border bg-card overflow-x-auto">
+          <div className="rounded-lg border bg-card overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -763,7 +762,7 @@ export default function ChamadoDenis() {
                   <TableHead>Cliente</TableHead>
                   <TableHead className="w-48">Local</TableHead>
                   <TableHead className="w-28">Entregue?</TableHead>
-                  <TableHead className="w-16" />
+                  <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -815,76 +814,34 @@ export default function ChamadoDenis() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}>
-                            <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{item.entregue ? "Desfazer entrega" : "Confirmar entrega"}</TooltipContent>
-                      </Tooltip>
+                      <div className="flex items-center gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}>
+                              <PackageCheck className={"h-4 w-4 " + (item.entregue ? "text-green-600" : "")} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{item.entregue ? "Desfazer entrega" : "Confirmar entrega"}</TooltipContent>
+                        </Tooltip>
+                        {item.entregue && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setVerEntregaItem(item)}>
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Comprovante de entrega (imprimir / PDF)</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-3">
-            {vendidos.length === 0 ? (
-              <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum produto vendido encontrado.</div>
-            ) : vendidos.map((item) => (
-              <div key={item.id} className="rounded-lg border bg-card p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground font-mono">#{item.numero}</div>
-                    <div className="font-medium text-sm break-words">{item.descricao}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-semibold">{brl(Number(item.valor || 0))}</div>
-                    {item.forma_pagamento && <Badge variant="outline" className="text-[10px] mt-1">{item.forma_pagamento}</Badge>}
-                  </div>
-                </div>
-                <div className="text-xs">
-                  <div className="font-medium">{item.pagador_nome || <span className="text-muted-foreground italic">Sem nome</span>}</div>
-                  {item.pagador_tax_id && <div className="text-muted-foreground">CPF: {item.pagador_tax_id}</div>}
-                  {item.pagador_cel && <div className="text-muted-foreground">Tel: {item.pagador_cel}</div>}
-                </div>
-                <div>
-                  <div className="text-[11px] text-muted-foreground mb-1">Local</div>
-                  <Select value={item.local_id ?? "__none__"} onValueChange={(v) => setItemLocal(item, v === "__none__" ? null : v)}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="— sem local —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— sem local —</SelectItem>
-                      {locais.filter(l => l.ativo || l.id === item.local_id).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  {item.entregue ? (
-                    <button type="button" onClick={() => setVerEntregaItem(item)} className="text-left">
-                      <Badge className="bg-green-600 hover:bg-green-700">Entregue</Badge>
-                      {item.entregue_em && <div className="text-[10px] text-muted-foreground">{new Date(item.entregue_em).toLocaleString("pt-BR")}</div>}
-                    </button>
-                  ) : (
-                    <Badge variant="outline">Aguardando entrega</Badge>
-                  )}
-                  <Button
-                    size="sm"
-                    variant={item.entregue ? "outline" : "default"}
-                    onClick={() => item.entregue ? setDesfazerItem(item) : setEntregaItem(item)}
-                  >
-                    <PackageCheck className="h-4 w-4 mr-1" />
-                    {item.entregue ? "Desfazer" : "Entregar"}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* ===== Dialogs de entrega ===== */}
         {entregaItem && (

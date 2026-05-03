@@ -873,41 +873,11 @@ export default function ChamadoDenis() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <Dialog open={!!verEntregaItem} onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Comprovante de entrega — #{verEntregaItem?.numero}</DialogTitle>
-              <DialogDescription className="truncate">{verEntregaItem?.descricao}</DialogDescription>
-            </DialogHeader>
-            {verEntregaItem && (
-              <div className="space-y-3 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Entregue em</div>
-                  <div>{verEntregaItem.entregue_em ? new Date(verEntregaItem.entregue_em).toLocaleString("pt-BR") : "—"}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Quem retirou</div>
-                  {verEntregaItem.entregue_para_proprio === false ? (
-                    <div>
-                      <div>{verEntregaItem.entregue_para_nome || "—"}</div>
-                      {verEntregaItem.entregue_para_doc && <div className="text-xs text-muted-foreground">Doc: {verEntregaItem.entregue_para_doc}</div>}
-                    </div>
-                  ) : (
-                    <div>Próprio comprador {verEntregaItem.pagador_nome ? `(${verEntregaItem.pagador_nome})` : ""}</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1">Assinatura</div>
-                  {verEntregaItem.entregue_assinatura ? (
-                    <img src={verEntregaItem.entregue_assinatura} alt="Assinatura" className="rounded-md border bg-background w-full" />
-                  ) : (
-                    <div className="text-muted-foreground text-xs italic">Sem assinatura registrada (entrega legada).</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        <ComprovanteEntregaDialog
+          open={!!verEntregaItem}
+          onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}
+          item={verEntregaItem}
+        />
 
         {/* ===== Locais ===== */}
         <div className="space-y-3 pt-4">

@@ -727,12 +727,6 @@ export default function ChamadoDenis() {
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3">
             <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2"><Package className="h-5 w-5" /> Produtos vendidos</h2>
-              <p className="text-sm text-muted-foreground">Aloque cada produto vendido em um local físico e marque a entrega ao cliente.</p>
-            </div>
-          </div>
 
           <div className="flex gap-3 flex-wrap items-center">
             <Input placeholder="Buscar por cliente, CPF, descrição..." value={buscaVendidos} onChange={(e) => setBuscaVendidos(e.target.value)} className="w-full sm:max-w-xs" />

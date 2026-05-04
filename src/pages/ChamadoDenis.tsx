@@ -370,10 +370,7 @@ export default function ChamadoDenis() {
     });
   };
 
-  const elegiveisLimpeza = useMemo(
-    () => filtered.filter((i) => i.status !== "vendido"),
-    [filtered]
-  );
+  const elegiveisLimpeza = useMemo(() => filtered, [filtered]);
   const todosSelecionados = elegiveisLimpeza.length > 0 && elegiveisLimpeza.every((i) => selecionados.has(i.id));
   const algunsSelecionados = elegiveisLimpeza.some((i) => selecionados.has(i.id)) && !todosSelecionados;
 
@@ -394,20 +391,16 @@ export default function ChamadoDenis() {
     const ids = Array.from(selecionados);
     if (ids.length === 0) return;
     setLimpando(true);
-    const { error } = await supabase
-      .from("chamado_denis_itens")
-      .delete()
-      .in("id", ids)
-      .neq("status", "vendido");
+    const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: ids });
     setLimpando(false);
     setConfirmarLimpeza(false);
     if (error) {
-      toast.error("Erro ao limpar itens");
+      toast.error("Erro ao limpar slots");
       return;
     }
-    setItems((p) => p.filter((i) => !(selecionados.has(i.id) && i.status !== "vendido")));
     setSelecionados(new Set());
-    toast.success(`${ids.length} item(ns) removido(s)`);
+    toast.success(`${data ?? ids.length} slot(s) limpo(s)`);
+    load();
   };
 
   const gerarLink = async (item: Item) => {

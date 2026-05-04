@@ -1,8 +1,12 @@
 // Endpoint público para integração com Blinkchat
 // GET /blinkchat-produto/{token}?id=1
 // Cada tenant tem um token secreto único (configurado em Vendas Online > Configurações).
-// Retorna texto simples no formato fixo:
-//   "{numero} - {descricao} - R$ {valor} - {status} - {link}"
+// Retorna JSON.
+//
+// Sucesso (200):
+//   { ok: true, numero, descricao, valor, valor_formatado, status, link }
+// Erro (400/404/500):
+//   { ok: false, codigo, erro }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -11,17 +15,24 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-const textHeaders = { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" };
+const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" };
 
 function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function formatLine(numero: number | string, descricao: string, valor: number, status: string, link: string): string {
-  const desc = (descricao || "").trim() || "sem descricao";
-  const stat = (status || "").trim() || "disponivel";
-  const lnk = (link || "").trim() || "sem link";
-  return `${numero} - ${desc} - R$ ${formatBRL(Number(valor || 0))} - ${stat} - ${lnk}`;
+function jsonError(status: number, codigo: string, erro: string): Response {
+  return new Response(JSON.stringify({ ok: false, codigo, erro }), {
+    status,
+    headers: jsonHeaders,
+  });
+}
+
+function jsonOk(payload: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ ok: true, ...payload }), {
+    status: 200,
+    headers: jsonHeaders,
+  });
 }
 
 function maskToken(t: string): string {
@@ -40,8 +51,6 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    // pathname ex: /blinkchat-produto/bc_abc123...
-    // O último segmento depois de "blinkchat-produto" é o token.
     const segments = url.pathname.split("/").filter(Boolean);
     const idx = segments.indexOf("blinkchat-produto");
     const token = idx >= 0 && segments.length > idx + 1 ? segments[idx + 1] : "";
@@ -55,21 +64,18 @@ Deno.serve(async (req) => {
 
     if (!token || !token.startsWith("bc_")) {
       console.error(`[${requestId}] VALIDATION token ausente ou invalido`);
-      return new Response("ERRO: token de integracao ausente ou invalido na URL", {
-        status: 404,
-        headers: textHeaders,
-      });
+      return jsonError(404, "TOKEN_INVALID", "token de integracao ausente ou invalido na URL");
     }
 
     if (!idParam) {
       console.error(`[${requestId}] VALIDATION id ausente`);
-      return new Response("ERRO: parametro 'id' e obrigatorio", { status: 400, headers: textHeaders });
+      return jsonError(400, "ID_MISSING", "parametro 'id' e obrigatorio");
     }
 
     const numero = parseInt(idParam, 10);
     if (!Number.isFinite(numero) || numero < 1) {
       console.error(`[${requestId}] VALIDATION id invalido: ${idParam}`);
-      return new Response(`ERRO: id invalido (${idParam})`, { status: 400, headers: textHeaders });
+      return jsonError(400, "ID_INVALID", `id invalido (${idParam})`);
     }
 
     const supabase = createClient(
@@ -77,7 +83,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Resolve tenant pelo token
     const { data: cfg, error: cfgErr } = await supabase
       .from("vendas_online_config")
       .select("tenant_id")
@@ -86,15 +91,12 @@ Deno.serve(async (req) => {
 
     if (cfgErr) {
       console.error(`[${requestId}] DB_ERROR token lookup: ${cfgErr.message}`);
-      return new Response(`ERRO: falha ao validar token (${cfgErr.message})`, {
-        status: 500,
-        headers: textHeaders,
-      });
+      return jsonError(500, "DB_ERROR", `falha ao validar token (${cfgErr.message})`);
     }
 
     if (!cfg) {
       console.warn(`[${requestId}] TOKEN_NOT_FOUND ${maskToken(token)}`);
-      return new Response("ERRO: token de integracao nao reconhecido", { status: 404, headers: textHeaders });
+      return jsonError(404, "TOKEN_NOT_FOUND", "token de integracao nao reconhecido");
     }
 
     const tenantId = cfg.tenant_id;
@@ -108,34 +110,35 @@ Deno.serve(async (req) => {
 
     if (error) {
       console.error(`[${requestId}] DB_ERROR ${error.message} code=${error.code}`);
-      return new Response(`ERRO: falha ao consultar produto (${error.message})`, {
-        status: 500,
-        headers: textHeaders,
-      });
+      return jsonError(500, "DB_ERROR", `falha ao consultar produto (${error.message})`);
     }
 
     if (!data) {
       console.warn(`[${requestId}] NOT_FOUND tenant=${tenantId} numero=${numero}`);
-      return new Response(`ERRO: produto ${numero} nao encontrado`, { status: 400, headers: textHeaders });
+      return jsonError(400, "NOT_FOUND", `produto ${numero} nao encontrado`);
     }
 
-    const body = formatLine(
-      data.numero,
-      data.descricao || "",
-      Number(data.valor || 0),
-      data.status || "disponivel",
-      data.abacate_url || "",
-    );
+    const valor = Number(data.valor || 0);
+    const descricao = (data.descricao || "").trim() || "sem descricao";
+    const status = (data.status || "").trim() || "disponivel";
+    const link = (data.abacate_url || "").trim() || "sem link";
 
     const elapsed = Date.now() - startedAt;
     console.log(
-      `[${requestId}] OK tenant=${tenantId} numero=${data.numero} status=${data.status} elapsed_ms=${elapsed}`,
+      `[${requestId}] OK tenant=${tenantId} numero=${data.numero} status=${status} elapsed_ms=${elapsed}`,
     );
 
-    return new Response(body, { status: 200, headers: textHeaders });
+    return jsonOk({
+      numero: data.numero,
+      descricao,
+      valor,
+      valor_formatado: `R$ ${formatBRL(valor)}`,
+      status,
+      link,
+    });
   } catch (e) {
     const elapsed = Date.now() - startedAt;
     console.error(`[${requestId}] UNEXPECTED ${(e as Error).message} elapsed_ms=${elapsed}`);
-    return new Response(`ERRO: erro interno (${(e as Error).message})`, { status: 500, headers: textHeaders });
+    return jsonError(500, "INTERNAL", `erro interno (${(e as Error).message})`);
   }
 });

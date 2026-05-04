@@ -1,73 +1,58 @@
+
 ## Objetivo
+Fazer o endpoint `blinkchat-produto` responder em **JSON** em vez de texto puro, facilitando o consumo no Blinkchat (acesso por nome de campo) e padronizando erros.
 
-Eliminar o parâmetro `tenant` da query string. Cada tenant passa a ter uma URL única, fixa e secreta, contendo um **token** no path. O Blinkchat chama apenas com `?id=N`, e o tenant é resolvido server-side pelo token.
+## Formato novo
 
-## Como vai ficar
-
-**Antes:**
+**Sucesso (HTTP 200):**
+```json
+{
+  "ok": true,
+  "numero": 1,
+  "descricao": "Anel de ouro",
+  "valor": 1500.00,
+  "valor_formatado": "R$ 1.500,00",
+  "status": "disponivel",
+  "link": "https://abacatepay.com/..."
+}
 ```
-/functions/v1/blinkchat-produto?id=1&tenant=fcaec321-57c6-445c-8e69-332408db6a86
+
+**Erro (400/404/500):**
+```json
+{ "ok": false, "erro": "produto 5 nao encontrado", "codigo": "NOT_FOUND" }
 ```
 
-**Depois:**
-```
-/functions/v1/blinkchat-produto/bc_a8f3k2x9p1m4q7w0?id=1
-```
-
-Cada tenant copia uma vez essa URL base no Blinkchat. Em cada nó do bot, ele só varia o `?id=`.
+Códigos: `TOKEN_INVALID`, `TOKEN_NOT_FOUND`, `ID_MISSING`, `ID_INVALID`, `NOT_FOUND`, `DB_ERROR`, `INTERNAL`.
 
 ## Mudanças
 
-### 1. Banco — adicionar token na configuração de Vendas Online
+### 1. `supabase/functions/blinkchat-produto/index.ts`
+- Substituir `textHeaders` por `jsonHeaders` com `Content-Type: application/json; charset=utf-8`.
+- Helper `jsonError(status, codigo, erro)` e `jsonOk(produto)`.
+- Trocar todas as respostas `new Response("ERRO: ...")` pelos helpers JSON.
+- Manter validações, status codes e logs estruturados existentes.
+- Manter URL e token no path inalterados.
 
-Migration:
-- Adicionar coluna `blinkchat_token text unique` em `vendas_online_config`.
-- Backfill: gerar token aleatório (`'bc_' || encode(gen_random_bytes(12), 'hex')`) para todos os tenants existentes.
-- Marcar a coluna como `not null` após o backfill.
-- Índice único já garante lookup rápido.
+### 2. `src/pages/BlinkchatTeste.tsx`
+- Trocar `res.text()` por `res.json()` (com try/catch fallback).
+- Critério "Formato OK": `res.ok && body.ok === true && typeof body.numero !== 'undefined'`.
+- Mostrar JSON formatado (`JSON.stringify(body, null, 2)`) no `<pre>`.
+- Atualizar texto-guia: descrever campos retornados.
 
-### 2. Edge Function `blinkchat-produto` — reescrever
+### 3. `src/pages/VendasOnlineConfig.tsx` (card "Integração Blinkchat")
+- Atualizar texto explicativo: resposta é JSON; listar campos `numero`, `descricao`, `valor`, `valor_formatado`, `status`, `link`.
+- Mencionar exemplo de uso no Blinkchat: `{{response.descricao}}`, `{{response.valor_formatado}}`.
 
-- Aceitar token via path: extrair último segmento de `req.url` após `/blinkchat-produto/`.
-- Buscar `tenant_id` em `vendas_online_config` por `blinkchat_token`.
-- Se token inválido → 404 com texto `ERRO: token invalido`.
-- Validar `?id=` (obrigatório, numérico) → 400 se ausente/ruim (mantém comportamento atual).
-- Buscar produto em `chamado_denis_itens` por `(tenant_id, numero)`.
-- Se não existir → 400 com texto `ERRO: produto nao encontrado` (decisão confirmada).
-- Continuar formatando: `numero - descricao - R$ valor - status - link`.
-- Manter logging estruturado já existente (request_id, token mascarado, id, ms).
-- Continuar com `verify_jwt = false` (público).
-
-### 3. Tela de Configurações (`VendasOnlineConfig.tsx`) — atualizar card "Integração Blinkchat"
-
-- Carregar `blinkchat_token` da config do tenant.
-- Mostrar a **URL completa pronta**: `https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/blinkchat-produto/{token}?id=`
-- Botão "Copiar URL".
-- Botão "Rotacionar token" (gera novo, invalida o antigo) com confirmação — útil se vazar.
-- Texto explicativo curto: "Cole esta URL no bloco GET do Blinkchat e adicione o número do produto após `?id=`."
-- Remover qualquer menção a `tenant=` / UUID.
-
-### 4. Tela de Teste (`BlinkchatTeste.tsx`) — simplificar
-
-- Remover input de `tenant`.
-- Manter input de `id`.
-- Usar o `blinkchat_token` do tenant logado para montar a URL automaticamente.
-- Manter validação visual (badge verde se resposta tem 5 campos separados por ` - `).
-
-## Detalhes técnicos
-
-- Token format: `bc_` + 24 hex chars (96 bits de entropia, suficiente para uso público não-crítico).
-- Geração no client (rotação): usar `crypto.getRandomValues` + update via Supabase client (RLS já protege escrita por `tenant_id`).
-- RLS de leitura na edge function: usar `SUPABASE_SERVICE_ROLE_KEY` para resolver token → tenant_id (bypassa RLS, necessário porque a chamada é anônima).
-- Path parsing: `new URL(req.url).pathname.split('/').pop()`.
-
-## Arquivos afetados
-
-- Migration nova (coluna + backfill)
-- `supabase/functions/blinkchat-produto/index.ts` (reescrita)
-- `src/pages/VendasOnlineConfig.tsx` (card Blinkchat)
-- `src/pages/BlinkchatTeste.tsx` (remove input tenant)
+## Deploy e validação
+- Deploy de `blinkchat-produto`.
+- `curl` com token válido + id existente → JSON 200 com `ok:true`.
+- `curl` com token válido + id inexistente → JSON 400 com `codigo:"NOT_FOUND"`.
+- `curl` com token inválido → JSON 404 com `codigo:"TOKEN_NOT_FOUND"`.
 
 ## Compatibilidade
+URL inalterada. Apenas o corpo muda de texto para JSON. No Blinkchat, o bloco GET deve parsear JSON e ler campos por nome em vez de fazer split por ` - `.
 
-A URL antiga (`?id=&tenant=`) deixará de funcionar. Como ela ainda não está em produção no Blinkchat (está dando 400), não há risco de quebrar integração existente.
+## Arquivos afetados
+- `supabase/functions/blinkchat-produto/index.ts`
+- `src/pages/BlinkchatTeste.tsx`
+- `src/pages/VendasOnlineConfig.tsx`

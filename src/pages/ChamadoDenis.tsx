@@ -987,6 +987,24 @@ export default function ChamadoDenis() {
           </AlertDialogContent>
         </AlertDialog>
 
+        <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Limpar itens selecionados?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação removerá permanentemente {selecionados.size} item(ns) do sistema. Itens vendidos não serão afetados e permanecem em "Produtos vendidos".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={limpando}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={(e) => { e.preventDefault(); limparSelecionados(); }} disabled={limpando}>
+                {limpando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Limpar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <ComprovanteEntregaDialog
           open={!!verEntregaItem}
           onOpenChange={(v) => { if (!v) setVerEntregaItem(null); }}

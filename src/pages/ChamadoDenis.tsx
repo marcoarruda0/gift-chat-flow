@@ -369,6 +369,64 @@ export default function ChamadoDenis() {
     }
   };
 
+  const copiarId = async (numero: number) => {
+    try {
+      await navigator.clipboard.writeText(String(numero));
+      toast.success(`ID #${numero} copiado`);
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
+
+  const toggleSelecionado = (id: string) => {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const elegiveisLimpeza = useMemo(
+    () => filtered.filter((i) => i.status !== "vendido"),
+    [filtered]
+  );
+  const todosSelecionados = elegiveisLimpeza.length > 0 && elegiveisLimpeza.every((i) => selecionados.has(i.id));
+  const algunsSelecionados = elegiveisLimpeza.some((i) => selecionados.has(i.id)) && !todosSelecionados;
+
+  const toggleTodos = () => {
+    setSelecionados((prev) => {
+      if (todosSelecionados) {
+        const next = new Set(prev);
+        elegiveisLimpeza.forEach((i) => next.delete(i.id));
+        return next;
+      }
+      const next = new Set(prev);
+      elegiveisLimpeza.forEach((i) => next.add(i.id));
+      return next;
+    });
+  };
+
+  const limparSelecionados = async () => {
+    const ids = Array.from(selecionados);
+    if (ids.length === 0) return;
+    setLimpando(true);
+    const { error } = await supabase
+      .from("chamado_denis_itens")
+      .delete()
+      .in("id", ids)
+      .neq("status", "vendido");
+    setLimpando(false);
+    setConfirmarLimpeza(false);
+    if (error) {
+      toast.error("Erro ao limpar itens");
+      return;
+    }
+    setItems((p) => p.filter((i) => !(selecionados.has(i.id) && i.status !== "vendido")));
+    setSelecionados(new Set());
+    toast.success(`${ids.length} item(ns) removido(s)`);
+  };
+
   const gerarLink = async (item: Item) => {
     if (Number(item.valor || 0) <= 0) {
       toast.error("Defina um valor maior que zero antes de gerar o link.");

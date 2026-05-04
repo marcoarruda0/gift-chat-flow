@@ -341,32 +341,15 @@ export default function ChamadoDenis() {
     }
   };
 
-  const addRow = async () => {
-    if (!tenantId || creating) return;
-    setCreating(true);
-    const { data, error } = await supabase
-      .from("chamado_denis_itens")
-      .insert({ tenant_id: tenantId, numero: 0, descricao: "", valor: 0, status: "disponivel" })
-      .select(SELECT_COLS)
-      .single();
-    setCreating(false);
-    if (error || !data) {
-      toast.error("Erro ao criar item");
+  const resetSlot = async (id: string) => {
+    if (!confirm("Limpar este slot? Os dados serão apagados, mas o ID será mantido.")) return;
+    const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: [id] });
+    if (error) {
+      toast.error("Erro ao limpar slot");
       return;
     }
-    setItems((prev) => [...prev, data as Item]);
-    setTimeout(() => startEdit((data as Item).id, "descricao", ""), 50);
-  };
-
-  const removeRow = async (id: string) => {
-    if (!confirm("Excluir este item?")) return;
-    const prev = items;
-    setItems((p) => p.filter((i) => i.id !== id));
-    const { error } = await supabase.from("chamado_denis_itens").delete().eq("id", id);
-    if (error) {
-      toast.error("Erro ao excluir");
-      setItems(prev);
-    }
+    toast.success(`Slot limpo (${data ?? 0})`);
+    load();
   };
 
   const copiarId = async (numero: number) => {

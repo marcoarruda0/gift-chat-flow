@@ -367,6 +367,8 @@ export default function ChamadoDenis() {
   };
 
   const toggleSelecionado = (id: string) => {
+    const alvo = items.find((i) => i.id === id);
+    if (alvo?.status === "vendido") return; // não permite selecionar vendido
     setSelecionados((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -375,7 +377,11 @@ export default function ChamadoDenis() {
     });
   };
 
-  const elegiveisLimpeza = useMemo(() => filtered, [filtered]);
+  // Apenas slots NÃO vendidos são elegíveis para limpeza em massa
+  const elegiveisLimpeza = useMemo(
+    () => filtered.filter((i) => i.status !== "vendido"),
+    [filtered]
+  );
   const todosSelecionados = elegiveisLimpeza.length > 0 && elegiveisLimpeza.every((i) => selecionados.has(i.id));
   const algunsSelecionados = elegiveisLimpeza.some((i) => selecionados.has(i.id)) && !todosSelecionados;
 
@@ -393,8 +399,15 @@ export default function ChamadoDenis() {
   };
 
   const limparSelecionados = async () => {
-    const ids = Array.from(selecionados);
-    if (ids.length === 0) return;
+    // Garante que vendidos nunca cheguem na RPC, mesmo que estejam no Set
+    const idsVendidos = new Set(items.filter((i) => i.status === "vendido").map((i) => i.id));
+    const ids = Array.from(selecionados).filter((id) => !idsVendidos.has(id));
+    const ignorados = selecionados.size - ids.length;
+    if (ids.length === 0) {
+      toast.error("Nenhum slot elegível para limpar (vendidos são preservados).");
+      setConfirmarLimpeza(false);
+      return;
+    }
     setLimpando(true);
     const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: ids });
     setLimpando(false);
@@ -404,7 +417,11 @@ export default function ChamadoDenis() {
       return;
     }
     setSelecionados(new Set());
-    toast.success(`${data ?? ids.length} slot(s) limpo(s)`);
+    if (ignorados > 0) {
+      toast.success(`${data ?? ids.length} slot(s) limpo(s). ${ignorados} vendido(s) ignorado(s).`);
+    } else {
+      toast.success(`${data ?? ids.length} slot(s) limpo(s)`);
+    }
     load();
   };
 

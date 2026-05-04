@@ -763,7 +763,7 @@ export default function ChamadoDenis() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeRow(item.id)} className="h-8 w-8">
+                        <Button variant="ghost" size="icon" onClick={() => resetSlot(item.id)} className="h-8 w-8" title="Limpar este slot (mantém o ID)">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>

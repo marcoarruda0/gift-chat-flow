@@ -573,6 +573,17 @@ export default function ChamadoDenis() {
               <SelectItem value="sem_link">Sem link</SelectItem>
             </SelectContent>
           </Select>
+          {selecionados.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setConfirmarLimpeza(true)}
+              className="ml-auto gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Limpar selecionados ({selecionados.size})
+            </Button>
+          )}
         </div>
 
         <div className="rounded-lg border bg-card overflow-x-auto">

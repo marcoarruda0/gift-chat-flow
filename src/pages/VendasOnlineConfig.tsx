@@ -28,6 +28,8 @@ export default function VendasOnlineConfig() {
   const [secret, setSecret] = useState("");
   const [totalSlots, setTotalSlots] = useState(99);
   const [showKey, setShowKey] = useState(false);
+  const [blinkchatToken, setBlinkchatToken] = useState<string>("");
+  const [rotatingToken, setRotatingToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;

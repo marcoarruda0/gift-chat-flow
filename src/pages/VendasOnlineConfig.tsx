@@ -124,6 +124,24 @@ export default function VendasOnlineConfig() {
 
   const generateSecret = () => setSecret(randomSecret(24));
 
+  const rotateBlinkchatToken = async () => {
+    if (!tenantId) return;
+    if (!confirm("Gerar um novo token? A URL atual deixará de funcionar imediatamente e você precisará atualizá-la no Blinkchat.")) return;
+    setRotatingToken(true);
+    const newToken = "bc_" + randomSecret(12);
+    const { error } = await supabase
+      .from("vendas_online_config")
+      .update({ blinkchat_token: newToken })
+      .eq("tenant_id", tenantId);
+    setRotatingToken(false);
+    if (error) {
+      toast.error("Erro ao rotacionar token: " + error.message);
+      return;
+    }
+    setBlinkchatToken(newToken);
+    toast.success("Token rotacionado. Atualize a URL no Blinkchat.");
+  };
+
   const testarConexao = async () => {
     setTesting(true);
     setTestResult(null);

@@ -976,7 +976,7 @@ export default function ChamadoDenis() {
             <AlertDialogHeader>
               <AlertDialogTitle>Limpar slots selecionados?</AlertDialogTitle>
               <AlertDialogDescription>
-                Os dados de {selecionados.size} slot(s) serão apagados (descrição, valor, pagamento e entrega). Os IDs (#) serão preservados para reuso e integração externa. Vendas já registradas continuam disponíveis em "Produtos vendidos".
+                Os dados de {selecionados.size} slot(s) serão apagados (descrição, valor, pagamento e entrega). Os IDs (#) serão preservados para reuso e integração externa. <strong>Produtos vendidos não são afetados</strong> e continuam disponíveis em "Produtos vendidos".
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -626,7 +626,9 @@ export default function ChamadoDenis() {
                         <Checkbox
                           checked={selecionados.has(item.id)}
                           onCheckedChange={() => toggleSelecionado(item.id)}
+                          disabled={item.status === "vendido"}
                           aria-label={`Selecionar slot ${item.numero}`}
+                          title={item.status === "vendido" ? "Produto vendido — não pode ser limpo. Altere o status para Disponível antes." : undefined}
                         />
                       </TableCell>
                       <TableCell>

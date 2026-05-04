@@ -877,7 +877,14 @@ export default function ChamadoDenis() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum produto vendido encontrado.</TableCell></TableRow>
                 ) : vendidos.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-mono text-muted-foreground">#{item.numero}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono font-semibold text-primary">#{item.numero}</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copiarId(item.numero)} title="Copiar ID">
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell className="max-w-[260px] truncate">{item.descricao}</TableCell>
                     <TableCell>{brl(Number(item.valor || 0))}</TableCell>
                     <TableCell>{item.forma_pagamento ? <Badge variant="outline">{item.forma_pagamento}</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>

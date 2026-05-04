@@ -598,7 +598,6 @@ export default function ChamadoDenis() {
                   const editStatus = editing === `${item.id}-status`;
                   const isPaid = item.abacate_status === "PAID";
                   const statusReadOnly = isPaid;
-                  const isVendido = item.status === "vendido";
                   return (
                     <TableRow key={item.id} data-state={selecionados.has(item.id) ? "selected" : undefined}>
                       <TableCell>

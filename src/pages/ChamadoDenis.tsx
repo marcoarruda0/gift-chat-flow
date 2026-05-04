@@ -69,7 +69,7 @@ export default function ChamadoDenis() {
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "disponivel" | "vendido" | "pago" | "pendente" | "sem_link">("todos");
   const [editing, setEditing] = useState<CellKey | null>(null);
   const [draftValue, setDraftValue] = useState<string>("");
-  const [creating, setCreating] = useState(false);
+  
   const [generating, setGenerating] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [locais, setLocais] = useState<Local[]>([]);

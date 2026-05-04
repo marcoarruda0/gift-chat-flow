@@ -28,6 +28,8 @@ export default function VendasOnlineConfig() {
   const [secret, setSecret] = useState("");
   const [totalSlots, setTotalSlots] = useState(99);
   const [showKey, setShowKey] = useState(false);
+  const [blinkchatToken, setBlinkchatToken] = useState<string>("");
+  const [rotatingToken, setRotatingToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -66,7 +68,7 @@ export default function VendasOnlineConfig() {
       setLoading(true);
       const { data } = await supabase
         .from("vendas_online_config")
-        .select("abacate_api_key, dev_mode, webhook_secret, total_slots")
+        .select("abacate_api_key, dev_mode, webhook_secret, total_slots, blinkchat_token")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       if (data) {
@@ -74,6 +76,7 @@ export default function VendasOnlineConfig() {
         setDevMode(!!data.dev_mode);
         setSecret(data.webhook_secret || "");
         setTotalSlots(data.total_slots ?? 99);
+        setBlinkchatToken((data as any).blinkchat_token || "");
       }
       setLoading(false);
     })();
@@ -120,6 +123,24 @@ export default function VendasOnlineConfig() {
   };
 
   const generateSecret = () => setSecret(randomSecret(24));
+
+  const rotateBlinkchatToken = async () => {
+    if (!tenantId) return;
+    if (!confirm("Gerar um novo token? A URL atual deixará de funcionar imediatamente e você precisará atualizá-la no Blinkchat.")) return;
+    setRotatingToken(true);
+    const newToken = "bc_" + randomSecret(12);
+    const { error } = await supabase
+      .from("vendas_online_config")
+      .update({ blinkchat_token: newToken })
+      .eq("tenant_id", tenantId);
+    setRotatingToken(false);
+    if (error) {
+      toast.error("Erro ao rotacionar token: " + error.message);
+      return;
+    }
+    setBlinkchatToken(newToken);
+    toast.success("Token rotacionado. Atualize a URL no Blinkchat.");
+  };
 
   const testarConexao = async () => {
     setTesting(true);
@@ -552,50 +573,73 @@ export default function VendasOnlineConfig() {
             <Bot className="h-5 w-5" /> Integração Blinkchat
           </CardTitle>
           <CardDescription>
-            Endpoint público que substitui a planilha do Google Sheets. Configure no bloco de integração GET do
-            Blinkchat usando a URL abaixo (o <code>{"{{id}}"}</code> é o placeholder do número do produto).
+            Endpoint público que substitui a planilha do Google Sheets. Esta URL é única e secreta para o seu
+            estabelecimento — cole-a no bloco GET do Blinkchat e basta variar o número do produto após <code>?id=</code>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>URL do endpoint</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={`https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=${tenantId ?? ""}`}
-                className="font-mono text-xs"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  const url = `https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=${tenantId ?? ""}`;
-                  navigator.clipboard.writeText(url);
-                  toast.success("URL copiada");
-                }}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          {!blinkchatToken ? (
+            <p className="text-sm text-muted-foreground">Carregando token de integração…</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>URL do endpoint (cole no Blinkchat)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={`https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto/${blinkchatToken}?id=`}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      const url = `https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto/${blinkchatToken}?id=`;
+                      navigator.clipboard.writeText(url);
+                      toast.success("URL copiada");
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Em cada nó do Blinkchat, complete a URL com o número do produto. Ex.:
+                  {" "}<code>…/blinkchat-produto/{blinkchatToken.slice(0, 8)}…?id=1</code>
+                </p>
+              </div>
 
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-xs">
-            <p className="font-medium">Formato da resposta (text/plain)</p>
-            <pre className="font-mono text-[11px]">numero - descricao - R$ valor - status - link</pre>
-            <p className="text-muted-foreground">
-              Exemplo: <code>1 - Camiseta Preta - R$ 50,00 - disponivel - https://pagamento...</code>
-            </p>
-            <p className="text-muted-foreground">
-              Slots vazios usam <code>sem descricao</code>, <code>0,00</code>, <code>disponivel</code> e
-              {" "}<code>sem link</code>.
-            </p>
-          </div>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-xs">
+                <p className="font-medium">Formato da resposta (text/plain)</p>
+                <pre className="font-mono text-[11px]">numero - descricao - R$ valor - status - link</pre>
+                <p className="text-muted-foreground">
+                  Exemplo: <code>1 - Camiseta Preta - R$ 50,00 - disponivel - https://pagamento...</code>
+                </p>
+                <p className="text-muted-foreground">
+                  Slots vazios usam <code>sem descricao</code>, <code>0,00</code>, <code>disponivel</code> e
+                  {" "}<code>sem link</code>.
+                </p>
+              </div>
 
-          <Button variant="outline" asChild>
-            <Link to="/vendas-online/blinkchat-teste">
-              <ExternalLink className="h-4 w-4" /> Abrir tela de teste
-            </Link>
-          </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" asChild>
+                  <Link to="/vendas-online/blinkchat-teste">
+                    <ExternalLink className="h-4 w-4" /> Abrir tela de teste
+                  </Link>
+                </Button>
+                <Button variant="outline" onClick={rotateBlinkchatToken} disabled={rotatingToken}>
+                  {rotatingToken ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Rotacionar token
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use "Rotacionar" se suspeitar que a URL vazou. A URL antiga deixa de funcionar imediatamente.
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
       <div className="flex justify-end">

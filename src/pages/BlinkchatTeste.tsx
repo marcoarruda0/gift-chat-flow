@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,8 +15,10 @@ const ENDPOINT_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-
 
 export default function BlinkchatTeste() {
   const { profile } = useAuth();
+  const tenantId = profile?.tenant_id;
   const [id, setId] = useState("1");
-  const [tenant, setTenant] = useState("");
+  const [token, setToken] = useState<string>("");
+  const [loadingToken, setLoadingToken] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     url: string;
@@ -26,14 +29,25 @@ export default function BlinkchatTeste() {
   } | null>(null);
 
   useEffect(() => {
-    if (profile?.tenant_id && !tenant) setTenant(profile.tenant_id);
-  }, [profile?.tenant_id, tenant]);
+    if (!tenantId) return;
+    (async () => {
+      setLoadingToken(true);
+      const { data } = await supabase
+        .from("vendas_online_config")
+        .select("blinkchat_token")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      setToken((data as any)?.blinkchat_token || "");
+      setLoadingToken(false);
+    })();
+  }, [tenantId]);
 
-  const buildUrl = () => `${ENDPOINT_BASE}?id=${encodeURIComponent(id)}&tenant=${encodeURIComponent(tenant)}`;
+  const buildUrl = () =>
+    token ? `${ENDPOINT_BASE}/${token}?id=${encodeURIComponent(id)}` : "";
 
   const testar = async () => {
-    if (!id || !tenant) {
-      toast.error("Preencha id e tenant");
+    if (!id || !token) {
+      toast.error("Token de integração ainda não carregado");
       return;
     }
     setLoading(true);
@@ -82,40 +96,38 @@ export default function BlinkchatTeste() {
           <CardTitle>Parâmetros</CardTitle>
           <CardDescription>
             Simule a chamada que o Blinkchat fará ao endpoint público e veja a resposta retornada.
+            O token de integração do seu tenant é usado automaticamente.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid sm:grid-cols-[1fr_2fr] gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="bk-id">ID do produto (slot)</Label>
-              <Input
-                id="bk-id"
-                type="number"
-                min={1}
-                value={id}
-                onChange={(e) => setId(e.target.value)}
-                placeholder="1"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bk-tenant">Tenant ID</Label>
-              <Input
-                id="bk-tenant"
-                value={tenant}
-                onChange={(e) => setTenant(e.target.value)}
-                placeholder="uuid do tenant"
-              />
-            </div>
+          <div className="space-y-2 max-w-[200px]">
+            <Label htmlFor="bk-id">ID do produto (slot)</Label>
+            <Input
+              id="bk-id"
+              type="number"
+              min={1}
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              placeholder="1"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            <Input readOnly value={buildUrl()} className="font-mono text-xs" />
-            <Button variant="outline" size="icon" onClick={() => copy(buildUrl(), "URL")}>
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
+          {loadingToken ? (
+            <p className="text-sm text-muted-foreground">Carregando token…</p>
+          ) : !token ? (
+            <p className="text-sm text-destructive">
+              Token de integração não encontrado. Salve a configuração de Vendas Online primeiro.
+            </p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Input readOnly value={buildUrl()} className="font-mono text-xs" />
+              <Button variant="outline" size="icon" onClick={() => copy(buildUrl(), "URL")}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
 
-          <Button onClick={testar} disabled={loading}>
+          <Button onClick={testar} disabled={loading || !token}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Testar endpoint
           </Button>

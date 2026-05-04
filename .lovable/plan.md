@@ -1,75 +1,73 @@
-# Integração Blinkchat — diagnóstico, formato e ferramentas
+## Objetivo
 
-Quatro melhorias na integração já existente (`/blinkchat-produto`) para facilitar uso e troubleshooting.
+Eliminar o parâmetro `tenant` da query string. Cada tenant passa a ter uma URL única, fixa e secreta, contendo um **token** no path. O Blinkchat chama apenas com `?id=N`, e o tenant é resolvido server-side pelo token.
 
-## 1. Logs estruturados na edge function
+## Como vai ficar
 
-Em `supabase/functions/blinkchat-produto/index.ts`, adicionar `console.log`/`console.error` em pontos-chave para que apareçam em Edge Function Logs (Lovable Cloud → Backend):
-
-- Início de cada request: método, `id`, `tenant`, `user-agent`, `referer`.
-- Erros de validação (id ou tenant ausente/ inválido) com motivo.
-- Erro de DB (com mensagem do Supabase).
-- Slot não encontrado (404).
-- Sucesso: `id`, `tenant`, status do slot, tempo total em ms.
-
-Cada log usa um `requestId` curto (ex: `crypto.randomUUID().slice(0,8)`) prefixado, para correlacionar entrada/saída de uma mesma requisição.
-
-## 2. Formato fixo da resposta
-
-Garantir que a resposta SEMPRE siga exatamente:
-
-```text
-{numero} - {descricao} - R$ {valor} - {status} - {link}
+**Antes:**
+```
+/functions/v1/blinkchat-produto?id=1&tenant=fcaec321-57c6-445c-8e69-332408db6a86
 ```
 
-Regras de fallback (quando slot vazio ou sem dado):
+**Depois:**
+```
+/functions/v1/blinkchat-produto/bc_a8f3k2x9p1m4q7w0?id=1
+```
 
-- `descricao` vazia → `"sem descricao"`
-- `valor` ausente/0 → `"0,00"` (formato pt-BR sempre com 2 casas)
-- `status` ausente → `"disponivel"`
-- `link` ausente → `"sem link"` (em vez de omitir o trecho)
+Cada tenant copia uma vez essa URL base no Blinkchat. Em cada nó do bot, ele só varia o `?id=`.
 
-Hoje o link é omitido quando vazio, quebrando o formato esperado. Passa a ser sempre 5 campos separados por ` - `.
+## Mudanças
 
-Erros (id/tenant inválido, slot não encontrado, erro interno) continuam retornando texto descritivo com status HTTP apropriado, mas marcados claramente como `ERRO: ...` para o Blinkchat distinguir.
+### 1. Banco — adicionar token na configuração de Vendas Online
 
-## 3. Card "Endpoint Blinkchat" em Configurações Vendas Online
+Migration:
+- Adicionar coluna `blinkchat_token text unique` em `vendas_online_config`.
+- Backfill: gerar token aleatório (`'bc_' || encode(gen_random_bytes(12), 'hex')`) para todos os tenants existentes.
+- Marcar a coluna como `not null` após o backfill.
+- Índice único já garante lookup rápido.
 
-Em `src/pages/VendasOnlineConfig.tsx`, novo card abaixo dos demais com:
+### 2. Edge Function `blinkchat-produto` — reescrever
 
-- Título: "Integração Blinkchat"
-- Descrição curta explicando o uso (substitui planilha do Google Sheets).
-- Campo readonly com a URL completa pré-preenchida:
-  ```
-  https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=<TENANT_ID>
-  ```
-  Onde `<TENANT_ID>` vem de `profile.tenant_id` e `{{id}}` é literal (placeholder do Blinkchat).
-- Botão "Copiar URL" usando a mesma `toast` já em uso.
-- Link/botão "Abrir tela de teste" → navega para `/vendas-online/blinkchat-teste`.
-- Bloco de exemplo mostrando o formato exato da resposta.
+- Aceitar token via path: extrair último segmento de `req.url` após `/blinkchat-produto/`.
+- Buscar `tenant_id` em `vendas_online_config` por `blinkchat_token`.
+- Se token inválido → 404 com texto `ERRO: token invalido`.
+- Validar `?id=` (obrigatório, numérico) → 400 se ausente/ruim (mantém comportamento atual).
+- Buscar produto em `chamado_denis_itens` por `(tenant_id, numero)`.
+- Se não existir → 400 com texto `ERRO: produto nao encontrado` (decisão confirmada).
+- Continuar formatando: `numero - descricao - R$ valor - status - link`.
+- Manter logging estruturado já existente (request_id, token mascarado, id, ms).
+- Continuar com `verify_jwt = false` (público).
 
-## 4. Tela de teste do endpoint
+### 3. Tela de Configurações (`VendasOnlineConfig.tsx`) — atualizar card "Integração Blinkchat"
 
-Nova página `src/pages/BlinkchatTeste.tsx` em rota `/vendas-online/blinkchat-teste` (registrada em `src/App.tsx`, protegida por `ProtectedRoute`). Conteúdo:
+- Carregar `blinkchat_token` da config do tenant.
+- Mostrar a **URL completa pronta**: `https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/blinkchat-produto/{token}?id=`
+- Botão "Copiar URL".
+- Botão "Rotacionar token" (gera novo, invalida o antigo) com confirmação — útil se vazar.
+- Texto explicativo curto: "Cole esta URL no bloco GET do Blinkchat e adicione o número do produto após `?id=`."
+- Remover qualquer menção a `tenant=` / UUID.
 
-- Inputs: `id` (number, default 1) e `tenant` (text, pré-preenchido com `profile.tenant_id`, editável para testar outros tenants).
-- Botão "Testar endpoint" que faz `fetch` GET para a URL pública (sem auth header).
-- Mostra:
-  - URL chamada (com botão copiar).
-  - HTTP status + tempo de resposta em ms.
-  - Corpo da resposta em `<pre>` monoespaçado.
-  - Validação visual: se a resposta tem 5 campos separados por ` - ` → badge verde "formato OK", senão badge vermelho.
-- Botão "Voltar para configurações".
+### 4. Tela de Teste (`BlinkchatTeste.tsx`) — simplificar
 
-Adicionar link no `AppSidebar` não é necessário — acesso via card de configurações basta.
+- Remover input de `tenant`.
+- Manter input de `id`.
+- Usar o `blinkchat_token` do tenant logado para montar a URL automaticamente.
+- Manter validação visual (badge verde se resposta tem 5 campos separados por ` - `).
+
+## Detalhes técnicos
+
+- Token format: `bc_` + 24 hex chars (96 bits de entropia, suficiente para uso público não-crítico).
+- Geração no client (rotação): usar `crypto.getRandomValues` + update via Supabase client (RLS já protege escrita por `tenant_id`).
+- RLS de leitura na edge function: usar `SUPABASE_SERVICE_ROLE_KEY` para resolver token → tenant_id (bypassa RLS, necessário porque a chamada é anônima).
+- Path parsing: `new URL(req.url).pathname.split('/').pop()`.
 
 ## Arquivos afetados
 
-- `supabase/functions/blinkchat-produto/index.ts` — logs + formato fixo
-- `src/pages/VendasOnlineConfig.tsx` — novo card
-- `src/pages/BlinkchatTeste.tsx` — nova página
-- `src/App.tsx` — nova rota
+- Migration nova (coluna + backfill)
+- `supabase/functions/blinkchat-produto/index.ts` (reescrita)
+- `src/pages/VendasOnlineConfig.tsx` (card Blinkchat)
+- `src/pages/BlinkchatTeste.tsx` (remove input tenant)
 
-## Como diagnosticar problemas depois
+## Compatibilidade
 
-Após a entrega, qualquer falha do Blinkchat pode ser investigada com a ferramenta `supabase--edge_function_logs` (function `blinkchat-produto`), filtrando pelo `requestId` ou pelo `tenant`/`id` em questão.
+A URL antiga (`?id=&tenant=`) deixará de funcionar. Como ela ainda não está em produção no Blinkchat (está dando 400), não há risco de quebrar integração existente.

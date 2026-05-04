@@ -25,6 +25,7 @@ export default function VendasOnlineConfig() {
   const [apiKey, setApiKey] = useState("");
   const [devMode, setDevMode] = useState(true);
   const [secret, setSecret] = useState("");
+  const [totalSlots, setTotalSlots] = useState(99);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -64,13 +65,14 @@ export default function VendasOnlineConfig() {
       setLoading(true);
       const { data } = await supabase
         .from("vendas_online_config")
-        .select("abacate_api_key, dev_mode, webhook_secret")
+        .select("abacate_api_key, dev_mode, webhook_secret, total_slots")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       if (data) {
         setApiKey(data.abacate_api_key || "");
         setDevMode(!!data.dev_mode);
         setSecret(data.webhook_secret || "");
+        setTotalSlots(data.total_slots ?? 99);
       }
       setLoading(false);
     })();
@@ -78,6 +80,18 @@ export default function VendasOnlineConfig() {
 
   const save = async () => {
     if (!tenantId) return;
+    const ts = Math.max(1, Math.min(999, Math.floor(totalSlots || 99)));
+    // Se reduzindo: bloquear se houver slot acima com conteúdo
+    const { count } = await supabase
+      .from("chamado_denis_itens")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .gt("numero", ts)
+      .or("status.neq.disponivel,descricao.neq.,valor.gt.0");
+    if ((count ?? 0) > 0) {
+      toast.error(`Existem ${count} slot(s) acima de #${ts} com dados. Limpe-os antes de reduzir.`);
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("vendas_online_config")
@@ -87,9 +101,18 @@ export default function VendasOnlineConfig() {
           abacate_api_key: apiKey || null,
           dev_mode: devMode,
           webhook_secret: secret || null,
+          total_slots: ts,
         },
         { onConflict: "tenant_id" }
       );
+    if (!error) {
+      // Apaga slots vazios acima do novo limite
+      await supabase
+        .from("chamado_denis_itens")
+        .delete()
+        .eq("tenant_id", tenantId)
+        .gt("numero", ts);
+    }
     setSaving(false);
     if (error) toast.error("Erro ao salvar: " + error.message);
     else toast.success("Configuração salva");
@@ -194,6 +217,30 @@ export default function VendasOnlineConfig() {
         <h1 className="text-2xl font-bold">Configuração Vendas Online</h1>
         <p className="text-muted-foreground">Conecte sua conta AbacatePay para gerar links de pagamento.</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Slots da planilha</CardTitle>
+          <CardDescription>
+            Define quantas linhas (slots) numeradas existem na sua tabela de Vendas Online. Cada slot é um ID permanente (ex.: #1 a #99) que pode ser vinculado a outro sistema. Limpar um slot apaga apenas o conteúdo — o ID nunca muda.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label>Quantidade de slots</Label>
+          <Input
+            type="number"
+            min={1}
+            max={999}
+            value={totalSlots}
+            onChange={(e) => setTotalSlots(Number(e.target.value))}
+            className="max-w-[180px]"
+          />
+          <p className="text-xs text-muted-foreground">
+            Aumentar cria automaticamente os novos slots vazios. Reduzir só é permitido se os slots acima do novo limite estiverem vazios.
+          </p>
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader>

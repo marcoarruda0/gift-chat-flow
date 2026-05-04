@@ -69,7 +69,7 @@ export default function ChamadoDenis() {
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "disponivel" | "vendido" | "pago" | "pendente" | "sem_link">("todos");
   const [editing, setEditing] = useState<CellKey | null>(null);
   const [draftValue, setDraftValue] = useState<string>("");
-  const [creating, setCreating] = useState(false);
+  
   const [generating, setGenerating] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [locais, setLocais] = useState<Local[]>([]);
@@ -341,32 +341,15 @@ export default function ChamadoDenis() {
     }
   };
 
-  const addRow = async () => {
-    if (!tenantId || creating) return;
-    setCreating(true);
-    const { data, error } = await supabase
-      .from("chamado_denis_itens")
-      .insert({ tenant_id: tenantId, numero: 0, descricao: "", valor: 0, status: "disponivel" })
-      .select(SELECT_COLS)
-      .single();
-    setCreating(false);
-    if (error || !data) {
-      toast.error("Erro ao criar item");
+  const resetSlot = async (id: string) => {
+    if (!confirm("Limpar este slot? Os dados serão apagados, mas o ID será mantido.")) return;
+    const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: [id] });
+    if (error) {
+      toast.error("Erro ao limpar slot");
       return;
     }
-    setItems((prev) => [...prev, data as Item]);
-    setTimeout(() => startEdit((data as Item).id, "descricao", ""), 50);
-  };
-
-  const removeRow = async (id: string) => {
-    if (!confirm("Excluir este item?")) return;
-    const prev = items;
-    setItems((p) => p.filter((i) => i.id !== id));
-    const { error } = await supabase.from("chamado_denis_itens").delete().eq("id", id);
-    if (error) {
-      toast.error("Erro ao excluir");
-      setItems(prev);
-    }
+    toast.success(`Slot limpo (${data ?? 0})`);
+    load();
   };
 
   const copiarId = async (numero: number) => {
@@ -387,10 +370,7 @@ export default function ChamadoDenis() {
     });
   };
 
-  const elegiveisLimpeza = useMemo(
-    () => filtered.filter((i) => i.status !== "vendido"),
-    [filtered]
-  );
+  const elegiveisLimpeza = useMemo(() => filtered, [filtered]);
   const todosSelecionados = elegiveisLimpeza.length > 0 && elegiveisLimpeza.every((i) => selecionados.has(i.id));
   const algunsSelecionados = elegiveisLimpeza.some((i) => selecionados.has(i.id)) && !todosSelecionados;
 
@@ -411,20 +391,16 @@ export default function ChamadoDenis() {
     const ids = Array.from(selecionados);
     if (ids.length === 0) return;
     setLimpando(true);
-    const { error } = await supabase
-      .from("chamado_denis_itens")
-      .delete()
-      .in("id", ids)
-      .neq("status", "vendido");
+    const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: ids });
     setLimpando(false);
     setConfirmarLimpeza(false);
     if (error) {
-      toast.error("Erro ao limpar itens");
+      toast.error("Erro ao limpar slots");
       return;
     }
-    setItems((p) => p.filter((i) => !(selecionados.has(i.id) && i.status !== "vendido")));
     setSelecionados(new Set());
-    toast.success(`${ids.length} item(ns) removido(s)`);
+    toast.success(`${data ?? ids.length} slot(s) limpo(s)`);
+    load();
   };
 
   const gerarLink = async (item: Item) => {
@@ -529,7 +505,7 @@ export default function ChamadoDenis() {
           <div>
             <h1 className="text-2xl font-bold">Vendas Online</h1>
             <p className="text-muted-foreground">
-              Tabela editável estilo planilha — clique em qualquer célula para editar e gere links de pagamento.
+              Slots fixos numerados — clique numa célula para preencher e gere links de pagamento. O ID (#) é permanente e pode ser usado para integração externa.
             </p>
           </div>
           <div className="flex gap-2">
@@ -537,10 +513,6 @@ export default function ChamadoDenis() {
               <Link to="/vendas-online/config">
                 <Settings className="h-4 w-4 mr-2" /> AbacatePay
               </Link>
-            </Button>
-            <Button onClick={addRow} disabled={creating}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Nova linha
             </Button>
           </div>
         </div>
@@ -616,7 +588,7 @@ export default function ChamadoDenis() {
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    Nenhum item. Clique em "Nova linha" para começar.
+                    Nenhum slot encontrado com os filtros atuais.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -626,26 +598,14 @@ export default function ChamadoDenis() {
                   const editStatus = editing === `${item.id}-status`;
                   const isPaid = item.abacate_status === "PAID";
                   const statusReadOnly = isPaid;
-                  const isVendido = item.status === "vendido";
                   return (
                     <TableRow key={item.id} data-state={selecionados.has(item.id) ? "selected" : undefined}>
                       <TableCell>
-                        {isVendido ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex">
-                                <Checkbox checked={false} disabled aria-label="Item vendido" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>Item vendido — gerencie em Produtos vendidos</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Checkbox
-                            checked={selecionados.has(item.id)}
-                            onCheckedChange={() => toggleSelecionado(item.id)}
-                            aria-label={`Selecionar item ${item.numero}`}
-                          />
-                        )}
+                        <Checkbox
+                          checked={selecionados.has(item.id)}
+                          onCheckedChange={() => toggleSelecionado(item.id)}
+                          aria-label={`Selecionar slot ${item.numero}`}
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -791,7 +751,7 @@ export default function ChamadoDenis() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeRow(item.id)} className="h-8 w-8">
+                        <Button variant="ghost" size="icon" onClick={() => resetSlot(item.id)} className="h-8 w-8" title="Limpar este slot (mantém o ID)">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>
@@ -990,9 +950,9 @@ export default function ChamadoDenis() {
         <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Limpar itens selecionados?</AlertDialogTitle>
+              <AlertDialogTitle>Limpar slots selecionados?</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta ação removerá permanentemente {selecionados.size} item(ns) do sistema. Itens vendidos não serão afetados e permanecem em "Produtos vendidos".
+                Os dados de {selecionados.size} slot(s) serão apagados (descrição, valor, pagamento e entrega). Os IDs (#) serão preservados para reuso e integração externa. Vendas já registradas continuam disponíveis em "Produtos vendidos".
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

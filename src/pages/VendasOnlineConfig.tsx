@@ -65,13 +65,14 @@ export default function VendasOnlineConfig() {
       setLoading(true);
       const { data } = await supabase
         .from("vendas_online_config")
-        .select("abacate_api_key, dev_mode, webhook_secret")
+        .select("abacate_api_key, dev_mode, webhook_secret, total_slots")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       if (data) {
         setApiKey(data.abacate_api_key || "");
         setDevMode(!!data.dev_mode);
         setSecret(data.webhook_secret || "");
+        setTotalSlots(data.total_slots ?? 99);
       }
       setLoading(false);
     })();

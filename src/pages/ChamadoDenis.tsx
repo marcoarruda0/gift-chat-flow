@@ -588,7 +588,7 @@ export default function ChamadoDenis() {
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    Nenhum item. Clique em "Nova linha" para começar.
+                    Nenhum slot encontrado com os filtros atuais.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -602,22 +602,11 @@ export default function ChamadoDenis() {
                   return (
                     <TableRow key={item.id} data-state={selecionados.has(item.id) ? "selected" : undefined}>
                       <TableCell>
-                        {isVendido ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex">
-                                <Checkbox checked={false} disabled aria-label="Item vendido" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>Item vendido — gerencie em Produtos vendidos</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Checkbox
-                            checked={selecionados.has(item.id)}
-                            onCheckedChange={() => toggleSelecionado(item.id)}
-                            aria-label={`Selecionar item ${item.numero}`}
-                          />
-                        )}
+                        <Checkbox
+                          checked={selecionados.has(item.id)}
+                          onCheckedChange={() => toggleSelecionado(item.id)}
+                          aria-label={`Selecionar slot ${item.numero}`}
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">

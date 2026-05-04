@@ -505,7 +505,7 @@ export default function ChamadoDenis() {
           <div>
             <h1 className="text-2xl font-bold">Vendas Online</h1>
             <p className="text-muted-foreground">
-              Tabela editável estilo planilha — clique em qualquer célula para editar e gere links de pagamento.
+              Slots fixos numerados — clique numa célula para preencher e gere links de pagamento. O ID (#) é permanente e pode ser usado para integração externa.
             </p>
           </div>
           <div className="flex gap-2">

@@ -1,6 +1,7 @@
 // Endpoint público para integração com Blinkchat
 // GET /blinkchat-produto?id=1&tenant=<uuid>
-// Retorna texto simples no formato: "Descrição - R$ 50,00 - disponivel"
+// Retorna texto simples no formato fixo:
+//   "{numero} - {descricao} - R$ {valor} - {status} - {link}"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -15,7 +16,17 @@ function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatLine(numero: number | string, descricao: string, valor: number, status: string, link: string): string {
+  const desc = (descricao || "").trim() || "sem descricao";
+  const stat = (status || "").trim() || "disponivel";
+  const lnk = (link || "").trim() || "sem link";
+  return `${numero} - ${desc} - R$ ${formatBRL(Number(valor || 0))} - ${stat} - ${lnk}`;
+}
+
 Deno.serve(async (req) => {
+  const requestId = crypto.randomUUID().slice(0, 8);
+  const startedAt = Date.now();
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -24,18 +35,27 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const idParam = url.searchParams.get("id");
     const tenantParam = url.searchParams.get("tenant");
+    const userAgent = req.headers.get("user-agent") || "";
+    const referer = req.headers.get("referer") || "";
+
+    console.log(
+      `[${requestId}] IN method=${req.method} id=${idParam} tenant=${tenantParam} ua="${userAgent}" ref="${referer}"`,
+    );
 
     if (!idParam) {
-      return new Response("Erro: parâmetro 'id' é obrigatório", { status: 400, headers: textHeaders });
+      console.error(`[${requestId}] VALIDATION id ausente`);
+      return new Response("ERRO: parametro 'id' e obrigatorio", { status: 400, headers: textHeaders });
     }
 
     const numero = parseInt(idParam, 10);
     if (!Number.isFinite(numero) || numero < 1) {
-      return new Response("Erro: 'id' inválido", { status: 400, headers: textHeaders });
+      console.error(`[${requestId}] VALIDATION id invalido: ${idParam}`);
+      return new Response(`ERRO: id invalido (${idParam})`, { status: 400, headers: textHeaders });
     }
 
     if (!tenantParam) {
-      return new Response("Erro: parâmetro 'tenant' é obrigatório", { status: 400, headers: textHeaders });
+      console.error(`[${requestId}] VALIDATION tenant ausente`);
+      return new Response("ERRO: parametro 'tenant' e obrigatorio", { status: 400, headers: textHeaders });
     }
 
     const supabase = createClient(
@@ -51,23 +71,35 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (error) {
-      console.error("DB error:", error);
-      return new Response("Erro ao consultar produto", { status: 500, headers: textHeaders });
+      console.error(`[${requestId}] DB_ERROR ${error.message} code=${error.code}`);
+      return new Response(`ERRO: falha ao consultar produto (${error.message})`, {
+        status: 500,
+        headers: textHeaders,
+      });
     }
 
     if (!data) {
-      return new Response(`Produto ${numero} não encontrado`, { status: 404, headers: textHeaders });
+      console.warn(`[${requestId}] NOT_FOUND tenant=${tenantParam} numero=${numero}`);
+      return new Response(`ERRO: produto ${numero} nao encontrado`, { status: 404, headers: textHeaders });
     }
 
-    const desc = (data.descricao || "").trim() || "(slot vazio)";
-    const valor = formatBRL(Number(data.valor || 0));
-    const status = data.status || "disponivel";
-    const linkPart = data.abacate_url ? ` - ${data.abacate_url}` : "";
+    const body = formatLine(
+      data.numero,
+      data.descricao || "",
+      Number(data.valor || 0),
+      data.status || "disponivel",
+      data.abacate_url || "",
+    );
 
-    const body = `${data.numero} - ${desc} - R$ ${valor} - ${status}${linkPart}`;
+    const elapsed = Date.now() - startedAt;
+    console.log(
+      `[${requestId}] OK tenant=${tenantParam} numero=${data.numero} status=${data.status} elapsed_ms=${elapsed}`,
+    );
+
     return new Response(body, { status: 200, headers: textHeaders });
   } catch (e) {
-    console.error("Unexpected error:", e);
-    return new Response("Erro interno", { status: 500, headers: textHeaders });
+    const elapsed = Date.now() - startedAt;
+    console.error(`[${requestId}] UNEXPECTED ${(e as Error).message} elapsed_ms=${elapsed}`);
+    return new Response(`ERRO: erro interno (${(e as Error).message})`, { status: 500, headers: textHeaders });
   }
 });

@@ -1,65 +1,75 @@
-# Vendas Online — Slots fixos com limpeza por reset
+# Integração Blinkchat — diagnóstico, formato e ferramentas
 
-## Mudança de paradigma
+Quatro melhorias na integração já existente (`/blinkchat-produto`) para facilitar uso e troubleshooting.
 
-Hoje cada item é uma linha que pode ser criada/deletada. Vamos virar **slots permanentes**: o `numero` é a "linha da planilha" e nunca some — apenas o conteúdo é limpo. ID estável para integração externa.
+## 1. Logs estruturados na edge function
 
-## 1. Banco — slots fixos por tenant
+Em `supabase/functions/blinkchat-produto/index.ts`, adicionar `console.log`/`console.error` em pontos-chave para que apareçam em Edge Function Logs (Lovable Cloud → Backend):
 
-**Migration**:
+- Início de cada request: método, `id`, `tenant`, `user-agent`, `referer`.
+- Erros de validação (id ou tenant ausente/ inválido) com motivo.
+- Erro de DB (com mensagem do Supabase).
+- Slot não encontrado (404).
+- Sucesso: `id`, `tenant`, status do slot, tempo total em ms.
 
-- Adicionar coluna `total_slots integer NOT NULL DEFAULT 99` em `vendas_online_config`.
-- Criar função `seed_chamado_denis_slots(p_tenant_id uuid)`: insere os slots `1..total_slots` faltantes com `status='disponivel'`, `descricao=''`, `valor=0`. Usa `ON CONFLICT (tenant_id, numero) DO NOTHING`.
-- Adicionar `UNIQUE (tenant_id, numero)` em `chamado_denis_itens` (necessário para o ON CONFLICT). Hoje o trigger `set_chamado_denis_numero` garante isso por incremento, mas sem constraint.
-- Trigger `AFTER INSERT` em `vendas_online_config`: chama `seed_chamado_denis_slots(NEW.tenant_id)`.
-- **Backfill**: para cada `tenant_id` em `vendas_online_config` (ou `chamado_denis_itens`), chamar `seed_chamado_denis_slots`. Hoje há 1 tenant com 8 itens — vai completar para 99.
-- Função `reset_chamado_denis_slot(p_item_id uuid)` (SECURITY DEFINER, valida tenant): zera `descricao=''`, `valor=0`, `status='disponivel'`, `local_id=null`, `forma_pagamento=null`, `entregue=false`, todos os campos de pagador (`pagador_*`), pagamento (`pago_em`, `abacate_*`), e entrega (`entregue_*`). **Preserva**: `id`, `tenant_id`, `numero`, `created_at`.
-- Trigger `BEFORE INSERT` adicional em `chamado_denis_itens`: bloquear inserts manuais via cliente quando já existem `total_slots` para o tenant (proteção extra; ou simplesmente revogar permissão de INSERT do role `authenticated` e deixar só o seed via SECURITY DEFINER).
+Cada log usa um `requestId` curto (ex: `crypto.randomUUID().slice(0,8)`) prefixado, para correlacionar entrada/saída de uma mesma requisição.
 
-## 2. Frontend — `src/pages/ChamadoDenis.tsx`
+## 2. Formato fixo da resposta
 
-**Listagem**:
-- Já carrega ordenado por `numero` ASC — mantém. Vai mostrar todos os 99 slots.
-- Slot vazio (status `disponivel` + `descricao===''` + `valor===0`): linha com aparência "vazia" (descrição em itálico cinza "— vazio —", botão "Preencher" inline que abre o editor de descrição/valor).
-- Filtros existentes (`busca`, status) continuam funcionando — busca por número fica útil.
-
-**Botão "Limpar selecionados (N)"**:
-- Substituir o `delete` atual por chamada à RPC `reset_chamado_denis_slot` em loop (ou criar `reset_chamado_denis_slots(p_ids uuid[])` que faz tudo numa transação — preferido).
-- Permite selecionar **vendidos também** (remove o `disabled` no checkbox). Histórico do vendido permanece em "Produtos vendidos" porque vem de `compras` / `giftback_movimentos`, não de `chamado_denis_itens`.
-- Texto do `AlertDialog` muda para: *"Tem certeza? Os dados de N slot(s) serão apagados. Os IDs (#) serão preservados para uso futuro. Vendas já registradas continuam disponíveis em 'Produtos vendidos'."*
-
-**Remover criação manual**:
-- Remover botão "Adicionar item" e função `criarItem`.
-- Remover `deletarItem` individual (slots não são deletados, só resetados). Substituir por ação "Limpar este slot" no menu da linha (mesma RPC com 1 id).
-
-**Realtime**:
-- Já assina `*` na tabela — UPDATEs do reset já refletem automaticamente.
-
-## 3. Config UI — `src/pages/VendasOnlineConfig.tsx`
-
-- Novo campo "Quantidade de slots" (input numérico, padrão 99, min 1, max 999).
-- Ao salvar com valor maior que o atual: chama `seed_chamado_denis_slots` para criar os novos.
-- Ao salvar com valor **menor**: bloqueia se algum slot acima do novo limite tiver `status != 'disponivel'` ou conteúdo. Toast: "Limpe os slots X..Y antes de reduzir." Se todos estiverem vazios, deleta-os.
-
-## Comportamento resultante
+Garantir que a resposta SEMPRE siga exatamente:
 
 ```text
-Antes:  [1][2][3][4][5]                      ← 5 itens, deletar #3 vira [1][2][4][5]
-Depois: [1][2][3][4][5][6]...[99]            ← 99 slots fixos
-        Limpar #3 → [1][2][3:vazio][4][5]    ← #3 continua, pronto pra reuso
+{numero} - {descricao} - R$ {valor} - {status} - {link}
 ```
 
-ID `#3` sempre aponta para o mesmo slot lógico — seguro para vincular ao sistema externo.
+Regras de fallback (quando slot vazio ou sem dado):
+
+- `descricao` vazia → `"sem descricao"`
+- `valor` ausente/0 → `"0,00"` (formato pt-BR sempre com 2 casas)
+- `status` ausente → `"disponivel"`
+- `link` ausente → `"sem link"` (em vez de omitir o trecho)
+
+Hoje o link é omitido quando vazio, quebrando o formato esperado. Passa a ser sempre 5 campos separados por ` - `.
+
+Erros (id/tenant inválido, slot não encontrado, erro interno) continuam retornando texto descritivo com status HTTP apropriado, mas marcados claramente como `ERRO: ...` para o Blinkchat distinguir.
+
+## 3. Card "Endpoint Blinkchat" em Configurações Vendas Online
+
+Em `src/pages/VendasOnlineConfig.tsx`, novo card abaixo dos demais com:
+
+- Título: "Integração Blinkchat"
+- Descrição curta explicando o uso (substitui planilha do Google Sheets).
+- Campo readonly com a URL completa pré-preenchida:
+  ```
+  https://ywcgburxzwukjtqxuhyr.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=<TENANT_ID>
+  ```
+  Onde `<TENANT_ID>` vem de `profile.tenant_id` e `{{id}}` é literal (placeholder do Blinkchat).
+- Botão "Copiar URL" usando a mesma `toast` já em uso.
+- Link/botão "Abrir tela de teste" → navega para `/vendas-online/blinkchat-teste`.
+- Bloco de exemplo mostrando o formato exato da resposta.
+
+## 4. Tela de teste do endpoint
+
+Nova página `src/pages/BlinkchatTeste.tsx` em rota `/vendas-online/blinkchat-teste` (registrada em `src/App.tsx`, protegida por `ProtectedRoute`). Conteúdo:
+
+- Inputs: `id` (number, default 1) e `tenant` (text, pré-preenchido com `profile.tenant_id`, editável para testar outros tenants).
+- Botão "Testar endpoint" que faz `fetch` GET para a URL pública (sem auth header).
+- Mostra:
+  - URL chamada (com botão copiar).
+  - HTTP status + tempo de resposta em ms.
+  - Corpo da resposta em `<pre>` monoespaçado.
+  - Validação visual: se a resposta tem 5 campos separados por ` - ` → badge verde "formato OK", senão badge vermelho.
+- Botão "Voltar para configurações".
+
+Adicionar link no `AppSidebar` não é necessário — acesso via card de configurações basta.
 
 ## Arquivos afetados
 
-- `supabase/migrations/<nova>.sql` — coluna `total_slots`, unique, funções `seed_*` e `reset_*`, trigger, backfill, revogação de INSERT direto.
-- `src/pages/ChamadoDenis.tsx` — RPC reset, remover criar/deletar, render de slot vazio, AlertDialog atualizado, permitir selecionar vendidos.
-- `src/pages/VendasOnlineConfig.tsx` — campo "Quantidade de slots".
-- `src/integrations/supabase/types.ts` — auto-regenerado.
+- `supabase/functions/blinkchat-produto/index.ts` — logs + formato fixo
+- `src/pages/VendasOnlineConfig.tsx` — novo card
+- `src/pages/BlinkchatTeste.tsx` — nova página
+- `src/App.tsx` — nova rota
 
-## Fora de escopo
+## Como diagnosticar problemas depois
 
-- Migrar histórico (não há — `chamado_denis_entregas_log` aponta por `item_id` que continua existindo).
-- Renumeração / reordenação manual de slots.
-- Importação/exportação em massa de slots.
+Após a entrega, qualquer falha do Blinkchat pode ser investigada com a ferramenta `supabase--edge_function_logs` (function `blinkchat-produto`), filtrando pelo `requestId` ou pelo `tenant`/`id` em questão.

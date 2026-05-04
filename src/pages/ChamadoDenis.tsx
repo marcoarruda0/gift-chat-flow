@@ -81,6 +81,9 @@ export default function ChamadoDenis() {
   const [entregaItem, setEntregaItem] = useState<Item | null>(null);
   const [desfazerItem, setDesfazerItem] = useState<Item | null>(null);
   const [verEntregaItem, setVerEntregaItem] = useState<Item | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [confirmarLimpeza, setConfirmarLimpeza] = useState(false);
+  const [limpando, setLimpando] = useState(false);
   const [openGroups, setOpenGroups] = useState<{ vendas: boolean; vendidos: boolean; locais: boolean }>(() => {
     try {
       const raw = localStorage.getItem("vendas-online:groups");

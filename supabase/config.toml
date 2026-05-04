@@ -41,3 +41,6 @@ verify_jwt = true
 
 [functions.vendas-online-testar-chave]
 verify_jwt = true
+
+[functions.blinkchat-produto]
+verify_jwt = false

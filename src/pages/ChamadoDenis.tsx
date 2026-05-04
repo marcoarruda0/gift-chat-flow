@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package, ChevronDown, Printer, ShoppingCart } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { ConfirmarEntregaDialog, EntregaPayload } from "@/components/vendas-online/ConfirmarEntregaDialog";
 import { ComprovanteEntregaDialog } from "@/components/vendas-online/ComprovanteEntregaDialog";

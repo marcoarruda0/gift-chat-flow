@@ -342,6 +342,11 @@ export default function ChamadoDenis() {
   };
 
   const resetSlot = async (id: string) => {
+    const alvo = items.find((i) => i.id === id);
+    if (alvo?.status === "vendido") {
+      toast.error("Não é possível limpar um produto vendido. Altere o status para Disponível antes.");
+      return;
+    }
     if (!confirm("Limpar este slot? Os dados serão apagados, mas o ID será mantido.")) return;
     const { data, error } = await supabase.rpc("reset_chamado_denis_slots", { p_ids: [id] });
     if (error) {

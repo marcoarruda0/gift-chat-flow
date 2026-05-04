@@ -27,6 +27,7 @@ import Empresa from "@/pages/Empresa";
 import PecaRara from "@/pages/PecaRara";
 import ChamadoDenis from "@/pages/ChamadoDenis";
 import VendasOnlineConfig from "@/pages/VendasOnlineConfig";
+import BlinkchatTeste from "@/pages/BlinkchatTeste";
 import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import RelatorioGiftback from "@/pages/RelatorioGiftback";
 import Relatorios from "@/pages/Relatorios";
@@ -71,6 +72,7 @@ function AppRoutes() {
       <Route path="/chamado-denis" element={<ProtectedRoute><ChamadoDenis /></ProtectedRoute>} />
       <Route path="/vendas-online" element={<Navigate to="/chamado-denis" replace />} />
       <Route path="/vendas-online/config" element={<ProtectedRoute><VendasOnlineConfig /></ProtectedRoute>} />
+      <Route path="/vendas-online/blinkchat-teste" element={<ProtectedRoute><BlinkchatTeste /></ProtectedRoute>} />
       <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
       <Route path="/relatorios/atendimento" element={<Navigate to="/relatorios?tab=atendimento" replace />} />
       <Route path="/relatorios/giftback" element={<Navigate to="/relatorios?tab=giftback" replace />} />

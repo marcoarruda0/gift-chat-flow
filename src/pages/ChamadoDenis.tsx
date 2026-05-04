@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Trash2, Loader2, Settings, Link2, ExternalLink, Copy, CheckCircle2, RefreshCw, MapPin, PackageCheck, Package, ChevronDown, Printer, ShoppingCart } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { ConfirmarEntregaDialog, EntregaPayload } from "@/components/vendas-online/ConfirmarEntregaDialog";
 import { ComprovanteEntregaDialog } from "@/components/vendas-online/ComprovanteEntregaDialog";
@@ -80,6 +81,9 @@ export default function ChamadoDenis() {
   const [entregaItem, setEntregaItem] = useState<Item | null>(null);
   const [desfazerItem, setDesfazerItem] = useState<Item | null>(null);
   const [verEntregaItem, setVerEntregaItem] = useState<Item | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [confirmarLimpeza, setConfirmarLimpeza] = useState(false);
+  const [limpando, setLimpando] = useState(false);
   const [openGroups, setOpenGroups] = useState<{ vendas: boolean; vendidos: boolean; locais: boolean }>(() => {
     try {
       const raw = localStorage.getItem("vendas-online:groups");
@@ -365,6 +369,64 @@ export default function ChamadoDenis() {
     }
   };
 
+  const copiarId = async (numero: number) => {
+    try {
+      await navigator.clipboard.writeText(String(numero));
+      toast.success(`ID #${numero} copiado`);
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
+
+  const toggleSelecionado = (id: string) => {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const elegiveisLimpeza = useMemo(
+    () => filtered.filter((i) => i.status !== "vendido"),
+    [filtered]
+  );
+  const todosSelecionados = elegiveisLimpeza.length > 0 && elegiveisLimpeza.every((i) => selecionados.has(i.id));
+  const algunsSelecionados = elegiveisLimpeza.some((i) => selecionados.has(i.id)) && !todosSelecionados;
+
+  const toggleTodos = () => {
+    setSelecionados((prev) => {
+      if (todosSelecionados) {
+        const next = new Set(prev);
+        elegiveisLimpeza.forEach((i) => next.delete(i.id));
+        return next;
+      }
+      const next = new Set(prev);
+      elegiveisLimpeza.forEach((i) => next.add(i.id));
+      return next;
+    });
+  };
+
+  const limparSelecionados = async () => {
+    const ids = Array.from(selecionados);
+    if (ids.length === 0) return;
+    setLimpando(true);
+    const { error } = await supabase
+      .from("chamado_denis_itens")
+      .delete()
+      .in("id", ids)
+      .neq("status", "vendido");
+    setLimpando(false);
+    setConfirmarLimpeza(false);
+    if (error) {
+      toast.error("Erro ao limpar itens");
+      return;
+    }
+    setItems((p) => p.filter((i) => !(selecionados.has(i.id) && i.status !== "vendido")));
+    setSelecionados(new Set());
+    toast.success(`${ids.length} item(ns) removido(s)`);
+  };
+
   const gerarLink = async (item: Item) => {
     if (Number(item.valor || 0) <= 0) {
       toast.error("Defina um valor maior que zero antes de gerar o link.");
@@ -511,13 +573,32 @@ export default function ChamadoDenis() {
               <SelectItem value="sem_link">Sem link</SelectItem>
             </SelectContent>
           </Select>
+          {selecionados.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setConfirmarLimpeza(true)}
+              className="ml-auto gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Limpar selecionados ({selecionados.size})
+            </Button>
+          )}
         </div>
 
         <div className="rounded-lg border bg-card overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-20">ID</TableHead>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={todosSelecionados ? true : algunsSelecionados ? "indeterminate" : false}
+                    onCheckedChange={toggleTodos}
+                    disabled={elegiveisLimpeza.length === 0}
+                    aria-label="Selecionar todos"
+                  />
+                </TableHead>
+                <TableHead className="w-24">ID</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="w-36">Valor</TableHead>
                 <TableHead className="w-36">Status</TableHead>
@@ -528,13 +609,13 @@ export default function ChamadoDenis() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Carregando...
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Nenhum item. Clique em "Nova linha" para começar.
                   </TableCell>
                 </TableRow>
@@ -545,9 +626,35 @@ export default function ChamadoDenis() {
                   const editStatus = editing === `${item.id}-status`;
                   const isPaid = item.abacate_status === "PAID";
                   const statusReadOnly = isPaid;
+                  const isVendido = item.status === "vendido";
                   return (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-mono text-muted-foreground">#{item.numero}</TableCell>
+                    <TableRow key={item.id} data-state={selecionados.has(item.id) ? "selected" : undefined}>
+                      <TableCell>
+                        {isVendido ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex">
+                                <Checkbox checked={false} disabled aria-label="Item vendido" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>Item vendido — gerencie em Produtos vendidos</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Checkbox
+                            checked={selecionados.has(item.id)}
+                            onCheckedChange={() => toggleSelecionado(item.id)}
+                            aria-label={`Selecionar item ${item.numero}`}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono font-semibold text-primary">#{item.numero}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copiarId(item.numero)} title="Copiar ID">
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell onClick={() => !editDesc && startEdit(item.id, "descricao", item.descricao)}>
                         {editDesc ? (
                           <Input
@@ -770,7 +877,14 @@ export default function ChamadoDenis() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum produto vendido encontrado.</TableCell></TableRow>
                 ) : vendidos.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-mono text-muted-foreground">#{item.numero}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono font-semibold text-primary">#{item.numero}</span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copiarId(item.numero)} title="Copiar ID">
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell className="max-w-[260px] truncate">{item.descricao}</TableCell>
                     <TableCell>{brl(Number(item.valor || 0))}</TableCell>
                     <TableCell>{item.forma_pagamento ? <Badge variant="outline">{item.forma_pagamento}</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
@@ -868,6 +982,24 @@ export default function ChamadoDenis() {
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction onClick={() => { if (desfazerItem) { desfazerEntrega(desfazerItem); setDesfazerItem(null); } }}>
                 Desfazer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Limpar itens selecionados?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação removerá permanentemente {selecionados.size} item(ns) do sistema. Itens vendidos não serão afetados e permanecem em "Produtos vendidos".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={limpando}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={(e) => { e.preventDefault(); limparSelecionados(); }} disabled={limpando}>
+                {limpando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Limpar
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -1,110 +1,46 @@
-## Objetivo
+# Vendas Online — Limpeza por seleção + ID de integração
 
-Refinar a página **Vendas Online** (`src/pages/ChamadoDenis.tsx`) com 3 melhorias: (1) seções colapsáveis e remoção do layout em cards, (2) comprovante de entrega imprimível/PDF, (3) histórico de auditoria de entregas.
+## Resumo das decisões
 
----
+- **Seleção manual** com checkbox por linha + checkbox "selecionar todos" no cabeçalho.
+- **Hard delete** dos itens selecionados.
+- Itens com `status = 'vendido'` (aparecem em "Produtos vendidos") **não podem ser limpos** — checkbox bloqueado.
+- **Numeração mantém o "slot"**: ao deletar o item #5, o número 5 fica vago. O trigger atual (`set_chamado_denis_numero`) usa `MAX(numero)+1` por tenant, então novos itens continuam crescendo a partir do maior existente. Não vamos alterar o trigger — itens deletados simplesmente liberam visualmente a posição, sem reaproveitar.
+- **ID de integração**: o próprio campo `numero` (coluna #) será o identificador a vincular ao sistema externo. Vamos destacá-lo na UI e adicionar botão "copiar".
 
-## 1. Seções colapsáveis + tabela única em "Produtos vendidos"
+## 1. Tabela principal — seleção em massa
 
-Usar `Collapsible` (`@/components/ui/collapsible.tsx`, já existente) para agrupar três blocos da página:
+Em `src/pages/ChamadoDenis.tsx` (seção "Vendas online"):
 
-```
-[▾] Vendas online (tabela principal + KPIs + filtros)
-[▾] Produtos vendidos (filtros + tabela)
-[▾] Locais (cadastro + lista)
-```
+- Adicionar coluna **checkbox** como primeira coluna da tabela.
+  - Cabeçalho: checkbox "selecionar todos" (marca/desmarca apenas linhas elegíveis = não-vendidas da página atual).
+  - Linha: checkbox habilitado quando `item.status !== 'vendido'`. Quando vendido: checkbox **desabilitado** com tooltip "Item vendido — gerencie em Produtos vendidos".
+- Estado: `const [selecionados, setSelecionados] = useState<Set<string>>(new Set())`.
+- Botão de ação no header da seção: **"Limpar selecionados (N)"** — visível apenas quando `selecionados.size > 0`. Usa variante `destructive`.
+- Ao clicar, abrir `AlertDialog` de confirmação:
+  - Texto: "Tem certeza? Esta ação removerá permanentemente N item(ns) do sistema. Itens vendidos não serão afetados."
+  - Confirmar → `supabase.from('chamado_denis_itens').delete().in('id', [...]).neq('status','vendido')` (dupla proteção: filtro client + server).
+  - Após sucesso: limpar seleção, recarregar lista, toast de sucesso.
 
-- Cabeçalho de cada grupo: ícone chevron + título + contador (ex.: "Produtos vendidos · 12").
-- Estado de abertura persistido em `localStorage` (`vendas-online:groups`) para não fechar a cada reload.
-- Padrão inicial: todos abertos.
+## 2. Coluna # como ID de integração
 
-Em "Produtos vendidos":
-- **Remover** o bloco mobile de cards (`md:hidden`).
-- Manter apenas `<Table>` para todas as larguras, dentro de `div.overflow-x-auto` (já existe). Em telas estreitas o usuário rola horizontalmente — comportamento padrão do resto da página.
-- Reduzir paddings e usar truncate em colunas longas (Descrição, Cliente) para melhor densidade.
+- Renomear o cabeçalho da coluna `#` para **"ID"** (ou manter `#` mas com tooltip explicando).
+- Renderizar o número em **fonte mono + destacado** (ex.: `font-mono font-semibold text-primary`).
+- Adicionar botão pequeno "copiar" (ícone `Copy` do lucide) ao lado, que copia o número para o clipboard via `navigator.clipboard.writeText(String(item.numero))` + toast "ID copiado".
+- Aplicar o mesmo destaque também na tabela "Produtos vendidos" para consistência.
 
----
+## 3. Comportamento esperado
 
-## 2. Comprovante de entrega (visualizar + imprimir/PDF)
-
-### 2.1 Componente `ComprovanteEntregaDialog`
-
-Novo arquivo: `src/components/vendas-online/ComprovanteEntregaDialog.tsx`.
-
-- Recebe `item: Item` e dados do tenant (nome, opcional).
-- Renderiza em um `<Dialog>` o **comprovante formatado** (HTML imprimível):
-  - Cabeçalho: "Comprovante de Entrega — Vendas Online"
-  - Dados do produto: #ID, descrição, valor, forma de pagamento.
-  - Dados do comprador: nome, CPF, email, telefone, data do pagamento.
-  - Dados da retirada: data/hora da entrega, "Quem retirou" (próprio comprador / outra pessoa + nome + doc), usuário do sistema que registrou.
-  - Imagem da assinatura (`<img src={item.entregue_assinatura}>`).
-  - Rodapé: data de emissão.
-- Botões:
-  - **Imprimir** — `window.print()` aplicado a um wrapper com `id="comprovante-print"`. CSS global `@media print` (em `src/index.css`) oculta tudo exceto `#comprovante-print`.
-  - **Baixar PDF** — gerar via `html2canvas` + `jsPDF` (instalar dependências). Captura o nó do comprovante e exporta `comprovante-entrega-{numero}.pdf`.
-  - **Fechar**.
-
-### 2.2 Integração
-
-Na coluna "Entregue?" da tabela de vendidos, quando `item.entregue === true`:
-- Manter o badge "Sim" clicável (abre `ComprovanteEntregaDialog`, substitui o `verEntregaItem` atual).
-- Adicionar um botão extra `Printer` (lucide) ao lado da coluna de ações: abre direto o comprovante.
-
-Reutilizar o componente também na visualização atual de "ver entrega" (substituir o `Dialog` simples de assinatura existente).
-
-### Dependências a adicionar
-- `jspdf`
-- `html2canvas`
-
----
-
-## 3. Histórico/auditoria de entregas
-
-### 3.1 Migration
-
-Nova tabela `chamado_denis_entregas_log`:
-
-| Coluna | Tipo | Notas |
-|---|---|---|
-| id | uuid PK default gen_random_uuid() | |
-| tenant_id | uuid not null | |
-| item_id | uuid not null | sem FK (mesmo padrão do projeto) |
-| acao | text not null | `entregue` ou `desfeito` |
-| usuario_id | uuid | quem disparou (auth.uid) |
-| usuario_nome | text | snapshot do nome do profile |
-| retirante_proprio | boolean | snapshot |
-| retirante_nome | text | snapshot |
-| retirante_doc | text | snapshot |
-| assinatura | text | snapshot do data URL |
-| created_at | timestamptz default now() | |
-
-**RLS** (mesmo padrão das outras tabelas do módulo):
-- SELECT: `tenant_id = get_user_tenant_id(auth.uid()) OR has_role(auth.uid(),'admin_master')`
-- INSERT: idem (with check).
-- Sem UPDATE/DELETE para usuários comuns (log imutável).
-
-### 3.2 Escrita do log
-
-Em `confirmarEntrega` e `desfazerEntrega` (`ChamadoDenis.tsx`), após o `update` bem-sucedido, inserir uma linha em `chamado_denis_entregas_log` com `acao = "entregue" | "desfeito"` e snapshot dos dados do payload + `profile.nome`.
-
-### 3.3 UI — visualização do histórico
-
-No `ComprovanteEntregaDialog`, adicionar uma aba/seção **"Histórico"**:
-- Lista cronológica (desc) das ações daquele `item_id`.
-- Cada linha: data/hora, usuário, ação (badge), retirante.
-- Carregada sob demanda quando o diálogo abre.
-
----
+- Numeração **não é renumerada** após delete. Se hoje você tem 1,2,3,4,5 e apaga o 3, ficam 1,2,4,5 e o próximo criado será 6.
+- Itens vendidos preservados: aparecem em "Produtos vendidos" e ficam visíveis (com checkbox cinza/desabilitado) na lista principal **se ainda não tiverem sido movidos** — confirmar comportamento atual: verificarei se a aba "Vendas online" já filtra `status != 'vendido'`. Se sim, o problema da proteção fica naturalmente resolvido (não há vendidos para selecionar). Se não, mantém a checagem `disabled`.
 
 ## Arquivos afetados
 
-- `src/pages/ChamadoDenis.tsx` — Collapsibles, remoção dos cards mobile, escrita no log, integração com novo diálogo.
-- `src/components/vendas-online/ComprovanteEntregaDialog.tsx` *(novo)* — comprovante imprimível + PDF + histórico.
-- `src/index.css` — regras `@media print` para `#comprovante-print`.
-- `supabase/migrations/<novo>.sql` — tabela `chamado_denis_entregas_log` + policies.
-- `package.json` — dependências `jspdf`, `html2canvas`.
+- `src/pages/ChamadoDenis.tsx` — checkbox por linha, header com "Limpar selecionados", `AlertDialog`, destaque + copiar do `numero`.
+- Sem migration: usaremos `DELETE` via cliente (RLS já permite `tenant_delete_chamado_denis`).
+- Sem mudanças em `src/components/ui/*`.
 
-## Fora de escopo (próximos prompts)
-- Envio automático do comprovante por WhatsApp/Email ao comprador.
-- Exportar todo o histórico de entregas em CSV.
-- Filtro/listagem global de auditoria fora do contexto do item.
+## Fora de escopo
+- Renumerar/compactar IDs após limpeza.
+- Auditoria das limpezas (poderíamos adicionar log futuramente, similar ao de entregas).
+- Limpeza por filtro/data (apenas seleção manual nesta etapa).

@@ -1,46 +1,65 @@
-# Vendas Online — Limpeza por seleção + ID de integração
+# Vendas Online — Slots fixos com limpeza por reset
 
-## Resumo das decisões
+## Mudança de paradigma
 
-- **Seleção manual** com checkbox por linha + checkbox "selecionar todos" no cabeçalho.
-- **Hard delete** dos itens selecionados.
-- Itens com `status = 'vendido'` (aparecem em "Produtos vendidos") **não podem ser limpos** — checkbox bloqueado.
-- **Numeração mantém o "slot"**: ao deletar o item #5, o número 5 fica vago. O trigger atual (`set_chamado_denis_numero`) usa `MAX(numero)+1` por tenant, então novos itens continuam crescendo a partir do maior existente. Não vamos alterar o trigger — itens deletados simplesmente liberam visualmente a posição, sem reaproveitar.
-- **ID de integração**: o próprio campo `numero` (coluna #) será o identificador a vincular ao sistema externo. Vamos destacá-lo na UI e adicionar botão "copiar".
+Hoje cada item é uma linha que pode ser criada/deletada. Vamos virar **slots permanentes**: o `numero` é a "linha da planilha" e nunca some — apenas o conteúdo é limpo. ID estável para integração externa.
 
-## 1. Tabela principal — seleção em massa
+## 1. Banco — slots fixos por tenant
 
-Em `src/pages/ChamadoDenis.tsx` (seção "Vendas online"):
+**Migration**:
 
-- Adicionar coluna **checkbox** como primeira coluna da tabela.
-  - Cabeçalho: checkbox "selecionar todos" (marca/desmarca apenas linhas elegíveis = não-vendidas da página atual).
-  - Linha: checkbox habilitado quando `item.status !== 'vendido'`. Quando vendido: checkbox **desabilitado** com tooltip "Item vendido — gerencie em Produtos vendidos".
-- Estado: `const [selecionados, setSelecionados] = useState<Set<string>>(new Set())`.
-- Botão de ação no header da seção: **"Limpar selecionados (N)"** — visível apenas quando `selecionados.size > 0`. Usa variante `destructive`.
-- Ao clicar, abrir `AlertDialog` de confirmação:
-  - Texto: "Tem certeza? Esta ação removerá permanentemente N item(ns) do sistema. Itens vendidos não serão afetados."
-  - Confirmar → `supabase.from('chamado_denis_itens').delete().in('id', [...]).neq('status','vendido')` (dupla proteção: filtro client + server).
-  - Após sucesso: limpar seleção, recarregar lista, toast de sucesso.
+- Adicionar coluna `total_slots integer NOT NULL DEFAULT 99` em `vendas_online_config`.
+- Criar função `seed_chamado_denis_slots(p_tenant_id uuid)`: insere os slots `1..total_slots` faltantes com `status='disponivel'`, `descricao=''`, `valor=0`. Usa `ON CONFLICT (tenant_id, numero) DO NOTHING`.
+- Adicionar `UNIQUE (tenant_id, numero)` em `chamado_denis_itens` (necessário para o ON CONFLICT). Hoje o trigger `set_chamado_denis_numero` garante isso por incremento, mas sem constraint.
+- Trigger `AFTER INSERT` em `vendas_online_config`: chama `seed_chamado_denis_slots(NEW.tenant_id)`.
+- **Backfill**: para cada `tenant_id` em `vendas_online_config` (ou `chamado_denis_itens`), chamar `seed_chamado_denis_slots`. Hoje há 1 tenant com 8 itens — vai completar para 99.
+- Função `reset_chamado_denis_slot(p_item_id uuid)` (SECURITY DEFINER, valida tenant): zera `descricao=''`, `valor=0`, `status='disponivel'`, `local_id=null`, `forma_pagamento=null`, `entregue=false`, todos os campos de pagador (`pagador_*`), pagamento (`pago_em`, `abacate_*`), e entrega (`entregue_*`). **Preserva**: `id`, `tenant_id`, `numero`, `created_at`.
+- Trigger `BEFORE INSERT` adicional em `chamado_denis_itens`: bloquear inserts manuais via cliente quando já existem `total_slots` para o tenant (proteção extra; ou simplesmente revogar permissão de INSERT do role `authenticated` e deixar só o seed via SECURITY DEFINER).
 
-## 2. Coluna # como ID de integração
+## 2. Frontend — `src/pages/ChamadoDenis.tsx`
 
-- Renomear o cabeçalho da coluna `#` para **"ID"** (ou manter `#` mas com tooltip explicando).
-- Renderizar o número em **fonte mono + destacado** (ex.: `font-mono font-semibold text-primary`).
-- Adicionar botão pequeno "copiar" (ícone `Copy` do lucide) ao lado, que copia o número para o clipboard via `navigator.clipboard.writeText(String(item.numero))` + toast "ID copiado".
-- Aplicar o mesmo destaque também na tabela "Produtos vendidos" para consistência.
+**Listagem**:
+- Já carrega ordenado por `numero` ASC — mantém. Vai mostrar todos os 99 slots.
+- Slot vazio (status `disponivel` + `descricao===''` + `valor===0`): linha com aparência "vazia" (descrição em itálico cinza "— vazio —", botão "Preencher" inline que abre o editor de descrição/valor).
+- Filtros existentes (`busca`, status) continuam funcionando — busca por número fica útil.
 
-## 3. Comportamento esperado
+**Botão "Limpar selecionados (N)"**:
+- Substituir o `delete` atual por chamada à RPC `reset_chamado_denis_slot` em loop (ou criar `reset_chamado_denis_slots(p_ids uuid[])` que faz tudo numa transação — preferido).
+- Permite selecionar **vendidos também** (remove o `disabled` no checkbox). Histórico do vendido permanece em "Produtos vendidos" porque vem de `compras` / `giftback_movimentos`, não de `chamado_denis_itens`.
+- Texto do `AlertDialog` muda para: *"Tem certeza? Os dados de N slot(s) serão apagados. Os IDs (#) serão preservados para uso futuro. Vendas já registradas continuam disponíveis em 'Produtos vendidos'."*
 
-- Numeração **não é renumerada** após delete. Se hoje você tem 1,2,3,4,5 e apaga o 3, ficam 1,2,4,5 e o próximo criado será 6.
-- Itens vendidos preservados: aparecem em "Produtos vendidos" e ficam visíveis (com checkbox cinza/desabilitado) na lista principal **se ainda não tiverem sido movidos** — confirmar comportamento atual: verificarei se a aba "Vendas online" já filtra `status != 'vendido'`. Se sim, o problema da proteção fica naturalmente resolvido (não há vendidos para selecionar). Se não, mantém a checagem `disabled`.
+**Remover criação manual**:
+- Remover botão "Adicionar item" e função `criarItem`.
+- Remover `deletarItem` individual (slots não são deletados, só resetados). Substituir por ação "Limpar este slot" no menu da linha (mesma RPC com 1 id).
+
+**Realtime**:
+- Já assina `*` na tabela — UPDATEs do reset já refletem automaticamente.
+
+## 3. Config UI — `src/pages/VendasOnlineConfig.tsx`
+
+- Novo campo "Quantidade de slots" (input numérico, padrão 99, min 1, max 999).
+- Ao salvar com valor maior que o atual: chama `seed_chamado_denis_slots` para criar os novos.
+- Ao salvar com valor **menor**: bloqueia se algum slot acima do novo limite tiver `status != 'disponivel'` ou conteúdo. Toast: "Limpe os slots X..Y antes de reduzir." Se todos estiverem vazios, deleta-os.
+
+## Comportamento resultante
+
+```text
+Antes:  [1][2][3][4][5]                      ← 5 itens, deletar #3 vira [1][2][4][5]
+Depois: [1][2][3][4][5][6]...[99]            ← 99 slots fixos
+        Limpar #3 → [1][2][3:vazio][4][5]    ← #3 continua, pronto pra reuso
+```
+
+ID `#3` sempre aponta para o mesmo slot lógico — seguro para vincular ao sistema externo.
 
 ## Arquivos afetados
 
-- `src/pages/ChamadoDenis.tsx` — checkbox por linha, header com "Limpar selecionados", `AlertDialog`, destaque + copiar do `numero`.
-- Sem migration: usaremos `DELETE` via cliente (RLS já permite `tenant_delete_chamado_denis`).
-- Sem mudanças em `src/components/ui/*`.
+- `supabase/migrations/<nova>.sql` — coluna `total_slots`, unique, funções `seed_*` e `reset_*`, trigger, backfill, revogação de INSERT direto.
+- `src/pages/ChamadoDenis.tsx` — RPC reset, remover criar/deletar, render de slot vazio, AlertDialog atualizado, permitir selecionar vendidos.
+- `src/pages/VendasOnlineConfig.tsx` — campo "Quantidade de slots".
+- `src/integrations/supabase/types.ts` — auto-regenerado.
 
 ## Fora de escopo
-- Renumerar/compactar IDs após limpeza.
-- Auditoria das limpezas (poderíamos adicionar log futuramente, similar ao de entregas).
-- Limpeza por filtro/data (apenas seleção manual nesta etapa).
+
+- Migrar histórico (não há — `chamado_denis_entregas_log` aponta por `item_id` que continua existindo).
+- Renumeração / reordenação manual de slots.
+- Importação/exportação em massa de slots.

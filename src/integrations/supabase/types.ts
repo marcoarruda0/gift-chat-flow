@@ -2031,6 +2031,7 @@ export type Database = {
           created_at: string
           dev_mode: boolean
           tenant_id: string
+          total_slots: number
           updated_at: string
           webhook_secret: string | null
         }
@@ -2040,6 +2041,7 @@ export type Database = {
           created_at?: string
           dev_mode?: boolean
           tenant_id: string
+          total_slots?: number
           updated_at?: string
           webhook_secret?: string | null
         }
@@ -2049,6 +2051,7 @@ export type Database = {
           created_at?: string
           dev_mode?: boolean
           tenant_id?: string
+          total_slots?: number
           updated_at?: string
           webhook_secret?: string | null
         }
@@ -2454,6 +2457,11 @@ export type Database = {
           p_inicio: string
         }
         Returns: Json
+      }
+      reset_chamado_denis_slots: { Args: { p_ids: string[] }; Returns: number }
+      seed_chamado_denis_slots: {
+        Args: { p_tenant_id: string }
+        Returns: number
       }
     }
     Enums: {

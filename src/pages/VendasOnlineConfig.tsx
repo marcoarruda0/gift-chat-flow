@@ -80,6 +80,18 @@ export default function VendasOnlineConfig() {
 
   const save = async () => {
     if (!tenantId) return;
+    const ts = Math.max(1, Math.min(999, Math.floor(totalSlots || 99)));
+    // Se reduzindo: bloquear se houver slot acima com conteúdo
+    const { count } = await supabase
+      .from("chamado_denis_itens")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .gt("numero", ts)
+      .or("status.neq.disponivel,descricao.neq.,valor.gt.0");
+    if ((count ?? 0) > 0) {
+      toast.error(`Existem ${count} slot(s) acima de #${ts} com dados. Limpe-os antes de reduzir.`);
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("vendas_online_config")
@@ -89,9 +101,18 @@ export default function VendasOnlineConfig() {
           abacate_api_key: apiKey || null,
           dev_mode: devMode,
           webhook_secret: secret || null,
+          total_slots: ts,
         },
         { onConflict: "tenant_id" }
       );
+    if (!error) {
+      // Apaga slots vazios acima do novo limite
+      await supabase
+        .from("chamado_denis_itens")
+        .delete()
+        .eq("tenant_id", tenantId)
+        .gt("numero", ts);
+    }
     setSaving(false);
     if (error) toast.error("Erro ao salvar: " + error.message);
     else toast.success("Configuração salva");

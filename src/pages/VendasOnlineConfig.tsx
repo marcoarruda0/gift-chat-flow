@@ -609,14 +609,24 @@ export default function VendasOnlineConfig() {
               </div>
 
               <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-xs">
-                <p className="font-medium">Formato da resposta (text/plain)</p>
-                <pre className="font-mono text-[11px]">numero - descricao - R$ valor - status - link</pre>
+                <p className="font-medium">Formato da resposta (application/json)</p>
+                <pre className="font-mono text-[11px] whitespace-pre-wrap">{`{
+  "ok": true,
+  "numero": 1,
+  "descricao": "Camiseta Preta",
+  "valor": 50.00,
+  "valor_formatado": "R$ 50,00",
+  "status": "disponivel",
+  "link": "https://pagamento..."
+}`}</pre>
                 <p className="text-muted-foreground">
-                  Exemplo: <code>1 - Camiseta Preta - R$ 50,00 - disponivel - https://pagamento...</code>
+                  No Blinkchat, configure o bloco GET para parsear JSON e use os campos por nome
+                  (ex.: <code>{"{{response.descricao}}"}</code>, <code>{"{{response.valor_formatado}}"}</code>).
                 </p>
                 <p className="text-muted-foreground">
-                  Slots vazios usam <code>sem descricao</code>, <code>0,00</code>, <code>disponivel</code> e
-                  {" "}<code>sem link</code>.
+                  Em caso de erro, a resposta é{" "}
+                  <code>{`{ "ok": false, "codigo": "...", "erro": "..." }`}</code>{" "}
+                  com status HTTP 400/404/500.
                 </p>
               </div>
 

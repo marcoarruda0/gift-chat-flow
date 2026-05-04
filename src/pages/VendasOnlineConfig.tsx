@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug, Webhook, ListChecks } from "lucide-react";
+import { Copy, Loader2, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, Plug, Webhook, ListChecks, Bot, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
@@ -545,6 +546,58 @@ export default function VendasOnlineConfig() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5" /> Integração Blinkchat
+          </CardTitle>
+          <CardDescription>
+            Endpoint público que substitui a planilha do Google Sheets. Configure no bloco de integração GET do
+            Blinkchat usando a URL abaixo (o <code>{"{{id}}"}</code> é o placeholder do número do produto).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>URL do endpoint</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={`https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=${tenantId ?? ""}`}
+                className="font-mono text-xs"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  const url = `https://${PROJECT_ID}.supabase.co/functions/v1/blinkchat-produto?id={{id}}&tenant=${tenantId ?? ""}`;
+                  navigator.clipboard.writeText(url);
+                  toast.success("URL copiada");
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-xs">
+            <p className="font-medium">Formato da resposta (text/plain)</p>
+            <pre className="font-mono text-[11px]">numero - descricao - R$ valor - status - link</pre>
+            <p className="text-muted-foreground">
+              Exemplo: <code>1 - Camiseta Preta - R$ 50,00 - disponivel - https://pagamento...</code>
+            </p>
+            <p className="text-muted-foreground">
+              Slots vazios usam <code>sem descricao</code>, <code>0,00</code>, <code>disponivel</code> e
+              {" "}<code>sem link</code>.
+            </p>
+          </div>
+
+          <Button variant="outline" asChild>
+            <Link to="/vendas-online/blinkchat-teste">
+              <ExternalLink className="h-4 w-4" /> Abrir tela de teste
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving}>
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar configuração

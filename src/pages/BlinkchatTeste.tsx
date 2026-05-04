@@ -59,9 +59,11 @@ export default function BlinkchatTeste() {
       const res = await fetch(url, { method: "GET" });
       const body = await res.text();
       const elapsed = Date.now() - start;
-      const parts = body.split(" - ");
-      const formatOk = res.ok && parts.length === 5;
-      setResult({ url, status: res.status, elapsedMs: elapsed, body, formatOk });
+      let parsed: any = null;
+      try { parsed = JSON.parse(body); } catch { /* não é JSON */ }
+      const formatOk =
+        res.ok && parsed && parsed.ok === true && typeof parsed.numero !== "undefined";
+      setResult({ url, status: res.status, elapsedMs: elapsed, body, parsed, formatOk });
     } catch (e) {
       const elapsed = Date.now() - start;
       setResult({
@@ -69,6 +71,7 @@ export default function BlinkchatTeste() {
         status: 0,
         elapsedMs: elapsed,
         body: `Falha de rede: ${(e as Error).message}`,
+        parsed: null,
         formatOk: false,
       });
     } finally {

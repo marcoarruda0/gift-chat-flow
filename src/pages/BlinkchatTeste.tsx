@@ -158,13 +158,14 @@ export default function BlinkchatTeste() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Corpo da resposta (text/plain)</Label>
+            <Label className="text-xs text-muted-foreground">Corpo da resposta (application/json)</Label>
             <pre className="rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all font-mono">
-{result.body || "(vazio)"}
+{result.parsed ? JSON.stringify(result.parsed, null, 2) : (result.body || "(vazio)")}
             </pre>
             <p className="text-xs text-muted-foreground">
-              Formato esperado: <code>numero - descricao - R$ valor - status - link</code> (5 campos separados por
-              {" "}<code> - </code>)
+              Formato esperado: JSON com <code>ok: true</code> e os campos{" "}
+              <code>numero</code>, <code>descricao</code>, <code>valor</code>,{" "}
+              <code>valor_formatado</code>, <code>status</code>, <code>link</code>.
             </p>
           </CardContent>
         </Card>

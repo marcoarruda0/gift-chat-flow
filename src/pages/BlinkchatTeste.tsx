@@ -25,6 +25,7 @@ export default function BlinkchatTeste() {
     status: number;
     elapsedMs: number;
     body: string;
+    parsed: any;
     formatOk: boolean;
   } | null>(null);
 

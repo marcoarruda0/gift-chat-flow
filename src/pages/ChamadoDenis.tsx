@@ -950,9 +950,9 @@ export default function ChamadoDenis() {
         <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Limpar itens selecionados?</AlertDialogTitle>
+              <AlertDialogTitle>Limpar slots selecionados?</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta ação removerá permanentemente {selecionados.size} item(ns) do sistema. Itens vendidos não serão afetados e permanecem em "Produtos vendidos".
+                Os dados de {selecionados.size} slot(s) serão apagados (descrição, valor, pagamento e entrega). Os IDs (#) serão preservados para reuso e integração externa. Vendas já registradas continuam disponíveis em "Produtos vendidos".
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

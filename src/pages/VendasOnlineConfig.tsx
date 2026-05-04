@@ -68,7 +68,7 @@ export default function VendasOnlineConfig() {
       setLoading(true);
       const { data } = await supabase
         .from("vendas_online_config")
-        .select("abacate_api_key, dev_mode, webhook_secret, total_slots")
+        .select("abacate_api_key, dev_mode, webhook_secret, total_slots, blinkchat_token")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       if (data) {
@@ -76,6 +76,7 @@ export default function VendasOnlineConfig() {
         setDevMode(!!data.dev_mode);
         setSecret(data.webhook_secret || "");
         setTotalSlots(data.total_slots ?? 99);
+        setBlinkchatToken((data as any).blinkchat_token || "");
       }
       setLoading(false);
     })();

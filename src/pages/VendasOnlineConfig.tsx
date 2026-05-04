@@ -598,7 +598,7 @@ export default function VendasOnlineConfig() {
           </Button>
         </CardContent>
       </Card>
-
+      <div className="flex justify-end">
         <Button onClick={save} disabled={saving}>
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar configuração
         </Button>

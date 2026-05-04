@@ -220,6 +220,30 @@ export default function VendasOnlineConfig() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Slots da planilha</CardTitle>
+          <CardDescription>
+            Define quantas linhas (slots) numeradas existem na sua tabela de Vendas Online. Cada slot é um ID permanente (ex.: #1 a #99) que pode ser vinculado a outro sistema. Limpar um slot apaga apenas o conteúdo — o ID nunca muda.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label>Quantidade de slots</Label>
+          <Input
+            type="number"
+            min={1}
+            max={999}
+            value={totalSlots}
+            onChange={(e) => setTotalSlots(Number(e.target.value))}
+            className="max-w-[180px]"
+          />
+          <p className="text-xs text-muted-foreground">
+            Aumentar cria automaticamente os novos slots vazios. Reduzir só é permitido se os slots acima do novo limite estiverem vazios.
+          </p>
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <CardTitle>AbacatePay</CardTitle>
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">

@@ -25,6 +25,7 @@ export default function VendasOnlineConfig() {
   const [apiKey, setApiKey] = useState("");
   const [devMode, setDevMode] = useState(true);
   const [secret, setSecret] = useState("");
+  const [totalSlots, setTotalSlots] = useState(99);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{

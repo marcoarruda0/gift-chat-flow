@@ -590,7 +590,15 @@ export default function ChamadoDenis() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-20">ID</TableHead>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={todosSelecionados ? true : algunsSelecionados ? "indeterminate" : false}
+                    onCheckedChange={toggleTodos}
+                    disabled={elegiveisLimpeza.length === 0}
+                    aria-label="Selecionar todos"
+                  />
+                </TableHead>
+                <TableHead className="w-24">ID</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="w-36">Valor</TableHead>
                 <TableHead className="w-36">Status</TableHead>
@@ -601,13 +609,13 @@ export default function ChamadoDenis() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Carregando...
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Nenhum item. Clique em "Nova linha" para começar.
                   </TableCell>
                 </TableRow>
@@ -618,9 +626,35 @@ export default function ChamadoDenis() {
                   const editStatus = editing === `${item.id}-status`;
                   const isPaid = item.abacate_status === "PAID";
                   const statusReadOnly = isPaid;
+                  const isVendido = item.status === "vendido";
                   return (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-mono text-muted-foreground">#{item.numero}</TableCell>
+                    <TableRow key={item.id} data-state={selecionados.has(item.id) ? "selected" : undefined}>
+                      <TableCell>
+                        {isVendido ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex">
+                                <Checkbox checked={false} disabled aria-label="Item vendido" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>Item vendido — gerencie em Produtos vendidos</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Checkbox
+                            checked={selecionados.has(item.id)}
+                            onCheckedChange={() => toggleSelecionado(item.id)}
+                            aria-label={`Selecionar item ${item.numero}`}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono font-semibold text-primary">#{item.numero}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copiarId(item.numero)} title="Copiar ID">
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell onClick={() => !editDesc && startEdit(item.id, "descricao", item.descricao)}>
                         {editDesc ? (
                           <Input

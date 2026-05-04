@@ -25,6 +25,7 @@ export default function BlinkchatTeste() {
     status: number;
     elapsedMs: number;
     body: string;
+    parsed: any;
     formatOk: boolean;
   } | null>(null);
 
@@ -58,9 +59,11 @@ export default function BlinkchatTeste() {
       const res = await fetch(url, { method: "GET" });
       const body = await res.text();
       const elapsed = Date.now() - start;
-      const parts = body.split(" - ");
-      const formatOk = res.ok && parts.length === 5;
-      setResult({ url, status: res.status, elapsedMs: elapsed, body, formatOk });
+      let parsed: any = null;
+      try { parsed = JSON.parse(body); } catch { /* não é JSON */ }
+      const formatOk =
+        res.ok && parsed && parsed.ok === true && typeof parsed.numero !== "undefined";
+      setResult({ url, status: res.status, elapsedMs: elapsed, body, parsed, formatOk });
     } catch (e) {
       const elapsed = Date.now() - start;
       setResult({
@@ -68,6 +71,7 @@ export default function BlinkchatTeste() {
         status: 0,
         elapsedMs: elapsed,
         body: `Falha de rede: ${(e as Error).message}`,
+        parsed: null,
         formatOk: false,
       });
     } finally {
@@ -154,13 +158,14 @@ export default function BlinkchatTeste() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Corpo da resposta (text/plain)</Label>
+            <Label className="text-xs text-muted-foreground">Corpo da resposta (application/json)</Label>
             <pre className="rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all font-mono">
-{result.body || "(vazio)"}
+{result.parsed ? JSON.stringify(result.parsed, null, 2) : (result.body || "(vazio)")}
             </pre>
             <p className="text-xs text-muted-foreground">
-              Formato esperado: <code>numero - descricao - R$ valor - status - link</code> (5 campos separados por
-              {" "}<code> - </code>)
+              Formato esperado: JSON com <code>ok: true</code> e os campos{" "}
+              <code>numero</code>, <code>descricao</code>, <code>valor</code>,{" "}
+              <code>valor_formatado</code>, <code>status</code>, <code>link</code>.
             </p>
           </CardContent>
         </Card>

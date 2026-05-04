@@ -2028,6 +2028,7 @@ export type Database = {
         Row: {
           abacate_api_key: string | null
           api_version: number
+          blinkchat_token: string
           created_at: string
           dev_mode: boolean
           tenant_id: string
@@ -2038,6 +2039,7 @@ export type Database = {
         Insert: {
           abacate_api_key?: string | null
           api_version?: number
+          blinkchat_token?: string
           created_at?: string
           dev_mode?: boolean
           tenant_id: string
@@ -2048,6 +2050,7 @@ export type Database = {
         Update: {
           abacate_api_key?: string | null
           api_version?: number
+          blinkchat_token?: string
           created_at?: string
           dev_mode?: boolean
           tenant_id?: string

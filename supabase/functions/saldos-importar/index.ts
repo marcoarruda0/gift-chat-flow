@@ -135,19 +135,30 @@ Deno.serve(async (req) => {
       });
     }
 
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: "array", cellDates: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    // Lê arquivo e libera buffer o quanto antes
+    let wb: XLSX.WorkBook;
+    {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      wb = XLSX.read(buf, { type: "array", cellDates: true, dense: true });
+    }
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
     if (!ws) {
       return new Response(JSON.stringify({ error: "empty_sheet" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
       defval: null,
       raw: true,
     });
+    // Libera workbook/sheet da memória
+    // @ts-ignore
+    wb.Sheets[sheetName] = null;
+    // @ts-ignore
+    wb = null;
 
     if (rows.length === 0) {
       return new Response(JSON.stringify({ error: "no_rows" }), {
@@ -156,8 +167,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    let registros: any[] = [];
     let tabela = "";
+    let mapper: (r: any) => any;
 
     if (tipo === "consignado") {
       tabela = "saldos_consignado";
@@ -176,7 +187,7 @@ Deno.serve(async (req) => {
           },
         );
       }
-      registros = rows.map((r) => ({
+      mapper = (r: any) => ({
         tenant_id: tenantId,
         loja_id: toIntOrNull(r.loja_id),
         loja_nome: toStrOrNull(r.loja_nome),
@@ -194,10 +205,9 @@ Deno.serve(async (req) => {
         saldo_liberado: parseSaldoBR(r.saldo_liberado),
         saldo_total: parseSaldoBR(r.saldo_total),
         data_cadastro: toDateISOOrNull(r.data_cadastro),
-      }));
+      });
     } else {
       tabela = "saldos_moeda_pr";
-      // Cabeçalhos esperados: ID, Nome, CPF/CNPJ, Email, Telefone, Loja, Saldo
       const first = rows[0];
       const expected = ["CPF/CNPJ", "Saldo", "Nome"];
       const missing = expected.filter((c) => !(c in first));
@@ -213,7 +223,7 @@ Deno.serve(async (req) => {
           },
         );
       }
-      registros = rows.map((r: any) => ({
+      mapper = (r: any) => ({
         tenant_id: tenantId,
         cliente_id_externo: toBigIntStrOrNull(r["ID"]),
         nome: toStrOrNull(r["Nome"]),
@@ -222,7 +232,7 @@ Deno.serve(async (req) => {
         telefone: toStrOrNull(r["Telefone"]),
         loja: toStrOrNull(r["Loja"]),
         saldo: parseSaldoBR(r["Saldo"]),
-      }));
+      });
     }
 
     // Substitui dados: delete + insert em batches
@@ -240,17 +250,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    const BATCH = 500;
+    // Insere em batches consumindo `rows` (libera memória progressivamente)
+    const BATCH = 200;
     let inseridos = 0;
-    for (let i = 0; i < registros.length; i += BATCH) {
-      const slice = registros.slice(i, i + BATCH);
-      const { error: insErr } = await admin.from(tabela).insert(slice);
+    const total = rows.length;
+    while (rows.length > 0) {
+      const chunk = rows.splice(0, BATCH).map(mapper);
+      const { error: insErr } = await admin.from(tabela).insert(chunk);
       if (insErr) {
         return new Response(
           JSON.stringify({
             error: "insert_failed",
             detalhe: insErr.message,
             inseridos_parcial: inseridos,
+            total,
           }),
           {
             status: 500,
@@ -258,7 +271,7 @@ Deno.serve(async (req) => {
           },
         );
       }
-      inseridos += slice.length;
+      inseridos += chunk.length;
     }
 
     // Log de upload

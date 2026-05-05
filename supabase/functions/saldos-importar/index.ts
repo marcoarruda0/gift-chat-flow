@@ -2,7 +2,6 @@
 // das tabelas saldos_consignado ou saldos_moeda_pr para o tenant do usuário.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,6 +52,10 @@ function toDateISOOrNull(v: unknown): string | null {
   // xlsx pode retornar número de série Excel; cellDates:true evita isso
   const d = new Date(String(v));
   return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 Deno.serve(async (req) => {
@@ -117,13 +120,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse multipart
-    const form = await req.formData();
-    const tipo = String(form.get("tipo") || "").trim();
-    const file = form.get("arquivo") as File | null;
+    const body = await req.json().catch(() => null);
+    const tipo = String(body?.tipo || "").trim();
+    const arquivoNome = String(body?.arquivo_nome || "").trim() || null;
+    const linhas = Array.isArray(body?.linhas) ? body.linhas.filter(isPlainObject) : null;
 
-    if (!file) {
-      return new Response(JSON.stringify({ error: "missing_file" }), {
+    if (!linhas) {
+      return new Response(JSON.stringify({ error: "missing_rows" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -135,32 +138,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lê arquivo e libera buffer o quanto antes
-    let wb: XLSX.WorkBook;
-    {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      wb = XLSX.read(buf, { type: "array", cellDates: true, dense: true });
-    }
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    if (!ws) {
-      return new Response(JSON.stringify({ error: "empty_sheet" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
-      defval: null,
-      raw: true,
-    });
-    // Libera workbook/sheet da memória
-    // @ts-ignore
-    wb.Sheets[sheetName] = null;
-    // @ts-ignore
-    wb = null;
-
-    if (rows.length === 0) {
+    if (linhas.length === 0) {
       return new Response(JSON.stringify({ error: "no_rows" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -173,7 +151,7 @@ Deno.serve(async (req) => {
     if (tipo === "consignado") {
       tabela = "saldos_consignado";
       const expected = ["cpf_cnpj", "saldo_total", "nome"];
-      const first = rows[0];
+      const first = linhas[0];
       const missing = expected.filter((c) => !(c in first));
       if (missing.length) {
         return new Response(
@@ -208,8 +186,8 @@ Deno.serve(async (req) => {
       });
     } else {
       tabela = "saldos_moeda_pr";
-      const first = rows[0];
       const expected = ["CPF/CNPJ", "Saldo", "Nome"];
+      const first = linhas[0];
       const missing = expected.filter((c) => !(c in first));
       if (missing.length) {
         return new Response(
@@ -250,12 +228,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Insere em batches consumindo `rows` (libera memória progressivamente)
-    const BATCH = 200;
+    // Insere em batches pequenos a partir de linhas já parseadas no cliente
+    const BATCH = 100;
     let inseridos = 0;
-    const total = rows.length;
-    while (rows.length > 0) {
-      const chunk = rows.splice(0, BATCH).map(mapper);
+    const total = linhas.length;
+
+    for (let start = 0; start < linhas.length; start += BATCH) {
+      const chunk = linhas.slice(start, start + BATCH).map(mapper);
+
       const { error: insErr } = await admin.from(tabela).insert(chunk);
       if (insErr) {
         return new Response(
@@ -278,7 +258,7 @@ Deno.serve(async (req) => {
     await admin.from("saldos_uploads_log").insert({
       tenant_id: tenantId,
       tipo,
-      arquivo_nome: file.name,
+      arquivo_nome: arquivoNome,
       total_linhas: inseridos,
       usuario_id: userId,
       usuario_nome: profile.nome ?? null,

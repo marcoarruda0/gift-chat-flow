@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Upload, Loader2, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import * as XLSX from "xlsx";
 import { mascararCPF } from "@/lib/br-format";
 
 function formatCurrency(value: number | null | undefined): string {
@@ -36,6 +37,31 @@ function formatCpfDisplay(v: string | null | undefined): string {
 const PAGE_SIZE = 50;
 
 type Tipo = "consignado" | "moeda_pr";
+
+async function parsePlanilha(file: File) {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, {
+    type: "array",
+    cellDates: true,
+    cellFormula: false,
+    cellHTML: false,
+    cellNF: false,
+    cellStyles: false,
+    dense: true,
+  });
+
+  const firstSheet = workbook.SheetNames[0];
+  const sheet = firstSheet ? workbook.Sheets[firstSheet] : undefined;
+  if (!sheet) throw new Error("A planilha está vazia ou inválida");
+
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: null,
+    raw: true,
+  });
+
+  if (rows.length === 0) throw new Error("A planilha não possui linhas para importar");
+  return rows;
+}
 
 function UploadCard({
   tipo,
@@ -71,12 +97,14 @@ function UploadCard({
     }
     setEnviando(true);
     try {
-      const form = new FormData();
-      form.append("tipo", tipo);
-      form.append("arquivo", file);
+      const linhas = await parsePlanilha(file);
 
       const { data, error } = await supabase.functions.invoke("saldos-importar", {
-        body: form,
+        body: {
+          tipo,
+          arquivo_nome: file.name,
+          linhas,
+        },
       });
       if (error) throw error;
       if ((data as any)?.error) {

@@ -181,6 +181,55 @@ export function ContatoPerfilLateral({
         </div>
       </div>
 
+      {/* Saldos externos (lookup por CPF) */}
+      {cpfDigits.length >= 11 &&
+        saldosExternos &&
+        (saldosExternos.totalConsignado > 0 ||
+          (saldosExternos.moedaPr && Number(saldosExternos.moedaPr.saldo) > 0)) && (
+          <Collapsible defaultOpen>
+            <div className="rounded-lg border border-border bg-card shadow-sm">
+              <CollapsibleTrigger className="w-full flex items-center justify-between p-3 group">
+                <span className="font-semibold text-sm text-foreground flex items-center gap-2">
+                  <Wallet className="h-4 w-4 text-primary" />
+                  Saldos externos
+                </span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-4 pb-4 space-y-2 text-sm">
+                  {saldosExternos.totalConsignado > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        Consignado
+                        {saldosExternos.consignado.length > 1
+                          ? ` (${saldosExternos.consignado.length} contratos)`
+                          : ""}
+                      </span>
+                      <span className="font-semibold">
+                        {saldosExternos.totalConsignado.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  {saldosExternos.moedaPr && Number(saldosExternos.moedaPr.saldo) > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Moeda PR</span>
+                      <span className="font-semibold">
+                        {Number(saldosExternos.moedaPr.saldo).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        )}
+
       {/* Sobre */}
       <Collapsible defaultOpen>
         <div className="rounded-lg border border-border bg-card shadow-sm">

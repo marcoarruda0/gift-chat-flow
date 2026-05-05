@@ -55,6 +55,40 @@ function toDateISOOrNull(v: unknown): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function getDenseCellValue(ws: any, rowIndex: number, colIndex: number): unknown {
+  const row = Array.isArray(ws) ? ws[rowIndex] : undefined;
+  const cell = Array.isArray(row) ? row[colIndex] : undefined;
+  return cell?.v ?? null;
+}
+
+function getHeaderMap(ws: any): Map<string, number> {
+  const ref = ws?.["!ref"];
+  if (!ref) return new Map();
+
+  const range = XLSX.utils.decode_range(ref);
+  const headers = new Map<string, number>();
+
+  for (let col = range.s.c; col <= range.e.c; col += 1) {
+    const raw = getDenseCellValue(ws, range.s.r, col);
+    const key = String(raw ?? "").trim();
+    if (key) headers.set(key, col);
+  }
+
+  return headers;
+}
+
+function getRowObject(
+  ws: any,
+  rowIndex: number,
+  headerMap: Map<string, number>,
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  for (const [header, colIndex] of headerMap.entries()) {
+    row[header] = getDenseCellValue(ws, rowIndex, colIndex);
+  }
+  return row;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -135,11 +169,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lê arquivo e libera buffer o quanto antes
+    // Lê arquivo evitando estruturas derivadas grandes em memória
     let wb: XLSX.WorkBook;
     {
       const buf = new Uint8Array(await file.arrayBuffer());
-      wb = XLSX.read(buf, { type: "array", cellDates: true, dense: true });
+      wb = XLSX.read(buf, {
+        type: "array",
+        cellDates: true,
+        dense: true,
+        cellFormula: false,
+        cellHTML: false,
+        cellNF: false,
+        cellStyles: false,
+        sheetStubs: false,
+      });
     }
     const sheetName = wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
@@ -150,22 +193,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
-      defval: null,
-      raw: true,
-    });
-    // Libera workbook/sheet da memória
-    // @ts-ignore
-    wb.Sheets[sheetName] = null;
-    // @ts-ignore
-    wb = null;
+    const ref = ws["!ref"];
+    if (!ref) {
+      return new Response(JSON.stringify({ error: "empty_sheet" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (rows.length === 0) {
+    const range = XLSX.utils.decode_range(ref);
+    if (range.e.r <= range.s.r) {
       return new Response(JSON.stringify({ error: "no_rows" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const headerMap = getHeaderMap(ws);
 
     let tabela = "";
     let mapper: (r: any) => any;
@@ -173,8 +217,7 @@ Deno.serve(async (req) => {
     if (tipo === "consignado") {
       tabela = "saldos_consignado";
       const expected = ["cpf_cnpj", "saldo_total", "nome"];
-      const first = rows[0];
-      const missing = expected.filter((c) => !(c in first));
+      const missing = expected.filter((c) => !headerMap.has(c));
       if (missing.length) {
         return new Response(
           JSON.stringify({
@@ -208,9 +251,8 @@ Deno.serve(async (req) => {
       });
     } else {
       tabela = "saldos_moeda_pr";
-      const first = rows[0];
       const expected = ["CPF/CNPJ", "Saldo", "Nome"];
-      const missing = expected.filter((c) => !(c in first));
+      const missing = expected.filter((c) => !headerMap.has(c));
       if (missing.length) {
         return new Response(
           JSON.stringify({
@@ -250,12 +292,38 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Insere em batches consumindo `rows` (libera memória progressivamente)
-    const BATCH = 200;
+    // Insere em batches montando cada linha sob demanda
+    const BATCH = 100;
     let inseridos = 0;
-    const total = rows.length;
-    while (rows.length > 0) {
-      const chunk = rows.splice(0, BATCH).map(mapper);
+    const total = range.e.r - range.s.r;
+    let chunk: Record<string, unknown>[] = [];
+
+    for (let rowIndex = range.s.r + 1; rowIndex <= range.e.r; rowIndex += 1) {
+      const rowObject = getRowObject(ws, rowIndex, headerMap);
+      chunk.push(mapper(rowObject));
+
+      if (chunk.length < BATCH) continue;
+
+      const { error: insErr } = await admin.from(tabela).insert(chunk);
+      if (insErr) {
+        return new Response(
+          JSON.stringify({
+            error: "insert_failed",
+            detalhe: insErr.message,
+            inseridos_parcial: inseridos,
+            total,
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      inseridos += chunk.length;
+      chunk = [];
+    }
+
+    if (chunk.length > 0) {
       const { error: insErr } = await admin.from(tabela).insert(chunk);
       if (insErr) {
         return new Response(
@@ -273,6 +341,12 @@ Deno.serve(async (req) => {
       }
       inseridos += chunk.length;
     }
+
+    // Libera workbook/sheet da memória após o processamento
+    // @ts-ignore
+    wb.Sheets[sheetName] = null;
+    // @ts-ignore
+    wb = null;
 
     // Log de upload
     await admin.from("saldos_uploads_log").insert({

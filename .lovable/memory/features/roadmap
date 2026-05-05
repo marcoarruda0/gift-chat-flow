@@ -11,6 +11,8 @@ type: feature
 - Giftback Config + Caixa (config, movimentos)
 - Fluxos (builder React Flow, 8 nós WhatsApp + 3 nós giftback)
 - Conversas (WhatsApp Web layout, realtime, split view, mobile responsive)
+- Vendas Online (slots, AbacatePay PIX+CARD, entrega)
+- Saldos Externos (upload xlsx fornecedores/consignado e clientes/moeda PR; lookup por CPF no drawer do contato)
 
 ## Próximos
 - Disparos (campanhas em massa)

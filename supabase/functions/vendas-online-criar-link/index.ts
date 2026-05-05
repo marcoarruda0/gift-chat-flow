@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
 
     const checkoutPayload = {
       items: [{ id: productId, quantity: 1 }],
-      methods: ["PIX"],
+      methods: ["PIX", "CREDIT_CARD"],
       externalId: String(item.id),
       returnUrl: completionUrl,
       completionUrl: completionUrl,

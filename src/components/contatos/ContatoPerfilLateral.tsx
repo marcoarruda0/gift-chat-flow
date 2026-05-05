@@ -21,8 +21,10 @@ import {
   Ban,
   ChevronDown,
   Megaphone,
+  Wallet,
 } from "lucide-react";
 import { format } from "date-fns";
+import { apenasDigitos } from "@/lib/br-format";
 
 interface ContatoPerfilLateralProps {
   contato: any;
@@ -46,6 +48,35 @@ export function ContatoPerfilLateral({
       return data;
     },
     enabled: !!contato.id,
+  });
+
+  const cpfDigits = apenasDigitos(contato.cpf || "");
+
+  const { data: saldosExternos } = useQuery({
+    queryKey: ["contato-saldos-externos", cpfDigits],
+    enabled: !!cpfDigits && cpfDigits.length >= 11,
+    queryFn: async () => {
+      const [{ data: cons }, { data: moeda }] = await Promise.all([
+        supabase
+          .from("saldos_consignado")
+          .select("saldo_total, saldo_liberado, saldo_bloqueado, numero_contrato, loja_nome")
+          .eq("cpf_cnpj", cpfDigits),
+        supabase
+          .from("saldos_moeda_pr")
+          .select("saldo, loja")
+          .eq("cpf_cnpj", cpfDigits)
+          .maybeSingle(),
+      ]);
+      const totalConsignado = (cons || []).reduce(
+        (acc, r: any) => acc + Number(r.saldo_total || 0),
+        0,
+      );
+      return {
+        consignado: cons || [],
+        totalConsignado,
+        moedaPr: moeda || null,
+      };
+    },
   });
 
   const initials = (contato.nome || "?")

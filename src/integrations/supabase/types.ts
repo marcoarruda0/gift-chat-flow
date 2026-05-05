@@ -2073,6 +2073,45 @@ export type Database = {
         }
         Relationships: []
       }
+      saldos_vendas: {
+        Row: {
+          cpf_cnpj: string
+          created_at: string
+          debito_consignado: number
+          debito_moeda_pr: number
+          id: string
+          nome: string | null
+          origem: string
+          saldo_restante: number | null
+          tenant_id: string
+          valor_total: number
+        }
+        Insert: {
+          cpf_cnpj: string
+          created_at?: string
+          debito_consignado?: number
+          debito_moeda_pr?: number
+          id?: string
+          nome?: string | null
+          origem?: string
+          saldo_restante?: number | null
+          tenant_id: string
+          valor_total: number
+        }
+        Update: {
+          cpf_cnpj?: string
+          created_at?: string
+          debito_consignado?: number
+          debito_moeda_pr?: number
+          id?: string
+          nome?: string | null
+          origem?: string
+          saldo_restante?: number | null
+          tenant_id?: string
+          valor_total?: number
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           cnpj: string | null
@@ -2570,6 +2609,10 @@ export type Database = {
       contato_resumo: { Args: { p_contato_id: string }; Returns: Json }
       contato_timeline: {
         Args: { p_contato_id: string; p_limit?: number }
+        Returns: Json
+      }
+      debitar_saldo_blinkchat: {
+        Args: { p_cpf: string; p_tenant_id: string; p_valor: number }
         Returns: Json
       }
       distribuir_atendente: {

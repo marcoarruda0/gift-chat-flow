@@ -2,7 +2,6 @@
 // das tabelas saldos_consignado ou saldos_moeda_pr para o tenant do usuário.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,38 +54,8 @@ function toDateISOOrNull(v: unknown): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function getDenseCellValue(ws: any, rowIndex: number, colIndex: number): unknown {
-  const row = Array.isArray(ws) ? ws[rowIndex] : undefined;
-  const cell = Array.isArray(row) ? row[colIndex] : undefined;
-  return cell?.v ?? null;
-}
-
-function getHeaderMap(ws: any): Map<string, number> {
-  const ref = ws?.["!ref"];
-  if (!ref) return new Map();
-
-  const range = XLSX.utils.decode_range(ref);
-  const headers = new Map<string, number>();
-
-  for (let col = range.s.c; col <= range.e.c; col += 1) {
-    const raw = getDenseCellValue(ws, range.s.r, col);
-    const key = String(raw ?? "").trim();
-    if (key) headers.set(key, col);
-  }
-
-  return headers;
-}
-
-function getRowObject(
-  ws: any,
-  rowIndex: number,
-  headerMap: Map<string, number>,
-): Record<string, unknown> {
-  const row: Record<string, unknown> = {};
-  for (const [header, colIndex] of headerMap.entries()) {
-    row[header] = getDenseCellValue(ws, rowIndex, colIndex);
-  }
-  return row;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 Deno.serve(async (req) => {
@@ -151,13 +120,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse multipart
-    const form = await req.formData();
-    const tipo = String(form.get("tipo") || "").trim();
-    const file = form.get("arquivo") as File | null;
+    const body = await req.json().catch(() => null);
+    const tipo = String(body?.tipo || "").trim();
+    const arquivoNome = String(body?.arquivo_nome || "").trim() || null;
+    const linhas = Array.isArray(body?.linhas) ? body.linhas.filter(isPlainObject) : null;
 
-    if (!file) {
-      return new Response(JSON.stringify({ error: "missing_file" }), {
+    if (!linhas) {
+      return new Response(JSON.stringify({ error: "missing_rows" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -169,47 +138,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Lê arquivo evitando estruturas derivadas grandes em memória
-    let wb: XLSX.WorkBook;
-    {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      wb = XLSX.read(buf, {
-        type: "array",
-        cellDates: true,
-        dense: true,
-        cellFormula: false,
-        cellHTML: false,
-        cellNF: false,
-        cellStyles: false,
-        sheetStubs: false,
-      });
-    }
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    if (!ws) {
-      return new Response(JSON.stringify({ error: "empty_sheet" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const ref = ws["!ref"];
-    if (!ref) {
-      return new Response(JSON.stringify({ error: "empty_sheet" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const range = XLSX.utils.decode_range(ref);
-    if (range.e.r <= range.s.r) {
+    if (linhas.length === 0) {
       return new Response(JSON.stringify({ error: "no_rows" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const headerMap = getHeaderMap(ws);
 
     let tabela = "";
     let mapper: (r: any) => any;
@@ -217,7 +151,8 @@ Deno.serve(async (req) => {
     if (tipo === "consignado") {
       tabela = "saldos_consignado";
       const expected = ["cpf_cnpj", "saldo_total", "nome"];
-      const missing = expected.filter((c) => !headerMap.has(c));
+      const first = linhas[0];
+      const missing = expected.filter((c) => !(c in first));
       if (missing.length) {
         return new Response(
           JSON.stringify({
@@ -252,7 +187,8 @@ Deno.serve(async (req) => {
     } else {
       tabela = "saldos_moeda_pr";
       const expected = ["CPF/CNPJ", "Saldo", "Nome"];
-      const missing = expected.filter((c) => !headerMap.has(c));
+      const first = linhas[0];
+      const missing = expected.filter((c) => !(c in first));
       if (missing.length) {
         return new Response(
           JSON.stringify({
@@ -292,17 +228,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Insere em batches montando cada linha sob demanda
+    // Insere em batches pequenos a partir de linhas já parseadas no cliente
     const BATCH = 100;
     let inseridos = 0;
-    const total = range.e.r - range.s.r;
-    let chunk: Record<string, unknown>[] = [];
+    const total = linhas.length;
 
-    for (let rowIndex = range.s.r + 1; rowIndex <= range.e.r; rowIndex += 1) {
-      const rowObject = getRowObject(ws, rowIndex, headerMap);
-      chunk.push(mapper(rowObject));
-
-      if (chunk.length < BATCH) continue;
+    for (let start = 0; start < linhas.length; start += BATCH) {
+      const chunk = linhas.slice(start, start + BATCH).map(mapper);
 
       const { error: insErr } = await admin.from(tabela).insert(chunk);
       if (insErr) {
@@ -320,39 +252,13 @@ Deno.serve(async (req) => {
         );
       }
       inseridos += chunk.length;
-      chunk = [];
     }
-
-    if (chunk.length > 0) {
-      const { error: insErr } = await admin.from(tabela).insert(chunk);
-      if (insErr) {
-        return new Response(
-          JSON.stringify({
-            error: "insert_failed",
-            detalhe: insErr.message,
-            inseridos_parcial: inseridos,
-            total,
-          }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
-        );
-      }
-      inseridos += chunk.length;
-    }
-
-    // Libera workbook/sheet da memória após o processamento
-    // @ts-ignore
-    wb.Sheets[sheetName] = null;
-    // @ts-ignore
-    wb = null;
 
     // Log de upload
     await admin.from("saldos_uploads_log").insert({
       tenant_id: tenantId,
       tipo,
-      arquivo_nome: file.name,
+      arquivo_nome: arquivoNome,
       total_linhas: inseridos,
       usuario_id: userId,
       usuario_nome: profile.nome ?? null,

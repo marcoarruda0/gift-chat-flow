@@ -44,3 +44,9 @@ verify_jwt = true
 
 [functions.blinkchat-produto]
 verify_jwt = false
+
+[functions.saldos-consultar]
+verify_jwt = false
+
+[functions.saldos-confirmar]
+verify_jwt = false

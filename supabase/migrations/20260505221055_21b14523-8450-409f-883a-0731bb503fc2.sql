@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.debitar_saldo_blinkchat(uuid, text, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.debitar_saldo_blinkchat(uuid, text, numeric) TO service_role;

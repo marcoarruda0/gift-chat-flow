@@ -14,6 +14,7 @@ import {
   ChevronsUpDown,
   BarChart3,
   ClipboardList,
+  Coins,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -49,6 +50,7 @@ const mainItems = [
   { title: "Base de Conhecimento", url: "/conhecimento", icon: BookOpen },
   { title: "Peça Rara", url: "/peca-rara", icon: ShoppingBag },
   { title: "Vendas Online", url: "/chamado-denis", icon: ClipboardList },
+  { title: "Saldos Externos", url: "/saldos-externos", icon: Coins },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
 

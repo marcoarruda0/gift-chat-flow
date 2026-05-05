@@ -31,6 +31,7 @@ import BlinkchatTeste from "@/pages/BlinkchatTeste";
 import RelatorioAtendimento from "@/pages/RelatorioAtendimento";
 import RelatorioGiftback from "@/pages/RelatorioGiftback";
 import Relatorios from "@/pages/Relatorios";
+import SaldosExternos from "@/pages/SaldosExternos";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -73,6 +74,7 @@ function AppRoutes() {
       <Route path="/vendas-online" element={<Navigate to="/chamado-denis" replace />} />
       <Route path="/vendas-online/config" element={<ProtectedRoute><VendasOnlineConfig /></ProtectedRoute>} />
       <Route path="/vendas-online/blinkchat-teste" element={<ProtectedRoute><BlinkchatTeste /></ProtectedRoute>} />
+      <Route path="/saldos-externos" element={<ProtectedRoute><SaldosExternos /></ProtectedRoute>} />
       <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
       <Route path="/relatorios/atendimento" element={<Navigate to="/relatorios?tab=atendimento" replace />} />
       <Route path="/relatorios/giftback" element={<Navigate to="/relatorios?tab=giftback" replace />} />

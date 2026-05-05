@@ -1935,6 +1935,144 @@ export type Database = {
           },
         ]
       }
+      saldos_consignado: {
+        Row: {
+          celular: string | null
+          codigo_maqplan: string | null
+          cpf_cnpj: string | null
+          data_cadastro: string | null
+          email: string | null
+          fornecedor_id_externo: number | null
+          id: string
+          imported_at: string
+          interno: number | null
+          loja_id: number | null
+          loja_nome: string | null
+          nome: string | null
+          numero_contrato: string | null
+          representante: string | null
+          saldo_bloqueado: number
+          saldo_liberado: number
+          saldo_total: number
+          telefone: string | null
+          tenant_id: string
+        }
+        Insert: {
+          celular?: string | null
+          codigo_maqplan?: string | null
+          cpf_cnpj?: string | null
+          data_cadastro?: string | null
+          email?: string | null
+          fornecedor_id_externo?: number | null
+          id?: string
+          imported_at?: string
+          interno?: number | null
+          loja_id?: number | null
+          loja_nome?: string | null
+          nome?: string | null
+          numero_contrato?: string | null
+          representante?: string | null
+          saldo_bloqueado?: number
+          saldo_liberado?: number
+          saldo_total?: number
+          telefone?: string | null
+          tenant_id: string
+        }
+        Update: {
+          celular?: string | null
+          codigo_maqplan?: string | null
+          cpf_cnpj?: string | null
+          data_cadastro?: string | null
+          email?: string | null
+          fornecedor_id_externo?: number | null
+          id?: string
+          imported_at?: string
+          interno?: number | null
+          loja_id?: number | null
+          loja_nome?: string | null
+          nome?: string | null
+          numero_contrato?: string | null
+          representante?: string | null
+          saldo_bloqueado?: number
+          saldo_liberado?: number
+          saldo_total?: number
+          telefone?: string | null
+          tenant_id?: string
+        }
+        Relationships: []
+      }
+      saldos_moeda_pr: {
+        Row: {
+          cliente_id_externo: number | null
+          cpf_cnpj: string | null
+          email: string | null
+          id: string
+          imported_at: string
+          loja: string | null
+          nome: string | null
+          saldo: number
+          telefone: string | null
+          tenant_id: string
+        }
+        Insert: {
+          cliente_id_externo?: number | null
+          cpf_cnpj?: string | null
+          email?: string | null
+          id?: string
+          imported_at?: string
+          loja?: string | null
+          nome?: string | null
+          saldo?: number
+          telefone?: string | null
+          tenant_id: string
+        }
+        Update: {
+          cliente_id_externo?: number | null
+          cpf_cnpj?: string | null
+          email?: string | null
+          id?: string
+          imported_at?: string
+          loja?: string | null
+          nome?: string | null
+          saldo?: number
+          telefone?: string | null
+          tenant_id?: string
+        }
+        Relationships: []
+      }
+      saldos_uploads_log: {
+        Row: {
+          arquivo_nome: string | null
+          created_at: string
+          id: string
+          tenant_id: string
+          tipo: string
+          total_linhas: number
+          usuario_id: string | null
+          usuario_nome: string | null
+        }
+        Insert: {
+          arquivo_nome?: string | null
+          created_at?: string
+          id?: string
+          tenant_id: string
+          tipo: string
+          total_linhas?: number
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Update: {
+          arquivo_nome?: string | null
+          created_at?: string
+          id?: string
+          tenant_id?: string
+          tipo?: string
+          total_linhas?: number
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           cnpj: string | null

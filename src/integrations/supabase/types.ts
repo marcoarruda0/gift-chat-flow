@@ -2628,6 +2628,19 @@ export type Database = {
         Returns: boolean
       }
       is_same_tenant: { Args: { _target_user_id: string }; Returns: boolean }
+      listar_membros_tenant: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          departamento_id: string
+          email: string
+          id: string
+          last_sign_in_at: string
+          nome: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_created_at: string
+        }[]
+      }
       relatorio_giftback: {
         Args: { p_atendente_id?: string; p_fim: string; p_inicio: string }
         Returns: Json

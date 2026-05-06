@@ -172,7 +172,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const handleInvite = async () => {
     if (!inviteEmail || !user) return;
     setSendingInvite(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("convites" as any)
       .insert({
         tenant_id: tenantId!,
@@ -186,18 +186,44 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
     setSendingInvite(false);
     if (error) {
       toast({ title: "Erro ao convidar", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Convite criado!" });
-      setShowInvite(false);
-      setInviteEmail("");
+    } else if (data) {
+      const d = data as any;
+      setInviteResult({ token: d.token, email: d.email, role: d.role, expires_at: d.expires_at });
       loadConvites();
     }
   };
 
+  const buildInviteLink = (token: string) =>
+    `${window.location.origin}/login?convite=${token}`;
+
+  const buildShareMessage = (link: string) => {
+    const empresa = tenantData.nome || "nossa equipe";
+    return `Olá! Você foi convidado para participar da equipe da ${empresa} no PR Bot.\nAcesse o link abaixo para criar sua conta:\n${link}`;
+  };
+
   const copyInviteLink = (token: string) => {
-    const link = `${window.location.origin}/login?convite=${token}`;
-    navigator.clipboard.writeText(link);
+    navigator.clipboard.writeText(buildInviteLink(token));
     toast({ title: "Link copiado!" });
+  };
+
+  const shareWhatsApp = (token: string) => {
+    const msg = buildShareMessage(buildInviteLink(token));
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const shareEmail = (token: string, email: string) => {
+    const link = buildInviteLink(token);
+    const empresa = tenantData.nome || "nossa equipe";
+    const subject = `Convite para a equipe da ${empresa}`;
+    const body = buildShareMessage(link);
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const closeInviteDialog = () => {
+    setShowInvite(false);
+    setInviteEmail("");
+    setInviteRole("atendente");
+    setInviteResult(null);
   };
 
   const deleteConvite = async (id: string) => {

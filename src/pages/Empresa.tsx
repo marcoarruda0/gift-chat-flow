@@ -553,9 +553,33 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => copyInviteLink(c.token)}>
-                              <Copy className="h-4 w-4" />
-                            </Button>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button size="sm" variant="outline">
+                                  <Share2 className="h-4 w-4 mr-1" /> Compartilhar
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-56 p-1">
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => copyInviteLink(c.token)}
+                                >
+                                  <Copy className="h-4 w-4" /> Copiar link
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => shareWhatsApp(c.token)}
+                                >
+                                  <MessageCircle className="h-4 w-4" /> Enviar por WhatsApp
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => shareEmail(c.token, c.email)}
+                                >
+                                  <Mail className="h-4 w-4" /> Enviar por e-mail
+                                </button>
+                              </PopoverContent>
+                            </Popover>
                             <Button size="icon" variant="ghost" onClick={() => deleteConvite(c.id)}>
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>

@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import Login from "@/pages/Login";
+import ResetPassword from "@/pages/ResetPassword";
 import Dashboard from "@/pages/Index";
 import Contatos from "@/pages/Contatos";
 import Conversas from "@/pages/Conversas";
@@ -50,6 +51,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/contatos" element={<ProtectedRoute><Contatos /></ProtectedRoute>} />
       <Route path="/conversas" element={<ProtectedRoute noPadding><Conversas /></ProtectedRoute>} />

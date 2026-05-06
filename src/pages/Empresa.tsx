@@ -830,43 +830,89 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
       </Tabs>
 
       {/* Dialog de convite */}
-      <Dialog open={showInvite} onOpenChange={setShowInvite}>
+      <Dialog open={showInvite} onOpenChange={(open) => { if (!open) closeInviteDialog(); else setShowInvite(true); }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Convidar Membro</DialogTitle>
-            <DialogDescription>Envie um convite para um novo membro da equipe</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="email@exemplo.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Função</Label>
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="atendente">Atendente</SelectItem>
-                  <SelectItem value="caixa">Caixa</SelectItem>
-                  <SelectItem value="admin_tenant">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInvite(false)}>Cancelar</Button>
-            <Button onClick={handleInvite} disabled={sendingInvite || !inviteEmail}>
-              {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Criar Convite
-            </Button>
-          </DialogFooter>
+          {!inviteResult ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Convidar Membro</DialogTitle>
+                <DialogDescription>Crie um convite e compartilhe o link com o novo membro</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Função</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="atendente">Atendente</SelectItem>
+                      <SelectItem value="caixa">Caixa</SelectItem>
+                      <SelectItem value="admin_tenant">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeInviteDialog}>Cancelar</Button>
+                <Button onClick={handleInvite} disabled={sendingInvite || !inviteEmail}>
+                  {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Criar Convite
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-green-600" /> Convite criado!
+                </DialogTitle>
+                <DialogDescription>
+                  Compartilhe o link abaixo com <strong>{inviteResult.email}</strong> para finalizar o cadastro.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => copyInviteLink(inviteResult.token)}
+                  className="w-full text-left rounded-md border bg-muted/50 hover:bg-muted px-3 py-3 text-sm font-mono break-all flex items-start gap-2"
+                  title="Clique para copiar"
+                >
+                  <LinkIcon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span className="flex-1">{buildInviteLink(inviteResult.token)}</span>
+                  <Copy className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                </button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button variant="outline" onClick={() => copyInviteLink(inviteResult.token)}>
+                    <Copy className="h-4 w-4 mr-2" /> Copiar
+                  </Button>
+                  <Button variant="outline" onClick={() => shareWhatsApp(inviteResult.token)}>
+                    <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
+                  </Button>
+                  <Button variant="outline" onClick={() => shareEmail(inviteResult.token, inviteResult.email)}>
+                    <Mail className="h-4 w-4 mr-2" /> E-mail
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Validade: até {new Date(inviteResult.expires_at).toLocaleDateString("pt-BR")}. Ao acessar o link, a pessoa define a senha e entra direto na empresa com a função <strong>{roleLabels[inviteResult.role] || inviteResult.role}</strong>.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button onClick={closeInviteDialog}>Fechar</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

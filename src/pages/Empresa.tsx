@@ -141,22 +141,71 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
 
   const loadTeam = async () => {
     setLoadingTeam(true);
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, nome, departamento, departamento_id, apelido, mostrar_apelido")
-      .eq("tenant_id", tenantId!);
+    // RPC retorna membros do tenant + last_sign_in_at + email (apenas admins)
+    const { data: members, error } = await supabase.rpc("listar_membros_tenant" as any);
 
-    if (profiles) {
-      setTeam(profiles);
-      const { data: allRoles } = await supabase
-        .from("user_roles")
-        .select("user_id, role")
-        .in("user_id", profiles.map((p) => p.id));
+    if (!error && members) {
+      // Buscar profile fields extras (apelido, mostrar_apelido, departamento) que a RPC não traz
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, departamento, apelido, mostrar_apelido")
+        .eq("tenant_id", tenantId!);
+      const profMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+      const enriched = (members as any[]).map((m) => ({
+        ...m,
+        ...(profMap.get(m.id) || {}),
+      }));
+      setTeam(enriched);
+
       const roleMap: Record<string, string> = {};
-      allRoles?.forEach((r) => { roleMap[r.user_id] = r.role; });
+      (members as any[]).forEach((m) => { if (m.role) roleMap[m.id] = m.role; });
       setRoles(roleMap);
+    } else {
+      // Fallback (não-admin): apenas leitura de profiles
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, nome, departamento, departamento_id, apelido, mostrar_apelido")
+        .eq("tenant_id", tenantId!);
+      if (profiles) {
+        setTeam(profiles);
+        const { data: allRoles } = await supabase
+          .from("user_roles")
+          .select("user_id, role")
+          .in("user_id", profiles.map((p) => p.id));
+        const roleMap: Record<string, string> = {};
+        allRoles?.forEach((r) => { roleMap[r.user_id] = r.role; });
+        setRoles(roleMap);
+      }
     }
     setLoadingTeam(false);
+  };
+
+  const sendAccessLink = async (userId: string, channel: "copy" | "whatsapp" | "email", email?: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("gerar-link-acesso", {
+        body: { user_id: userId, redirect_base: window.location.origin },
+      });
+      if (error) throw error;
+      const link = data?.action_link as string;
+      const targetEmail = email || data?.email;
+      if (!link) throw new Error("Link não gerado");
+
+      const empresa = tenantData.nome || "nossa equipe";
+      const msg = `Olá! Use o link abaixo para acessar sua conta na ${empresa} no PR Bot.\nO link expira em 1 hora.\n${link}`;
+
+      if (channel === "copy") {
+        await navigator.clipboard.writeText(link);
+        toast({ title: "Link copiado!", description: "Compartilhe com a pessoa. Validade: 1h." });
+      } else if (channel === "whatsapp") {
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+      } else if (channel === "email" && targetEmail) {
+        const subject = `Acesso à sua conta na ${empresa}`;
+        window.location.href = `mailto:${targetEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
+      }
+    } catch (err: any) {
+      toast({ title: "Erro ao gerar link", description: err.message, variant: "destructive" });
+    }
   };
 
   const loadConvites = async () => {
@@ -410,7 +459,8 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                       <TableHead>Apelido</TableHead>
                       <TableHead>Departamento</TableHead>
                       <TableHead>Função</TableHead>
-                      {isAdmin && <TableHead className="w-20">Ações</TableHead>}
+                      <TableHead>Status</TableHead>
+                      {isAdmin && <TableHead className="w-32">Ações</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -500,22 +550,61 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                               <Badge variant="secondary">{roleLabels[memberRole] || memberRole || "—"}</Badge>
                             )}
                           </TableCell>
+                          <TableCell>
+                            {member.last_sign_in_at ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-0">Ativo</Badge>
+                            ) : (
+                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0">Nunca acessou</Badge>
+                            )}
+                          </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              {canManage && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => setMemberToRemove({ id: member.id, nome: member.nome || "Sem nome" })}
-                                  disabled={removingMember === member.id}
-                                >
-                                  {removingMember === member.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  )}
-                                </Button>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {canManage && !member.last_sign_in_at && (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button size="sm" variant="outline" className="h-8 gap-1">
+                                        <Share2 className="h-3.5 w-3.5" />
+                                        Reenviar
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-56 p-1" align="end">
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "copy", member.email)}
+                                      >
+                                        <Copy className="h-4 w-4" /> Copiar link
+                                      </button>
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "whatsapp", member.email)}
+                                      >
+                                        <MessageCircle className="h-4 w-4" /> WhatsApp
+                                      </button>
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "email", member.email)}
+                                      >
+                                        <Mail className="h-4 w-4" /> E-mail
+                                      </button>
+                                    </PopoverContent>
+                                  </Popover>
+                                )}
+                                {canManage && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => setMemberToRemove({ id: member.id, nome: member.nome || "Sem nome" })}
+                                    disabled={removingMember === member.id}
+                                  >
+                                    {removingMember === member.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>

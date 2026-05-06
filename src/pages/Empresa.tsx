@@ -59,6 +59,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("atendente");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteResult, setInviteResult] = useState<{ token: string; email: string; role: string; expires_at: string } | null>(null);
 
   // Instâncias
   const [instances, setInstances] = useState<any[]>([]);

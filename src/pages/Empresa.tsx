@@ -459,7 +459,8 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                       <TableHead>Apelido</TableHead>
                       <TableHead>Departamento</TableHead>
                       <TableHead>Função</TableHead>
-                      {isAdmin && <TableHead className="w-20">Ações</TableHead>}
+                      <TableHead>Status</TableHead>
+                      {isAdmin && <TableHead className="w-32">Ações</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -549,22 +550,61 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                               <Badge variant="secondary">{roleLabels[memberRole] || memberRole || "—"}</Badge>
                             )}
                           </TableCell>
+                          <TableCell>
+                            {member.last_sign_in_at ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-0">Ativo</Badge>
+                            ) : (
+                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0">Nunca acessou</Badge>
+                            )}
+                          </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              {canManage && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => setMemberToRemove({ id: member.id, nome: member.nome || "Sem nome" })}
-                                  disabled={removingMember === member.id}
-                                >
-                                  {removingMember === member.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  )}
-                                </Button>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {canManage && !member.last_sign_in_at && (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button size="sm" variant="outline" className="h-8 gap-1">
+                                        <Share2 className="h-3.5 w-3.5" />
+                                        Reenviar
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-56 p-1" align="end">
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "copy", member.email)}
+                                      >
+                                        <Copy className="h-4 w-4" /> Copiar link
+                                      </button>
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "whatsapp", member.email)}
+                                      >
+                                        <MessageCircle className="h-4 w-4" /> WhatsApp
+                                      </button>
+                                      <button
+                                        className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent"
+                                        onClick={() => sendAccessLink(member.id, "email", member.email)}
+                                      >
+                                        <Mail className="h-4 w-4" /> E-mail
+                                      </button>
+                                    </PopoverContent>
+                                  </Popover>
+                                )}
+                                {canManage && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => setMemberToRemove({ id: member.id, nome: member.nome || "Sem nome" })}
+                                    disabled={removingMember === member.id}
+                                  >
+                                    {removingMember === member.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>

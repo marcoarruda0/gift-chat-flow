@@ -652,6 +652,128 @@ export default function VendasOnlineConfig() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5" /> Integração Saldos Externos (BlinkChat)
+          </CardTitle>
+          <CardDescription>
+            Dois endpoints públicos que permitem ao BlinkChat consultar saldos de Moeda PR + Consignado por CPF
+            e debitar quando o cliente confirmar a compra. Usa o <strong>mesmo token</strong> de integração BlinkChat acima.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!blinkchatToken ? (
+            <p className="text-sm text-muted-foreground">Carregando token de integração…</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>1. Consultar saldo (POST)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={`https://${PROJECT_ID}.supabase.co/functions/v1/saldos-consultar/${blinkchatToken}`}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() =>
+                      copy(
+                        `https://${PROJECT_ID}.supabase.co/functions/v1/saldos-consultar/${blinkchatToken}`,
+                        "URL"
+                      )
+                    }
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Body: <code>{`{ "cpf": "string", "valor_item": number }`}</code>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>2. Confirmar venda (POST)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={`https://${PROJECT_ID}.supabase.co/functions/v1/saldos-confirmar/${blinkchatToken}`}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() =>
+                      copy(
+                        `https://${PROJECT_ID}.supabase.co/functions/v1/saldos-confirmar/${blinkchatToken}`,
+                        "URL"
+                      )
+                    }
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Body: <code>{`{ "cpf": "string", "valor_item": number, "confirmado": true }`}</code>
+                </p>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-xs">
+                <p className="font-medium">Formato das respostas (application/json)</p>
+
+                <div>
+                  <p className="text-muted-foreground mb-1">Consulta — saldo suficiente (200):</p>
+                  <pre className="font-mono text-[11px] whitespace-pre-wrap">{`{
+  "ok": true,
+  "nome": "FULANO DA SILVA",
+  "cpf": "12345678901",
+  "saldo_consignado": 120.00,
+  "saldo_moeda_pr": 50.00,
+  "saldo_total": 170.00,
+  "valor_item": 80.00,
+  "suficiente": true
+}`}</pre>
+                </div>
+
+                <div>
+                  <p className="text-muted-foreground mb-1">Confirmação — débito realizado (200):</p>
+                  <pre className="font-mono text-[11px] whitespace-pre-wrap">{`{
+  "ok": true,
+  "cpf": "12345678901",
+  "nome": "FULANO DA SILVA",
+  "valor_debitado": 80.00,
+  "debito_moeda_pr": 50.00,
+  "debito_consignado": 30.00,
+  "saldo_restante": 90.00
+}`}</pre>
+                </div>
+
+                <div>
+                  <p className="text-muted-foreground mb-1">Erros possíveis (400/404/409):</p>
+                  <pre className="font-mono text-[11px] whitespace-pre-wrap">{`{ "ok": false, "codigo": "SALDO_INSUFICIENTE", "erro": "..." }
+{ "ok": false, "codigo": "CPF_NAO_ENCONTRADO", "erro": "..." }
+{ "ok": false, "codigo": "DUPLICADO", "erro": "..." }
+{ "ok": false, "codigo": "TOKEN_NOT_FOUND", "erro": "..." }`}</pre>
+                </div>
+
+                <p className="text-muted-foreground">
+                  A prioridade de débito é: <strong>Moeda PR primeiro</strong>, depois Consignado.
+                  Débitos idênticos (mesmo CPF + valor) em menos de 30s são bloqueados como duplicados.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-500">
+                Estes endpoints compartilham o mesmo token do card acima. Ao rotacionar o token,
+                <strong> ambas as integrações (produto e saldos) deixam de funcionar simultaneamente</strong> e
+                precisam ser reatualizadas no BlinkChat.
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving}>
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar configuração

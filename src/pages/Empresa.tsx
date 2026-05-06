@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight, Mail } from "lucide-react";
+import { Building2, Users, Wifi, Plus, Trash2, Copy, Loader2, Settings2, FolderTree, ArrowLeftRight, Mail, Share2, MessageCircle, Check, Link as LinkIcon } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CamposPersonalizadosConfig from "@/components/contatos/CamposPersonalizadosConfig";
 import RespostasRapidasConfig from "@/components/conversas/RespostasRapidasConfig";
 import DepartamentosConfig from "@/components/empresa/DepartamentosConfig";
@@ -58,6 +59,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("atendente");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteResult, setInviteResult] = useState<{ token: string; email: string; role: string; expires_at: string } | null>(null);
 
   // Instâncias
   const [instances, setInstances] = useState<any[]>([]);
@@ -170,7 +172,7 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
   const handleInvite = async () => {
     if (!inviteEmail || !user) return;
     setSendingInvite(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("convites" as any)
       .insert({
         tenant_id: tenantId!,
@@ -184,18 +186,44 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
     setSendingInvite(false);
     if (error) {
       toast({ title: "Erro ao convidar", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Convite criado!" });
-      setShowInvite(false);
-      setInviteEmail("");
+    } else if (data) {
+      const d = data as any;
+      setInviteResult({ token: d.token, email: d.email, role: d.role, expires_at: d.expires_at });
       loadConvites();
     }
   };
 
+  const buildInviteLink = (token: string) =>
+    `${window.location.origin}/login?convite=${token}`;
+
+  const buildShareMessage = (link: string) => {
+    const empresa = tenantData.nome || "nossa equipe";
+    return `Olá! Você foi convidado para participar da equipe da ${empresa} no PR Bot.\nAcesse o link abaixo para criar sua conta:\n${link}`;
+  };
+
   const copyInviteLink = (token: string) => {
-    const link = `${window.location.origin}/login?convite=${token}`;
-    navigator.clipboard.writeText(link);
+    navigator.clipboard.writeText(buildInviteLink(token));
     toast({ title: "Link copiado!" });
+  };
+
+  const shareWhatsApp = (token: string) => {
+    const msg = buildShareMessage(buildInviteLink(token));
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const shareEmail = (token: string, email: string) => {
+    const link = buildInviteLink(token);
+    const empresa = tenantData.nome || "nossa equipe";
+    const subject = `Convite para a equipe da ${empresa}`;
+    const body = buildShareMessage(link);
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const closeInviteDialog = () => {
+    setShowInvite(false);
+    setInviteEmail("");
+    setInviteRole("atendente");
+    setInviteResult(null);
   };
 
   const deleteConvite = async (id: string) => {
@@ -525,9 +553,33 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => copyInviteLink(c.token)}>
-                              <Copy className="h-4 w-4" />
-                            </Button>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button size="sm" variant="outline">
+                                  <Share2 className="h-4 w-4 mr-1" /> Compartilhar
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-56 p-1">
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => copyInviteLink(c.token)}
+                                >
+                                  <Copy className="h-4 w-4" /> Copiar link
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => shareWhatsApp(c.token)}
+                                >
+                                  <MessageCircle className="h-4 w-4" /> Enviar por WhatsApp
+                                </button>
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => shareEmail(c.token, c.email)}
+                                >
+                                  <Mail className="h-4 w-4" /> Enviar por e-mail
+                                </button>
+                              </PopoverContent>
+                            </Popover>
                             <Button size="icon" variant="ghost" onClick={() => deleteConvite(c.id)}>
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -778,43 +830,89 @@ export default function Empresa({ initialTab = "dados" }: EmpresaProps) {
       </Tabs>
 
       {/* Dialog de convite */}
-      <Dialog open={showInvite} onOpenChange={setShowInvite}>
+      <Dialog open={showInvite} onOpenChange={(open) => { if (!open) closeInviteDialog(); else setShowInvite(true); }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Convidar Membro</DialogTitle>
-            <DialogDescription>Envie um convite para um novo membro da equipe</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="email@exemplo.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Função</Label>
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="atendente">Atendente</SelectItem>
-                  <SelectItem value="caixa">Caixa</SelectItem>
-                  <SelectItem value="admin_tenant">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInvite(false)}>Cancelar</Button>
-            <Button onClick={handleInvite} disabled={sendingInvite || !inviteEmail}>
-              {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Criar Convite
-            </Button>
-          </DialogFooter>
+          {!inviteResult ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Convidar Membro</DialogTitle>
+                <DialogDescription>Crie um convite e compartilhe o link com o novo membro</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Função</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="atendente">Atendente</SelectItem>
+                      <SelectItem value="caixa">Caixa</SelectItem>
+                      <SelectItem value="admin_tenant">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeInviteDialog}>Cancelar</Button>
+                <Button onClick={handleInvite} disabled={sendingInvite || !inviteEmail}>
+                  {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Criar Convite
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-green-600" /> Convite criado!
+                </DialogTitle>
+                <DialogDescription>
+                  Compartilhe o link abaixo com <strong>{inviteResult.email}</strong> para finalizar o cadastro.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => copyInviteLink(inviteResult.token)}
+                  className="w-full text-left rounded-md border bg-muted/50 hover:bg-muted px-3 py-3 text-sm font-mono break-all flex items-start gap-2"
+                  title="Clique para copiar"
+                >
+                  <LinkIcon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span className="flex-1">{buildInviteLink(inviteResult.token)}</span>
+                  <Copy className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                </button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button variant="outline" onClick={() => copyInviteLink(inviteResult.token)}>
+                    <Copy className="h-4 w-4 mr-2" /> Copiar
+                  </Button>
+                  <Button variant="outline" onClick={() => shareWhatsApp(inviteResult.token)}>
+                    <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
+                  </Button>
+                  <Button variant="outline" onClick={() => shareEmail(inviteResult.token, inviteResult.email)}>
+                    <Mail className="h-4 w-4 mr-2" /> E-mail
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Validade: até {new Date(inviteResult.expires_at).toLocaleDateString("pt-BR")}. Ao acessar o link, a pessoa define a senha e entra direto na empresa com a função <strong>{roleLabels[inviteResult.role] || inviteResult.role}</strong>.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button onClick={closeInviteDialog}>Fechar</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
